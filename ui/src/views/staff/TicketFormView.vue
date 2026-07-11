@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Requester, Staff } from '@/types'
 import { TICKET_PRIORITIES } from '@/types'
+import SearchSelect from '@/components/SearchSelect.vue'
 
 const router = useRouter()
 
@@ -45,6 +46,12 @@ async function loadRequesters() {
   }
 }
 
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
+const requesterOptions = computed(() =>
+  requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
+)
+
 async function submit() {
   loading.value = true
   error.value = ''
@@ -80,10 +87,13 @@ onMounted(loadOptions)
 
         <div class="form-control">
           <label class="label"><span class="label-text">Customer *</span></label>
-          <select v-model="form.customer" class="select select-bordered" required :disabled="loading" @change="loadRequesters">
-            <option value="" disabled>Select customer…</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
+          <SearchSelect
+            v-model="form.customer"
+            :options="customerOptions"
+            placeholder="Type to find a customer…"
+            :disabled="loading"
+            @update:model-value="loadRequesters"
+          />
         </div>
 
         <div class="form-control">
@@ -105,17 +115,11 @@ onMounted(loadOptions)
           </div>
           <div class="form-control">
             <label class="label"><span class="label-text">Assignee</span></label>
-            <select v-model="form.assignee" class="select select-bordered" :disabled="loading">
-              <option value="">Unassigned</option>
-              <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
+            <SearchSelect v-model="form.assignee" :options="staffOptions" empty-label="Unassigned" placeholder="Type a name…" :disabled="loading" />
           </div>
           <div class="form-control">
             <label class="label"><span class="label-text">Requester</span></label>
-            <select v-model="form.requester" class="select select-bordered" :disabled="loading || !form.customer">
-              <option value="">None</option>
-              <option v-for="r in requesters" :key="r.id" :value="r.id">{{ r.name || r.email }}</option>
-            </select>
+            <SearchSelect v-model="form.requester" :options="requesterOptions" empty-label="None" placeholder="Type a name or email…" :disabled="loading || !form.customer" />
           </div>
         </div>
 

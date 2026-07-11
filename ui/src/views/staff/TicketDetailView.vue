@@ -8,6 +8,7 @@ import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
+import SearchSelect from '@/components/SearchSelect.vue'
 import { format } from 'date-fns'
 
 const route = useRoute()
@@ -29,6 +30,8 @@ const requesterName = computed(() => {
   const r = ticket.value?.expand?.requester
   return r ? r.name || r.email : null
 })
+
+const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 
 async function load() {
   loading.value = true
@@ -204,10 +207,14 @@ onMounted(load)
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Assignee</span></label>
-              <select class="select select-bordered select-sm" :value="ticket.assignee || ''" @change="updateField('assignee', ($event.target as HTMLSelectElement).value)">
-                <option value="">Unassigned</option>
-                <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-              </select>
+              <SearchSelect
+                :model-value="ticket.assignee || ''"
+                :options="staffOptions"
+                size="sm"
+                empty-label="Unassigned"
+                placeholder="Type a name…"
+                @update:model-value="updateField('assignee', $event)"
+              />
             </div>
           </div>
         </div>

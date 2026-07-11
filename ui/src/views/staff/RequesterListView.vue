@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer, Requester } from '@/types'
+import SearchSelect from '@/components/SearchSelect.vue'
 
 const auth = useAuthStore()
 
@@ -10,11 +11,32 @@ const requesters = ref<Requester[]>([])
 const customers = ref<Customer[]>([])
 const loading = ref(true)
 const error = ref('')
+const search = ref('')
 
 const showForm = ref(false)
 const saving = ref(false)
 const form = ref({ email: '', name: '', customer: '' })
-const createdPassword = ref('')
+
+// One-time credential banner: shown after create or password reset, never
+// persisted anywhere client-side beyond this ref.
+const issued = ref<{ email: string; password: string } | null>(null)
+
+// Inline row editing (admin): name / email / customer.
+const editing = ref<Requester | null>(null)
+const editForm = ref({ name: '', email: '', customer: '' })
+
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return requesters.value
+  return requesters.value.filter(
+    (r) =>
+      r.email.toLowerCase().includes(q) ||
+      r.name?.toLowerCase().includes(q) ||
+      r.expand?.customer?.name?.toLowerCase().includes(q),
+  )
+})
 
 function generatePassword(): string {
   const bytes = new Uint8Array(12)
@@ -48,12 +70,12 @@ async function create() {
       password,
       passwordConfirm: password,
     })
-    createdPassword.value = password
+    issued.value = { email: form.value.email, password }
     form.value = { email: '', name: '', customer: '' }
     showForm.value = false
     await load()
   } catch (err: any) {
-    error.value = err?.message || 'Failed to create requester'
+    error.value = err?.data?.message || err?.message || 'Failed to create requester'
   } finally {
     saving.value = false
   }
@@ -65,6 +87,42 @@ async function toggleActive(r: Requester) {
     await load()
   } catch (err: any) {
     error.value = err?.message || 'Failed to update'
+  }
+}
+
+async function resetPassword(r: Requester) {
+  if (!confirm(`Reset the password for ${r.email}? Their current password stops working immediately.`)) return
+  error.value = ''
+  try {
+    const password = generatePassword()
+    await pb.collection('users').update(r.id, { password, passwordConfirm: password })
+    issued.value = { email: r.email, password }
+  } catch (err: any) {
+    error.value = err?.data?.message || err?.message || 'Failed to reset password'
+  }
+}
+
+function startEdit(r: Requester) {
+  editing.value = r
+  editForm.value = { name: r.name || '', email: r.email, customer: r.customer }
+}
+
+async function saveEdit() {
+  if (!editing.value) return
+  saving.value = true
+  error.value = ''
+  try {
+    await pb.collection('users').update(editing.value.id, {
+      name: editForm.value.name,
+      email: editForm.value.email,
+      customer: editForm.value.customer,
+    })
+    editing.value = null
+    await load()
+  } catch (err: any) {
+    error.value = err?.data?.message || err?.message || 'Failed to save'
+  } finally {
+    saving.value = false
   }
 }
 
@@ -82,25 +140,27 @@ onMounted(load)
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-    <div v-if="createdPassword" class="alert alert-info py-2 text-sm">
+    <div v-if="issued" class="alert alert-info py-2 text-sm">
       <span>
-        Account created. One-time password: <code class="font-mono font-bold">{{ createdPassword }}</code>
-        — share securely, then <button class="link" @click="createdPassword = ''">dismiss</button>.
+        Credentials for <b>{{ issued.email }}</b> — one-time password:
+        <code class="font-mono font-bold">{{ issued.password }}</code>
+        — share securely, then <button class="link" @click="issued = null">dismiss</button>.
       </span>
     </div>
 
-    <form v-if="showForm" class="flex flex-wrap gap-2" @submit.prevent="create">
+    <form v-if="showForm" class="flex flex-wrap gap-2 items-start" @submit.prevent="create">
       <input v-model="form.email" type="email" placeholder="email" class="input input-bordered input-sm w-56" required :disabled="saving" />
       <input v-model="form.name" type="text" placeholder="name" class="input input-bordered input-sm w-44" :disabled="saving" />
-      <select v-model="form.customer" class="select select-bordered select-sm" required :disabled="saving">
-        <option value="" disabled>Customer…</option>
-        <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
+      <div class="w-56">
+        <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
+      </div>
       <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !form.email || !form.customer">Create</button>
     </form>
 
+    <input v-model="search" type="search" placeholder="Filter by email, name, customer…" class="input input-bordered input-sm w-full sm:w-72" />
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
-    <div v-else-if="requesters.length === 0" class="text-center p-12 text-base-content/60">No requester accounts.</div>
+    <div v-else-if="filtered.length === 0" class="text-center p-12 text-base-content/60">No requester accounts match.</div>
 
     <div v-else class="overflow-x-auto bg-base-100 rounded-lg shadow-sm">
       <table class="table table-sm">
@@ -110,25 +170,43 @@ onMounted(load)
             <th>Name</th>
             <th>Customer</th>
             <th>Status</th>
-            <th v-if="auth.isAdmin"></th>
+            <th v-if="auth.isAdmin" class="text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in requesters" :key="r.id">
-            <td>{{ r.email }}</td>
-            <td>{{ r.name || '—' }}</td>
-            <td>{{ r.expand?.customer?.name || '—' }}</td>
-            <td>
-              <span class="badge badge-sm" :class="r.active ? 'badge-success' : 'badge-ghost'">
-                {{ r.active ? 'active' : 'inactive' }}
-              </span>
-            </td>
-            <td v-if="auth.isAdmin" class="text-right">
-              <button class="btn btn-ghost btn-xs" @click="toggleActive(r)">
-                {{ r.active ? 'Deactivate' : 'Activate' }}
-              </button>
-            </td>
-          </tr>
+          <template v-for="r in filtered" :key="r.id">
+            <tr>
+              <td>{{ r.email }}</td>
+              <td>{{ r.name || '—' }}</td>
+              <td>{{ r.expand?.customer?.name || '—' }}</td>
+              <td>
+                <span class="badge badge-sm" :class="r.active ? 'badge-success' : 'badge-ghost'">
+                  {{ r.active ? 'active' : 'inactive' }}
+                </span>
+              </td>
+              <td v-if="auth.isAdmin" class="text-right whitespace-nowrap">
+                <button class="btn btn-ghost btn-xs" @click="editing?.id === r.id ? (editing = null) : startEdit(r)">
+                  {{ editing?.id === r.id ? 'Cancel' : 'Edit' }}
+                </button>
+                <button class="btn btn-ghost btn-xs" @click="resetPassword(r)">Reset password</button>
+                <button class="btn btn-ghost btn-xs" @click="toggleActive(r)">
+                  {{ r.active ? 'Deactivate' : 'Activate' }}
+                </button>
+              </td>
+            </tr>
+            <tr v-if="editing?.id === r.id" class="bg-base-200/50">
+              <td :colspan="auth.isAdmin ? 5 : 4">
+                <form class="flex flex-wrap gap-2 items-start py-1" @submit.prevent="saveEdit">
+                  <input v-model="editForm.email" type="email" placeholder="email" class="input input-bordered input-sm w-56" required :disabled="saving" />
+                  <input v-model="editForm.name" type="text" placeholder="name" class="input input-bordered input-sm w-44" :disabled="saving" />
+                  <div class="w-56">
+                    <SearchSelect v-model="editForm.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !editForm.email || !editForm.customer">Save</button>
+                </form>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>

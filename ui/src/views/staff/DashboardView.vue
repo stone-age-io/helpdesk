@@ -50,27 +50,28 @@ onMounted(load)
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
     <template v-else>
+      <!-- Each tile links to the queue pre-filtered to what it counts. -->
       <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 w-full">
-        <div class="stat">
+        <router-link to="/staff/tickets?status=open" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Open</div>
           <div class="stat-value text-info">{{ counts.open }}</div>
-        </div>
-        <div class="stat">
+        </router-link>
+        <router-link to="/staff/tickets?status=in_progress" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">In Progress</div>
           <div class="stat-value text-primary">{{ counts.in_progress }}</div>
-        </div>
-        <div class="stat">
+        </router-link>
+        <router-link to="/staff/tickets?status=waiting" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Waiting</div>
           <div class="stat-value text-warning">{{ counts.waiting }}</div>
-        </div>
-        <div class="stat">
+        </router-link>
+        <router-link to="/staff/tickets?priority=urgent" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Urgent</div>
           <div class="stat-value text-error">{{ counts.urgent }}</div>
-        </div>
-        <div class="stat">
+        </router-link>
+        <router-link to="/staff/tickets?assignee=unassigned" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Unassigned</div>
           <div class="stat-value">{{ counts.unassigned }}</div>
-        </div>
+        </router-link>
       </div>
 
       <div class="card bg-base-100 shadow-sm">

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Staff, Visit } from '@/types'
+import SearchSelect from '@/components/SearchSelect.vue'
 import { format } from 'date-fns'
 
 const props = defineProps<{ ticketId: string; staff: Staff[] }>()
@@ -60,6 +61,8 @@ async function setStatus(v: Visit, status: string) {
   }
 }
 
+const staffOptions = computed(() => props.staff.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
+
 const statusClass: Record<string, string> = {
   scheduled: 'badge-info',
   completed: 'badge-success',
@@ -83,11 +86,8 @@ onMounted(() => {
       <div v-if="error" class="text-error text-xs">{{ error }}</div>
 
       <div v-if="showForm" class="space-y-1">
-        <input v-model="scheduledAt" type="datetime-local" class="input input-bordered input-sm w-full" :disabled="saving" />
-        <select v-model="assignee" class="select select-bordered select-sm w-full" :disabled="saving">
-          <option value="" disabled>Assign technician…</option>
-          <option v-for="s in props.staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-        </select>
+        <input v-model="scheduledAt" type="datetime-local" class="input input-bordered input-sm w-full min-w-0" :disabled="saving" />
+        <SearchSelect v-model="assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="saving" />
         <input v-model="notes" type="text" placeholder="notes" class="input input-bordered input-sm w-full" :disabled="saving" />
         <button class="btn btn-primary btn-sm w-full" :disabled="saving || !scheduledAt || !assignee" @click="schedule">Schedule</button>
       </div>

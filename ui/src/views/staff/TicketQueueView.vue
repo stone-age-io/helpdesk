@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { pb } from '@/pb'
+import { useAuthStore } from '@/stores/auth'
 import type { Customer, Staff, Ticket, TicketStatus, TicketPriority } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
+import SearchSelect from '@/components/SearchSelect.vue'
 import { formatDistanceToNow } from 'date-fns'
+
+const route = useRoute()
+const auth = useAuthStore()
 
 const tickets = ref<Ticket[]>([])
 const customers = ref<Customer[]>([])
@@ -17,11 +23,24 @@ const totalPages = ref(1)
 const perPage = 30
 
 // Filters. Status defaults to "active" (everything not resolved/closed).
-const status = ref<'active' | TicketStatus | ''>('active')
-const priority = ref<TicketPriority | ''>('')
-const customer = ref('')
-const assignee = ref('')
+// Initial values may come from the URL query (dashboard tiles link here).
+const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
+const status = ref<'active' | TicketStatus | ''>((q('status') as any) || 'active')
+const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
+const customer = ref(q('customer'))
+const assignee = ref(q('assignee'))
 const search = ref('')
+
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+const staffOptions = computed(() => [
+  { id: 'unassigned', label: 'Unassigned' },
+  ...staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })),
+])
+
+const mineActive = computed(() => assignee.value === auth.record?.id)
+function toggleMine() {
+  assignee.value = mineActive.value ? '' : auth.record?.id || ''
+}
 
 function buildFilter(): string {
   const parts: string[] = []
@@ -105,15 +124,13 @@ onMounted(() => {
         <option value="">All priorities</option>
         <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
       </select>
-      <select v-model="customer" class="select select-bordered select-sm">
-        <option value="">All customers</option>
-        <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
-      <select v-model="assignee" class="select select-bordered select-sm">
-        <option value="">Anyone</option>
-        <option value="unassigned">Unassigned</option>
-        <option v-for="s in staff" :key="s.id" :value="s.id">{{ s.name }}</option>
-      </select>
+      <div class="w-full sm:w-52">
+        <SearchSelect v-model="customer" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
+      </div>
+      <div class="w-full sm:w-52">
+        <SearchSelect v-model="assignee" :options="staffOptions" size="sm" empty-label="Anyone" placeholder="Assignee…" />
+      </div>
+      <button class="btn btn-sm" :class="mineActive ? 'btn-primary' : 'btn-ghost'" @click="toggleMine">My tickets</button>
     </div>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>

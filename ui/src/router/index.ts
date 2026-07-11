@@ -20,6 +20,7 @@ const router = createRouter({
         { path: 'customers', name: 'customers', component: () => import('@/views/staff/CustomerListView.vue') },
         { path: 'customers/:id', name: 'customer-detail', component: () => import('@/views/staff/CustomerDetailView.vue') },
         { path: 'requesters', name: 'requesters', component: () => import('@/views/staff/RequesterListView.vue') },
+        { path: 'staff', name: 'staff-list', component: () => import('@/views/staff/StaffListView.vue'), meta: { adminOnly: true } },
         { path: 'notifications', name: 'notifications', component: () => import('@/views/staff/NotificationTemplatesView.vue'), meta: { adminOnly: true } },
       ],
     },

@@ -60,13 +60,26 @@ async function save() {
   }
 }
 
-async function revealToken() {
+async function revealToken(rotate = false) {
   error.value = ''
+  if (rotate && !confirm('Rotate the webhook token? Anything using the current URL stops working immediately.')) return
   try {
-    const res = await pb.send(`/api/helpdesk/customers/${id}/webhook-token`, { method: 'POST' })
+    const res = await pb.send(`/api/helpdesk/customers/${id}/webhook-token${rotate ? '?rotate=1' : ''}`, { method: 'POST' })
     webhookToken.value = res.token
   } catch (err: any) {
     error.value = err?.message || 'Failed to fetch webhook token'
+  }
+}
+
+const webhookUrl = () => `${location.origin}/api/helpdesk/inbound/${webhookToken.value}`
+const copied = ref(false)
+async function copyWebhookUrl() {
+  try {
+    await navigator.clipboard.writeText(webhookUrl())
+    copied.value = true
+    setTimeout(() => (copied.value = false), 1500)
+  } catch {
+    error.value = 'Clipboard unavailable — copy manually.'
   }
 }
 
@@ -115,16 +128,20 @@ onMounted(load)
             </label>
           </div>
           <div v-if="auth.isAdmin" class="flex justify-between items-center pt-1">
-            <button class="btn btn-ghost btn-sm" @click="revealToken">Webhook token</button>
+            <button class="btn btn-ghost btn-sm" @click="revealToken()">Webhook token</button>
             <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
               <span v-if="saving" class="loading loading-spinner loading-xs"></span>
               Save
             </button>
           </div>
           <div v-if="webhookToken" class="alert py-2">
-            <div class="text-xs">
+            <div class="text-xs w-full">
               <div class="font-semibold mb-1">Inbound webhook</div>
-              <code class="break-all">POST /api/helpdesk/inbound/{{ webhookToken }}</code>
+              <code class="break-all">POST {{ webhookUrl() }}</code>
+              <div class="flex gap-2 mt-2">
+                <button class="btn btn-xs" @click="copyWebhookUrl">{{ copied ? 'Copied ✓' : 'Copy URL' }}</button>
+                <button class="btn btn-xs btn-ghost text-error" @click="revealToken(true)">Rotate token</button>
+              </div>
             </div>
           </div>
         </div>

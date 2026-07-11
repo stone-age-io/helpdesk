@@ -90,10 +90,10 @@ onMounted(load)
         </li>
       </ul>
 
-      <div class="flex gap-1">
-        <input v-model.number="minutes" type="number" min="1" placeholder="min" class="input input-bordered input-sm w-20" :disabled="saving" />
-        <input v-model="note" type="text" placeholder="note" class="input input-bordered input-sm flex-1" :disabled="saving" />
-        <button class="btn btn-sm btn-primary" :disabled="saving || !minutes" @click="add">Log</button>
+      <div class="flex gap-1 min-w-0">
+        <input v-model.number="minutes" type="number" min="1" placeholder="min" class="input input-bordered input-sm w-16 shrink-0" :disabled="saving" />
+        <input v-model="note" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-0" :disabled="saving" />
+        <button class="btn btn-sm btn-primary shrink-0" :disabled="saving || !minutes" @click="add">Log</button>
       </div>
     </div>
   </div>
