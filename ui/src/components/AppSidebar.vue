@@ -6,6 +6,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import Avatar from '@/components/Avatar.vue'
 
 export interface NavItem {
   label: string
@@ -129,11 +130,7 @@ function logout() {
           role="button"
           class="flex items-center gap-3 w-full p-2 rounded-lg bg-base-200/50 hover:bg-base-200 cursor-pointer transition-colors"
         >
-          <div class="avatar placeholder">
-            <div class="bg-neutral text-neutral-content rounded-full w-8">
-              <span class="text-xs font-bold">{{ auth.initial }}</span>
-            </div>
-          </div>
+          <Avatar :record="auth.record" :name="auth.record?.name || auth.record?.email" size="sm" />
           <div class="flex flex-col truncate flex-1 text-left min-w-0">
             <span class="font-semibold text-sm truncate leading-tight">{{ auth.record?.name || auth.record?.email }}</span>
             <span class="text-xs text-base-content/60 truncate leading-tight">{{ subtitle }}</span>

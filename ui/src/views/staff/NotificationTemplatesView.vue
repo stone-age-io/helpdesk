@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
 import type { NotificationSendLog, NotificationTemplate } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import Pager from '@/components/Pager.vue'
+import TemplateReferenceDrawer from '@/components/TemplateReferenceDrawer.vue'
 
 // Event first: ResponsiveList promotes the first column to the mobile card
 // header, and a card headlined by a raw timestamp identifies nothing.
@@ -22,6 +24,9 @@ const error = ref('')
 const savedFlash = ref(false)
 
 const sends = ref<NotificationSendLog[]>([])
+const sendPage = ref(1)
+const sendTotalPages = ref(1)
+const helpOpen = ref(false)
 
 // Editable working copy of the selected template; extras edited as one
 // address per line.
@@ -54,15 +59,24 @@ async function load() {
     const res = await pb.send('/api/helpdesk/notifications', { method: 'GET' })
     templates.value = res.templates
     if (templates.value.length > 0) select(selectedType.value || templates.value[0].event_type)
-    sends.value = (
-      await pb.collection('notification_send_log').getList<NotificationSendLog>(1, 15, { sort: '-created' })
-    ).items
+    await loadSends()
   } catch (err: any) {
     error.value = err?.message || 'Failed to load templates'
   } finally {
     loading.value = false
   }
 }
+
+// The send log is append-only (pruned at 90 days) — page through it rather
+// than showing a fixed slice.
+async function loadSends() {
+  const res = await pb.collection('notification_send_log').getList<NotificationSendLog>(sendPage.value, 15, {
+    sort: '-created',
+  })
+  sends.value = res.items
+  sendTotalPages.value = res.totalPages
+}
+watch(sendPage, () => loadSends().catch(() => {}))
 
 async function save() {
   if (!selected.value) return
@@ -141,7 +155,14 @@ onMounted(load)
 
 <template>
   <div class="space-y-4">
-    <h1 class="text-2xl font-bold">Email Notifications</h1>
+    <div class="flex items-center justify-between gap-2">
+      <h1 class="text-2xl font-bold">Email Notifications</h1>
+      <button class="btn btn-ghost btn-sm gap-1" @click="helpOpen = true">
+        <span aria-hidden="true">❔</span> Template reference
+      </button>
+    </div>
+
+    <TemplateReferenceDrawer :open="helpOpen" @close="helpOpen = false" />
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
@@ -186,7 +207,8 @@ onMounted(load)
             <textarea v-model="form.body" rows="10" class="textarea textarea-bordered textarea-sm font-mono" :disabled="saving"></textarea>
             <label class="label py-1">
               <span class="label-text-alt text-base-content/60">
-                Go text/template — helpers: formatTime, statusLabel, pluralize
+                Go text/template —
+                <button type="button" class="link" @click="helpOpen = true">variables &amp; helpers reference</button>
               </span>
             </label>
           </div>
@@ -250,6 +272,7 @@ onMounted(load)
             <span class="text-sm text-base-content/50">Nothing sent yet.</span>
           </template>
         </ResponsiveList>
+        <Pager v-model:page="sendPage" :total-pages="sendTotalPages" class="pt-2" />
       </div>
     </div>
   </div>

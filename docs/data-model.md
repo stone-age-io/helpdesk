@@ -23,15 +23,17 @@ Requests are attributed to one of two auth collections, distinguished in
 rules by `@request.auth.collectionName`.
 
 - **`staff`** — agents and admins, cross-customer. Fields: `name`, `role`
-  (`agent` | `admin`), `active`. `AuthRule: active = true`. Any staff member
+  (`agent` | `admin`), `active`, `avatar` (single image, optional —
+  migration `1807000000`). `AuthRule: active = true`. Any staff member
   can read the roster (needed for assignee pickers); only admins
-  create/delete. A staff member may self-update profile fields but cannot
-  change their own `role` or `active` (blocked by an `:isset` body guard).
+  create/delete. A staff member may self-update profile fields (`name`,
+  `avatar`) but cannot change their own `role` or `active` (blocked by an
+  `:isset` body guard).
 - **`users`** — requesters (the repurposed default PB collection), scoped to
-  one customer. Fields: `customer` (relation, **required**), `active`.
-  `AuthRule: active = true && customer != ''`. A requester sees only
-  themselves in the collection; only admins create/delete; self-update
-  cannot reassign `customer` or toggle `active`.
+  one customer. Fields: `customer` (relation, **required**), `active`,
+  `avatar` (single image, optional). `AuthRule: active = true && customer != ''`.
+  A requester sees only themselves in the collection; only admins
+  create/delete; self-update cannot reassign `customer` or toggle `active`.
 
 Both collections stamp `emailVisibility = true` on create
 (`internal/authfix`) — PB hides emails by default, which would break the

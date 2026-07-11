@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer, Requester } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import ActiveBadge from '@/components/ActiveBadge.vue'
+import Avatar from '@/components/Avatar.vue'
+import Pager from '@/components/Pager.vue'
 
 const auth = useAuthStore()
 
@@ -36,16 +38,18 @@ const editForm = ref({ name: '', email: '', customer: '' })
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return requesters.value
-  return requesters.value.filter(
-    (r) =>
-      r.email.toLowerCase().includes(q) ||
-      r.name?.toLowerCase().includes(q) ||
-      r.expand?.customer?.name?.toLowerCase().includes(q),
-  )
-})
+const page = ref(1)
+const totalPages = ref(1)
+const perPage = 30
+
+// Search runs server-side now — the roster can be large for a big MSP, so we
+// page rather than pulling every requester to filter in the browser.
+function buildFilter(): string {
+  const raw = search.value.trim()
+  if (!raw) return ''
+  const q = raw.replace(/'/g, "\\'")
+  return `(email ~ '${q}' || name ~ '${q}' || customer.name ~ '${q}')`
+}
 
 function generatePassword(): string {
   const bytes = new Uint8Array(12)
@@ -57,14 +61,39 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    requesters.value = await pb.collection('users').getFullList<Requester>({ sort: 'email', expand: 'customer' })
-    customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name', filter: 'active = true' })
+    const res = await pb.collection('users').getList<Requester>(page.value, perPage, {
+      sort: 'email',
+      expand: 'customer',
+      filter: buildFilter(),
+    })
+    requesters.value = res.items
+    totalPages.value = res.totalPages
   } catch (err: any) {
     error.value = err?.message || 'Failed to load requesters'
   } finally {
     loading.value = false
   }
 }
+
+// The customer picker (create/edit forms) needs the full active list.
+async function loadCustomers() {
+  try {
+    customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name', filter: 'active = true' })
+  } catch {
+    // Picker degrades to empty; the roster still loads.
+  }
+}
+
+watch(page, () => load())
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    load()
+  }, 300)
+})
 
 async function create() {
   saving.value = true
@@ -139,7 +168,10 @@ async function saveEdit() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadCustomers()
+})
 </script>
 
 <template>
@@ -193,9 +225,19 @@ onMounted(load)
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <ResponsiveList v-else :items="filtered" :columns="columns" :clickable="false">
-      <template #cell-email="{ value }"><span class="text-sm">{{ value }}</span></template>
-      <template #card-email="{ value }"><div class="text-sm font-bold truncate">{{ value }}</div></template>
+    <ResponsiveList v-else :items="requesters" :columns="columns" :clickable="false">
+      <template #cell-email="{ item }">
+        <div class="flex items-center gap-2">
+          <Avatar :record="item" :name="item.name || item.email" size="xs" />
+          <span class="text-sm">{{ item.email }}</span>
+        </div>
+      </template>
+      <template #card-email="{ item }">
+        <div class="flex items-center gap-2 min-w-0">
+          <Avatar :record="item" :name="item.name || item.email" size="xs" />
+          <div class="text-sm font-bold truncate">{{ item.email }}</div>
+        </div>
+      </template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
       <template #actions="{ item }">
         <router-link class="btn btn-ghost btn-xs" :to="`/staff/tickets?search=${encodeURIComponent(item.email)}`">Tickets</router-link>
@@ -213,5 +255,7 @@ onMounted(load)
         <span class="text-base-content/60">No requester accounts match.</span>
       </template>
     </ResponsiveList>
+
+    <Pager v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>

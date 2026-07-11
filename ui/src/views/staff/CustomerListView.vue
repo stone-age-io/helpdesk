@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import ActiveBadge from '@/components/ActiveBadge.vue'
+import Pager from '@/components/Pager.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -24,17 +25,25 @@ const showForm = ref(false)
 const newName = ref('')
 const saving = ref(false)
 
+const page = ref(1)
+const totalPages = ref(1)
+const perPage = 30
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
+    const res = await pb.collection('customers').getList<Customer>(page.value, perPage, { sort: 'name' })
+    customers.value = res.items
+    totalPages.value = res.totalPages
   } catch (err: any) {
     error.value = err?.message || 'Failed to load customers'
   } finally {
     loading.value = false
   }
 }
+
+watch(page, () => load())
 
 async function create() {
   if (!newName.value.trim()) return
@@ -84,5 +93,7 @@ onMounted(load)
         <span class="text-base-content/60">No customers yet.</span>
       </template>
     </ResponsiveList>
+
+    <Pager v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>

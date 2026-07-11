@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Staff } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import ActiveBadge from '@/components/ActiveBadge.vue'
+import Avatar from '@/components/Avatar.vue'
+import Pager from '@/components/Pager.vue'
 
 const auth = useAuthStore()
 
@@ -18,6 +20,10 @@ const columns: Column<Staff>[] = [
 const staff = ref<Staff[]>([])
 const loading = ref(true)
 const error = ref('')
+
+const page = ref(1)
+const totalPages = ref(1)
+const perPage = 30
 
 const showForm = ref(false)
 const saving = ref(false)
@@ -35,13 +41,17 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name' })
+    const res = await pb.collection('staff').getList<Staff>(page.value, perPage, { sort: 'name' })
+    staff.value = res.items
+    totalPages.value = res.totalPages
   } catch (err: any) {
     error.value = err?.message || 'Failed to load staff'
   } finally {
     loading.value = false
   }
 }
+
+watch(page, () => load())
 
 async function create() {
   saving.value = true
@@ -138,12 +148,18 @@ onMounted(load)
 
     <ResponsiveList v-else :items="staff" :columns="columns" :clickable="false">
       <template #cell-name="{ item }">
-        <span class="font-medium text-sm">{{ item.name }}</span>
-        <span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+        <div class="flex items-center gap-2">
+          <Avatar :record="item" :name="item.name || item.email" size="xs" />
+          <span class="font-medium text-sm">{{ item.name }}</span>
+          <span v-if="isSelf(item)" class="badge badge-ghost badge-xs">you</span>
+        </div>
       </template>
       <template #card-name="{ item }">
-        <div class="text-sm font-bold truncate">
-          {{ item.name }}<span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <Avatar :record="item" :name="item.name || item.email" size="xs" />
+          <div class="text-sm font-bold truncate">
+            {{ item.name }}<span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+          </div>
         </div>
       </template>
       <!-- Guard against locking yourself out: your own role is read-only here. -->
@@ -170,5 +186,7 @@ onMounted(load)
         <span class="text-base-content/60">No staff accounts.</span>
       </template>
     </ResponsiveList>
+
+    <Pager v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>
