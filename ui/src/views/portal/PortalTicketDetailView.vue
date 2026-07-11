@@ -226,6 +226,28 @@ onUnmounted(() => {
           </div>
         </details>
 
+        <!-- Mobile: site visits grouped with the status panel under the header,
+             not stranded at the bottom. Desktop shows them in the rail. -->
+        <div v-if="visits.length > 0" class="xl:hidden card bg-base-100 shadow-sm">
+          <div class="card-body py-4 px-4 space-y-2">
+            <h2 class="font-semibold text-sm">Site Visits</h2>
+            <ul class="space-y-2">
+              <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
+                <div class="flex items-center gap-2">
+                  <template v-if="v.status === 'requested'">
+                    <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
+                  </template>
+                  <template v-else>
+                    <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
+                  </template>
+                  <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
+                </div>
+                <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+
         <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
         <!-- Conversation -->
@@ -315,8 +337,8 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Site visits -->
-        <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm">
+        <!-- Site visits (desktop; mobile shows them in the meta group above) -->
+        <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm hidden xl:block">
           <div class="card-body py-4 px-4 space-y-2">
             <h2 class="font-semibold text-sm">Site Visits</h2>
             <ul class="space-y-2">

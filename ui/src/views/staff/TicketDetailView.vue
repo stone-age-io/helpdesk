@@ -37,6 +37,13 @@ const posting = ref(false)
 // triage cleanup, a mis-set status, or an internal reassignment.
 const notify = ref(true)
 
+// Reactive Tailwind `xl` breakpoint so the properties/time/visits panel
+// renders exactly once — in the desktop rail, or grouped under the header on
+// mobile — rather than mounting in both spots and fetching twice.
+const isDesktop = ref(window.matchMedia('(min-width: 1280px)').matches)
+let mq: MediaQueryList | undefined
+const onBreakpoint = (e: MediaQueryListEvent) => (isDesktop.value = e.matches)
+
 // Inline title/body editing.
 const editingHeader = ref(false)
 const editTitle = ref('')
@@ -219,6 +226,8 @@ let unsubComments: (() => void) | null = null
 let unsubEvents: (() => void) | null = null
 
 onMounted(async () => {
+  mq = window.matchMedia('(min-width: 1280px)')
+  mq.addEventListener('change', onBreakpoint)
   await load()
   try {
     unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
@@ -231,6 +240,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTimeout(reloadTimer)
+  mq?.removeEventListener('change', onBreakpoint)
   unsubTicket?.()
   unsubComments?.()
   unsubEvents?.()
@@ -283,29 +293,35 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Mobile: collapsible controls directly under the header, so the
-             workflow fields aren't stranded at the bottom of the stack. The
-             desktop rail (below) keeps the same fields, always expanded. -->
-        <details class="group xl:hidden card bg-base-100 shadow-sm">
-          <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-3 px-4 [&::-webkit-details-marker]:hidden">
-            <span class="font-semibold text-sm">Properties</span>
-            <TicketBadges :status="ticket.status" :priority="ticket.priority" />
-            <span class="ml-auto text-base-content/50 transition-transform group-open:rotate-90">▸</span>
-          </summary>
-          <div class="px-4 pb-4 space-y-3">
-            <TicketPropertiesFields
-              v-model:notify="notify"
-              :ticket="ticket"
-              :staff-options="staffOptions"
-              :customer-options="customerOptions"
-              :category-options="categoryOptions"
-              :requester-options="requesterOptions"
-              @update-field="updateField"
-              @patch="patchPlain"
-              @change-customer="changeCustomer"
-            />
-          </div>
-        </details>
+        <!-- Mobile: the whole meta group (properties + time + visits) sits
+             directly under the header, so nothing is stranded at the bottom.
+             Properties collapse behind a summary; time and visits read as part
+             of the same section. Rendered here OR in the desktop rail below —
+             never both, so the fetch-on-mount cards don't load twice. -->
+        <div v-if="!isDesktop" class="space-y-4">
+          <details class="group card bg-base-100 shadow-sm">
+            <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-3 px-4 [&::-webkit-details-marker]:hidden">
+              <span class="font-semibold text-sm">Properties</span>
+              <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+              <span class="ml-auto text-base-content/50 transition-transform group-open:rotate-90">▸</span>
+            </summary>
+            <div class="px-4 pb-4 space-y-3">
+              <TicketPropertiesFields
+                v-model:notify="notify"
+                :ticket="ticket"
+                :staff-options="staffOptions"
+                :customer-options="customerOptions"
+                :category-options="categoryOptions"
+                :requester-options="requesterOptions"
+                @update-field="updateField"
+                @patch="patchPlain"
+                @change-customer="changeCustomer"
+              />
+            </div>
+          </details>
+          <TimeEntriesCard :ticket-id="id" />
+          <VisitsCard :ticket-id="id" :staff="staff" />
+        </div>
 
         <!-- Unified timeline: comments as cards, audit events as inline rows -->
         <div class="space-y-2">
@@ -370,11 +386,11 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Controls rail: sticky so the workflow fields stay in view while the
-           timeline scrolls. -->
-      <div class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
-        <!-- Desktop rail controls (mobile shows the collapsible copy above). -->
-        <div class="card bg-base-100 shadow-sm hidden xl:block">
+      <!-- Desktop controls rail: sticky so the workflow fields stay in view
+           while the timeline scrolls. On mobile the same panel renders under
+           the header (above) instead. -->
+      <div v-if="isDesktop" class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
+        <div class="card bg-base-100 shadow-sm">
           <div class="card-body py-4 px-4 space-y-3">
             <TicketPropertiesFields
               v-model:notify="notify"

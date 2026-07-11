@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // The staff ticket controls (status / priority / assignee / customer /
 // requester / category / provenance). Extracted so it can render in both the
-// desktop rail and the mobile collapsible panel without duplicating markup.
-// Purely presentational: it emits intent, the parent owns the saves.
-import { ref } from 'vue'
+// desktop rail and the mobile panel without duplicating markup. Purely
+// presentational: it emits intent, the parent owns the saves.
 import type { Ticket } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
@@ -30,9 +29,6 @@ const emit = defineEmits<{
   'change-customer': [value: string]
   'update:notify': [value: boolean]
 }>()
-
-// Provenance fields are rarely edited — folded away so the panel stays short.
-const showDetails = ref(false)
 </script>
 
 <template>
@@ -113,36 +109,30 @@ const showDetails = ref(false)
     />
   </div>
 
-  <!-- Provenance: collapsed by default, rarely edited -->
-  <button class="btn btn-ghost btn-xs justify-start -ml-1 w-fit" @click="showDetails = !showDetails">
-    {{ showDetails ? '▾' : '▸' }} Details
-  </button>
-  <template v-if="showDetails">
-    <div class="form-control">
-      <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
-      <input
-        :value="ticket.asset || ''"
-        type="text"
-        maxlength="200"
-        class="input input-bordered input-sm"
-        placeholder="Device / system"
-        @change="emit('patch', { asset: ($event.target as HTMLInputElement).value })"
-      />
-    </div>
-    <div class="form-control">
-      <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-      <input
-        :value="ticket.location || ''"
-        type="text"
-        maxlength="200"
-        class="input input-bordered input-sm"
-        placeholder="Where"
-        @change="emit('patch', { location: ($event.target as HTMLInputElement).value })"
-      />
-    </div>
-    <div>
-      <div class="text-xs text-base-content/60">Source</div>
-      <div class="text-sm">{{ ticket.source }}</div>
-    </div>
-  </template>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
+    <input
+      :value="ticket.asset || ''"
+      type="text"
+      maxlength="200"
+      class="input input-bordered input-sm"
+      placeholder="Device / system"
+      @change="emit('patch', { asset: ($event.target as HTMLInputElement).value })"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+    <input
+      :value="ticket.location || ''"
+      type="text"
+      maxlength="200"
+      class="input input-bordered input-sm"
+      placeholder="Where"
+      @change="emit('patch', { location: ($event.target as HTMLInputElement).value })"
+    />
+  </div>
+  <div class="flex items-center justify-between gap-2">
+    <span class="text-xs text-base-content/60">Source</span>
+    <span class="text-sm">{{ ticket.source }}</span>
+  </div>
 </template>
