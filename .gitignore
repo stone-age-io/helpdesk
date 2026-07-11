@@ -3,5 +3,5 @@ helpdesk.yaml
 *.creds
 ui/node_modules/
 ui/dist/
-helpdesk
-helpdesk.exe
+/helpdesk
+/helpdesk.exe

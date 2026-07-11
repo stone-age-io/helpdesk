@@ -51,8 +51,10 @@ func Load() (*Config, error) {
 	if path := os.Getenv("HELPDESK_CONFIG"); path != "" {
 		v.SetConfigFile(path)
 	} else {
+		// No SetConfigType here: with a type set, viper also matches the
+		// extensionless file "helpdesk" — the binary itself when cwd is the
+		// deploy dir. Name-only search matches helpdesk.yaml and friends.
 		v.SetConfigName("helpdesk")
-		v.SetConfigType("yaml")
 		v.AddConfigPath(".")
 		v.AddConfigPath("/etc/helpdesk/")
 	}
