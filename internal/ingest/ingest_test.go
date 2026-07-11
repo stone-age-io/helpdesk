@@ -67,9 +67,54 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("status"); got != "open" {
 		t.Errorf("status default: got %q", got)
 	}
-	body := rec.GetString("body")
-	if body != "overcurrent\n\n[thing: pump-7 · location: line-3]" {
-		t.Errorf("body with provenance tags: got %q", body)
+	// Provenance is now structured fields, not folded into the body.
+	if got := rec.GetString("body"); got != "overcurrent" {
+		t.Errorf("body: got %q, want %q", got, "overcurrent")
+	}
+	if got := rec.GetString("asset"); got != "pump-7" {
+		t.Errorf("asset: got %q, want pump-7", got)
+	}
+	if got := rec.GetString("location"); got != "line-3" {
+		t.Errorf("location: got %q, want line-3", got)
+	}
+}
+
+func TestProjectResolvesCategoryByKey(t *testing.T) {
+	app, c, _ := setup(t)
+
+	catCol, _ := app.FindCollectionByNameOrId("ticket_categories")
+	cat := core.NewRecord(catCol)
+	cat.Set("name", "Pumps")
+	cat.Set("key", "pumps")
+	cat.Set("active", true)
+	if err := app.Save(cat); err != nil {
+		t.Fatalf("seed category: %v", err)
+	}
+
+	// Known key → classified.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"a","category":"pumps"}`)); out != Ack {
+		t.Fatalf("known category: %v", out)
+	}
+	rec, err := app.FindFirstRecordByFilter("tickets", "title = 'a'")
+	if err != nil {
+		t.Fatalf("ticket: %v", err)
+	}
+	if got := rec.GetString("category"); got != cat.Id {
+		t.Errorf("category: got %q, want %q", got, cat.Id)
+	}
+
+	// Unknown key → created but unclassified (no drop, no error).
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"b","category":"nonexistent"}`)); out != Ack {
+		t.Fatalf("unknown category: %v", out)
+	}
+	rec2, err := app.FindFirstRecordByFilter("tickets", "title = 'b'")
+	if err != nil {
+		t.Fatalf("ticket b: %v", err)
+	}
+	if got := rec2.GetString("category"); got != "" {
+		t.Errorf("unknown category should leave ticket unclassified, got %q", got)
 	}
 }
 

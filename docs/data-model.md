@@ -57,18 +57,38 @@ or rotate it through `POST /api/helpdesk/customers/{id}/webhook-token`.
 (→ staff), `requester` (→ users, optional — machine tickets have none),
 `source` (`portal` | `agent` | `nats` | `webhook`), `origin_subject` (the
 full hub-side NATS subject, provenance for machine tickets), `dedupe_key`
-(unique when set — ingestion idempotency), `attachments` (≤6 files).
+(unique when set — ingestion idempotency), `attachments` (≤6 files),
+`category` (→ ticket_categories, optional — see below), `asset` / `location`
+(free text — "what/where" provenance, also set by machine intakes).
 
 Rules:
 
 - **read** — `StaffRule || (RequesterRule && customer = @request.auth.customer)`.
   A requester sees only their own company's tickets.
 - **create** — staff freely; a requester only for their own customer, with
-  `requester` = themselves, no `assignee`, and `source = 'portal'` (all
-  pinned in the create rule so the portal can't forge them).
+  `requester` = themselves, no `assignee`, `source = 'portal'`, and no
+  `category` (all pinned in the create rule so the portal can't forge them —
+  classification is a staff action).
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
 - **delete** — `AdminRule`.
+
+### `ticket_categories` — classification (added `1806000000`)
+
+Admin-managed list of what tickets are about: `name` (unique), `key` (unique
+slug — the stable handle used in queue filters and machine payloads, so
+renaming `name` never breaks them), `active` (retire without deleting
+history), `sort_order`, `color` (hex, rendered as a soft badge).
+
+A managed collection + relation rather than a `select` field because it is
+staff/admin-managed from the SPA: admins add/retire categories with no code
+deploy, renames touch one row (a select denormalizes the value onto every
+ticket), and it matches the app's grain. `asset`/`location` are deliberately
+free text, **not** a CMDB — the helpdesk keeps no asset catalog or sites
+collection.
+
+Rules: read `StaffRule` (staff read it for the picker; requesters never see
+it); create/update/delete `AdminRule`.
 
 ### `ticket_comments` — the thread
 
@@ -137,4 +157,6 @@ These unique indexes are load-bearing, not just performance:
   webhook retries; a duplicate key is acked/answered without a second ticket.
 - `customers.platform_org_id` (partial) — one customer per platform org.
 - `customers.webhook_token` (partial) — token uniquely selects a customer.
+- `ticket_categories.name` / `.key` — categories are distinct; `key` is the
+  stable filter/payload handle.
 - `notification_dedupe` (event, ref, UTC-day) — one send per event/ref/day.

@@ -38,8 +38,9 @@ leaves room for `comment` / `resolve` later without a subject migration.
   "body": "vibration sensor overcurrent",   // optional
   "priority": "high",                       // optional: low|normal|high|urgent (else normal)
   "dedupe_key": "pump-7-overcurrent",       // optional: idempotency key, unique per ticket
-  "thing": "pump-7",                        // optional provenance hint
-  "location": "line-3"                      // optional provenance hint
+  "thing": "pump-7",                        // optional: stored as the ticket's asset
+  "location": "line-3",                     // optional: stored as the ticket's location
+  "category": "iot-device"                  // optional: a ticket_categories key
 }
 ```
 
@@ -52,8 +53,12 @@ Behavior:
 - **`dedupe_key`**: if a ticket with the same key exists, the event is
   acked without creating a second ticket. Publishers should stamp a stable
   key for retry loops and flapping sources.
-- **`thing` / `location`** are folded into the ticket body as a trailing
-  `[thing: … · location: …]` line.
+- **`thing` / `location`** are stored as the ticket's structured `asset` /
+  `location` fields (so they're filterable and reportable, not just buried in
+  the body).
+- **`category`** is matched against a `ticket_categories` `key`; an unknown
+  or inactive key is ignored (the ticket is still created, unclassified) —
+  the same graceful-degradation stance as an unmapped org.
 - The full hub-side subject is recorded on the ticket as `origin_subject`;
   `source` is `nats`.
 - Malformed payloads and unsupported verbs are logged and acked (terminal —
@@ -94,7 +99,10 @@ selects the customer. This route is the future email-provider
   "body": "3rd floor copy room",         // optional
   "priority": "urgent",                  // optional: low|normal|high|urgent (else normal)
   "requester_email": "rita@acme.com",    // optional: links an existing portal account
-  "dedupe_key": "alarm-1234"             // optional: idempotency key
+  "dedupe_key": "alarm-1234",            // optional: idempotency key
+  "category": "hardware",                // optional: a ticket_categories key (unknown ignored)
+  "asset": "printer-3f",                 // optional: free-text device/system
+  "location": "3rd floor copy room"      // optional: free-text location
 }
 ```
 

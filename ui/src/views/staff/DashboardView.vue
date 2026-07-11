@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Ticket } from '@/types'
@@ -8,6 +8,12 @@ import TicketBadges from '@/components/TicketBadges.vue'
 const auth = useAuthStore()
 
 const counts = ref({ open: 0, in_progress: 0, waiting: 0, urgent: 0, unassigned: 0 })
+// Backlog aging: active tickets bucketed by age since creation. Answers
+// "how much is going stale?" — the dashboard's point-in-time counts can't.
+const aging = ref({ d0_2: 0, d3_7: 0, d7plus: 0 })
+// New-ticket inflow, oldest→newest over the last 8 weeks (created-based).
+const weeks = ref<number[]>([])
+const weekMax = computed(() => Math.max(...weeks.value, 1))
 const mine = ref<Ticket[]>([])
 const loading = ref(true)
 
@@ -30,6 +36,33 @@ async function load(quiet = false) {
       countOf(`assignee = '' && ${active}`),
     ])
     counts.value = { open, in_progress: inProgress, waiting, urgent, unassigned }
+
+    // Aging buckets (created-based) over the active backlog.
+    const now = Date.now()
+    const isoAgo = (days: number) => new Date(now - days * 864e5).toISOString().replace('T', ' ')
+    const c2 = isoAgo(2)
+    const c7 = isoAgo(7)
+    const [a02, a37, a7] = await Promise.all([
+      countOf(`${active} && created >= '${c2}'`),
+      countOf(`${active} && created < '${c2}' && created >= '${c7}'`),
+      countOf(`${active} && created < '${c7}'`),
+    ])
+    aging.value = { d0_2: a02, d3_7: a37, d7plus: a7 }
+
+    // Inflow: tickets created per week for the last 8 weeks, one fetch,
+    // bucketed client-side (oldest bucket first).
+    const recent = await pb.collection('tickets').getFullList<Ticket>({
+      filter: `created >= '${isoAgo(56)}'`,
+      fields: 'created',
+      sort: 'created',
+    })
+    const w = Array(8).fill(0)
+    for (const t of recent) {
+      const idx = Math.floor((now - new Date(t.created).getTime()) / (7 * 864e5))
+      if (idx >= 0 && idx < 8) w[7 - idx] += 1
+    }
+    weeks.value = w
+
     mine.value = (
       await pb.collection('tickets').getList<Ticket>(1, 10, {
         filter: `assignee = '${auth.record?.id}' && ${active}`,
@@ -93,6 +126,47 @@ onUnmounted(() => {
           <div class="stat-title">Unassigned</div>
           <div class="stat-value">{{ counts.unassigned }}</div>
         </router-link>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Backlog aging: how old is the open work? -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title text-base">Backlog age</h2>
+            <div class="stats stats-horizontal bg-base-100 w-full">
+              <div class="stat px-3">
+                <div class="stat-title text-xs">0–2 days</div>
+                <div class="stat-value text-2xl text-success">{{ aging.d0_2 }}</div>
+              </div>
+              <div class="stat px-3">
+                <div class="stat-title text-xs">3–7 days</div>
+                <div class="stat-value text-2xl text-warning">{{ aging.d3_7 }}</div>
+              </div>
+              <div class="stat px-3">
+                <div class="stat-title text-xs">Over 7 days</div>
+                <div class="stat-value text-2xl text-error">{{ aging.d7plus }}</div>
+              </div>
+            </div>
+            <p class="text-xs text-base-content/50">Active tickets by age since created.</p>
+          </div>
+        </div>
+
+        <!-- Inflow: new tickets per week, last 8 weeks. -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title text-base">New tickets / week</h2>
+            <div class="flex items-end gap-1 h-24 mt-2">
+              <div
+                v-for="(n, i) in weeks"
+                :key="i"
+                class="flex-1 bg-primary/70 hover:bg-primary rounded-t transition-all"
+                :style="{ height: Math.max((n / weekMax) * 100, 3) + '%' }"
+                :title="`${n} ticket${n === 1 ? '' : 's'}`"
+              ></div>
+            </div>
+            <p class="text-xs text-base-content/50">Last 8 weeks (oldest → newest). Hover for counts.</p>
+          </div>
+        </div>
       </div>
 
       <div class="card bg-base-100 shadow-sm">

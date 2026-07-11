@@ -33,6 +33,16 @@ export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'cl
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
 export type TicketSource = 'portal' | 'agent' | 'nats' | 'webhook'
 
+// Admin-managed classification (migrations/1806000000). `key` is the stable
+// slug used in filters and machine payloads; `name` is display-only.
+export interface TicketCategory extends BaseRecord {
+  name: string
+  key: string
+  active: boolean
+  sort_order: number
+  color?: string
+}
+
 export interface Ticket extends BaseRecord {
   number: number
   customer: string
@@ -45,6 +55,11 @@ export interface Ticket extends BaseRecord {
   source: TicketSource
   origin_subject?: string
   attachments?: string[]
+  // Classification: what the ticket is about (staff-set) + free-text asset /
+  // location provenance (also populated by machine intakes).
+  category?: string
+  asset?: string
+  location?: string
 }
 
 export interface TicketComment extends BaseRecord {

@@ -64,6 +64,12 @@ updates are staff-only by rule. A public requester comment on a
 itself already emailed staff. Tickets and comments carry **attachments**
 (≤6 files, 10 MB each); PB serves files only to callers who can view the
 owning record, so attachments on internal comments stay staff-only.
+Classification (migration `1806000000`): an optional `category` (admin-managed
+`ticket_categories` **relation**, not a select — staff-classified, the portal
+create rule blocks requesters via `category:isset = false`) plus free-text
+`asset`/`location` (the pragmatic "item" tier — provenance, deliberately not a
+CMDB; machine intakes populate them from the payload). `docs/data-model.md`
+covers it.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee) writes a `ticket_events` row rendered as a staff-only

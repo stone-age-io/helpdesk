@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Staff, Ticket, TicketStatus, TicketPriority } from '@/types'
+import type { Customer, Staff, Ticket, TicketCategory, TicketStatus, TicketPriority } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import { formatDistanceToNow } from 'date-fns'
@@ -17,6 +18,7 @@ const auth = useAuthStore()
 const tickets = ref<Ticket[]>([])
 const customers = ref<Customer[]>([])
 const staff = ref<Staff[]>([])
+const categories = ref<TicketCategory[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -31,6 +33,7 @@ const status = ref<'active' | TicketStatus | ''>((q('status') as any) || 'active
 const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const customer = ref(q('customer'))
 const assignee = ref(q('assignee'))
+const category = ref(q('category'))
 const search = ref(q('search'))
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
@@ -38,6 +41,7 @@ const staffOptions = computed(() => [
   { id: 'unassigned', label: 'Unassigned' },
   ...staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })),
 ])
+const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, label: c.name })))
 
 const mineActive = computed(() => assignee.value === auth.record?.id)
 function toggleMine() {
@@ -53,6 +57,7 @@ const columns: Column<Ticket>[] = [
   { key: 'number', label: '#', class: 'w-16', sortable: true },
   { key: 'title', label: 'Title', hideOnMobile: true },
   { key: 'expand.customer.name', label: 'Customer' },
+  { key: 'category', label: 'Category' },
   { key: 'status', label: 'Status', sortable: true },
   { key: 'priority', label: 'Priority', sortable: true },
   { key: 'expand.assignee.name', label: 'Assignee' },
@@ -107,9 +112,9 @@ async function exportCsv() {
     const rows = await pb.collection('tickets').getFullList<Ticket>({
       filter: buildFilter(),
       sort: '-created',
-      expand: 'customer,assignee,requester',
+      expand: 'customer,assignee,requester,category',
     })
-    const header = ['number', 'title', 'customer', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
+    const header = ['number', 'title', 'customer', 'category', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
     const lines = [header.join(',')]
     for (const t of rows) {
       lines.push(
@@ -117,6 +122,7 @@ async function exportCsv() {
           t.number,
           t.title,
           t.expand?.customer?.name || '',
+          t.expand?.category?.name || '',
           t.status,
           t.priority,
           t.expand?.assignee?.name || '',
@@ -162,6 +168,7 @@ function buildFilter(): string {
   else if (status.value) parts.push(`status = '${status.value}'`)
   if (priority.value) parts.push(`priority = '${priority.value}'`)
   if (customer.value) parts.push(`customer = '${customer.value}'`)
+  if (category.value) parts.push(`category = '${category.value}'`)
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
   else if (assignee.value) parts.push(`assignee = '${assignee.value}'`)
   if (search.value.trim()) {
@@ -191,7 +198,7 @@ async function load(quiet = false) {
     const result = await pb.collection('tickets').getList<Ticket>(page.value, perPage, {
       filter: buildFilter(),
       sort: buildSort(),
-      expand: 'customer,assignee',
+      expand: 'customer,assignee,category',
     })
     tickets.value = result.items
     totalPages.value = result.totalPages
@@ -206,12 +213,13 @@ async function loadFilterOptions() {
   try {
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
+    categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
   } catch {
     // Filter dropdowns degrade gracefully; the queue itself still loads.
   }
 }
 
-watch([status, priority, customer, assignee, sortKey, sortDir], () => {
+watch([status, priority, customer, category, assignee, sortKey, sortDir], () => {
   page.value = 1
   // Filter changes drop the selection — bulk-acting on rows that are no
   // longer visible would be a footgun. Paging keeps it (cross-page select).
@@ -225,6 +233,7 @@ interface SavedView {
   status: string
   priority: string
   customer: string
+  category: string
   assignee: string
   search: string
   sortKey: string
@@ -250,6 +259,7 @@ function saveCurrentView() {
     status: status.value,
     priority: priority.value,
     customer: customer.value,
+    category: category.value,
     assignee: assignee.value,
     search: search.value,
     sortKey: sortKey.value,
@@ -264,6 +274,7 @@ function applyView(v: SavedView) {
   status.value = v.status as any
   priority.value = v.priority as any
   customer.value = v.customer
+  category.value = v.category || ''
   assignee.value = v.assignee
   search.value = v.search
   sortKey.value = v.sortKey
@@ -329,6 +340,9 @@ onUnmounted(() => {
       </select>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="customer" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
+      </div>
+      <div class="w-full sm:w-52">
+        <SearchSelect v-model="category" :options="categoryOptions" size="sm" empty-label="All categories" placeholder="Category…" />
       </div>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="assignee" :options="staffOptions" size="sm" empty-label="Anyone" placeholder="Assignee…" />
@@ -397,6 +411,9 @@ onUnmounted(() => {
           <span class="font-mono text-base-content/60">#{{ item.number }}</span>
           {{ item.title }}
         </div>
+      </template>
+      <template #cell-category="{ item }">
+        <CategoryBadge :name="item.expand?.category?.name" :color="item.expand?.category?.color" />
       </template>
       <template #cell-status="{ value }"><TicketBadges :status="value" /></template>
       <template #cell-priority="{ value }"><TicketBadges :priority="value" /></template>
