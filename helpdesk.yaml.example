@@ -1,0 +1,18 @@
+# Helpdesk configuration. Copy to helpdesk.yaml (or set HELPDESK_CONFIG).
+# Every key can be overridden by env: HELPDESK_DATA_DIR, HELPDESK_NATS_URLS, ...
+
+# PocketBase data directory (SQLite database, uploads).
+data_dir: pb_data
+
+# NATS connection to the platform operator's hub account. Leave urls empty to
+# run without NATS (tickets then arrive only via portal/agent/webhook).
+#
+# The creds file is a Stone-Age.io-issued nats_user in the hub account,
+# permission-scoped to `helpdesk.>`. Managed customer orgs' ticket events are
+# imported into the hub as helpdesk.{platform_org_id}.> by the platform.
+nats:
+  urls: []
+  # urls: ["nats://localhost:4222"]
+  creds_file: ""
+  stream: HELPDESK_EVENTS
+  durable: helpdesk-ingest

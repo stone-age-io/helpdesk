@@ -1,0 +1,7 @@
+pb_data/
+helpdesk.yaml
+*.creds
+ui/node_modules/
+ui/dist/
+helpdesk
+helpdesk.exe
