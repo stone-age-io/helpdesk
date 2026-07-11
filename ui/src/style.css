@@ -1,3 +1,64 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* The staff shell owns the viewport height and <main> is the only scroller.
+   Killing overscroll at the root stops the mobile rubber-band that "pulls up"
+   the shell and reveals a bar of unthemed background behind it. */
+html,
+body {
+  overscroll-behavior: none;
+}
+body {
+  background-color: oklch(var(--b2));
+}
+
+/* Snappy taps on touch screens: we allow pinch-zoom (no user-scalable=no),
+   which re-enables the legacy ~300ms double-tap-zoom delay on mobile
+   browsers. `manipulation` disables double-tap zoom on these controls (page
+   pinch-zoom still works) so taps register immediately. */
+.btn,
+button,
+a,
+label,
+summary,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* Device safe areas: with viewport-fit=cover the page draws under the notch /
+   home indicator, so chrome that lives at the edges opts back in. env()
+   resolves to 0 on devices without insets, so these are no-ops elsewhere. */
+.pad-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.pad-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Comfortable touch targets on small screens, where only the stacked/card
+   layout shows (the dense desktop table is hidden below lg, so its sizing is
+   untouched). min-height wins over daisyUI's fixed btn height when larger. */
+@media (max-width: 1023px) {
+  .btn-xs,
+  .btn-sm {
+    min-height: 2.75rem;
+  }
+}
+
+/* Prevent mobile-browser zoom on input focus by keeping a 16px minimum font
+   size; restore the smaller daisyUI sizing on desktop. The breakpoint must
+   match the lg mobile/desktop split above — reverting earlier (e.g. 768px)
+   would re-enable iOS focus-zoom on tablets that still get the card layout. */
+input,
+textarea,
+select {
+  font-size: 16px !important;
+}
+@media (min-width: 1024px) {
+  input,
+  textarea,
+  select {
+    font-size: 0.875rem !important;
+  }
+}

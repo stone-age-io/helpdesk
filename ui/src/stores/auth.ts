@@ -16,6 +16,10 @@ export const useAuthStore = defineStore('auth', () => {
   const isStaff = computed(() => record.value?.collectionName === 'staff')
   const isAdmin = computed(() => isStaff.value && record.value?.role === 'admin')
   const isRequester = computed(() => record.value?.collectionName === 'users')
+  // Avatar initial for the shells (sidebar, portal navbar).
+  const initial = computed(() =>
+    (record.value?.name || record.value?.email || '?').slice(0, 1).toUpperCase(),
+  )
 
   async function login(email: string, password: string) {
     // Try staff first, fall back to requesters. Both failing surfaces the
@@ -32,5 +36,5 @@ export const useAuthStore = defineStore('auth', () => {
     pb.authStore.clear()
   }
 
-  return { record, isAuthenticated, isStaff, isAdmin, isRequester, login, logout }
+  return { record, isAuthenticated, isStaff, isAdmin, isRequester, initial, login, logout }
 })

@@ -3,8 +3,17 @@ import { onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Staff } from '@/types'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import ActiveBadge from '@/components/ActiveBadge.vue'
 
 const auth = useAuthStore()
+
+const columns: Column<Staff>[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'role', label: 'Role' },
+  { key: 'active', label: 'Status' },
+]
 
 const staff = ref<Staff[]>([])
 const loading = ref(true)
@@ -127,48 +136,39 @@ onMounted(load)
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <div v-else class="overflow-x-auto bg-base-100 rounded-lg shadow-sm">
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in staff" :key="s.id">
-            <td class="font-medium">{{ s.name }}<span v-if="isSelf(s)" class="badge badge-ghost badge-xs ml-2">you</span></td>
-            <td>{{ s.email }}</td>
-            <td>
-              <!-- Guard against locking yourself out: your own role is read-only here. -->
-              <select
-                v-if="!isSelf(s)"
-                class="select select-bordered select-xs"
-                :value="s.role"
-                @change="setRole(s, ($event.target as HTMLSelectElement).value)"
-              >
-                <option value="agent">agent</option>
-                <option value="admin">admin</option>
-              </select>
-              <span v-else class="badge badge-sm">{{ s.role }}</span>
-            </td>
-            <td>
-              <span class="badge badge-sm" :class="s.active ? 'badge-success' : 'badge-ghost'">
-                {{ s.active ? 'active' : 'inactive' }}
-              </span>
-            </td>
-            <td class="text-right whitespace-nowrap">
-              <button class="btn btn-ghost btn-xs" @click="resetPassword(s)">Reset password</button>
-              <button v-if="!isSelf(s)" class="btn btn-ghost btn-xs" @click="toggleActive(s)">
-                {{ s.active ? 'Deactivate' : 'Activate' }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <ResponsiveList v-else :items="staff" :columns="columns" :clickable="false">
+      <template #cell-name="{ item }">
+        <span class="font-medium text-sm">{{ item.name }}</span>
+        <span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+      </template>
+      <template #card-name="{ item }">
+        <div class="text-sm font-bold truncate">
+          {{ item.name }}<span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+        </div>
+      </template>
+      <!-- Guard against locking yourself out: your own role is read-only here. -->
+      <template #cell-role="{ item }">
+        <select
+          v-if="!isSelf(item)"
+          class="select select-bordered select-xs"
+          :value="item.role"
+          @change="setRole(item, ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="agent">agent</option>
+          <option value="admin">admin</option>
+        </select>
+        <span v-else class="badge badge-sm">{{ item.role }}</span>
+      </template>
+      <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
+      <template #actions="{ item }">
+        <button class="btn btn-ghost btn-xs" @click="resetPassword(item)">Reset password</button>
+        <button v-if="!isSelf(item)" class="btn btn-ghost btn-xs" @click="toggleActive(item)">
+          {{ item.active ? 'Deactivate' : 'Activate' }}
+        </button>
+      </template>
+      <template #empty>
+        <span class="text-base-content/60">No staff accounts.</span>
+      </template>
+    </ResponsiveList>
   </div>
 </template>

@@ -2,6 +2,17 @@
 import { computed, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import type { NotificationSendLog, NotificationTemplate } from '@/types'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+
+// Event first: ResponsiveList promotes the first column to the mobile card
+// header, and a card headlined by a raw timestamp identifies nothing.
+const sendColumns: Column<NotificationSendLog>[] = [
+  { key: 'event_type', label: 'Event' },
+  { key: 'created', label: 'When', class: 'whitespace-nowrap', format: (v) => new Date(v).toLocaleString() },
+  { key: 'recipient', label: 'Recipient', mobileLabel: 'To' },
+  { key: 'status', label: 'Status' },
+  { key: 'payload_summary', label: 'Context' },
+]
 
 const templates = ref<NotificationTemplate[]>([])
 const selectedType = ref('')
@@ -227,27 +238,18 @@ onMounted(load)
     <div v-if="!loading" class="card bg-base-100 shadow-sm">
       <div class="card-body">
         <h2 class="card-title text-base">Recent sends</h2>
-        <div class="overflow-x-auto">
-          <table class="table table-xs">
-            <thead>
-              <tr><th>When</th><th>Event</th><th>Recipient</th><th>Status</th><th>Context</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in sends" :key="s.id">
-                <td class="whitespace-nowrap">{{ new Date(s.created).toLocaleString() }}</td>
-                <td><code class="text-xs">{{ s.event_type }}</code></td>
-                <td>{{ s.recipient || '—' }}</td>
-                <td>
-                  <span class="badge badge-xs" :class="s.status === 'sent' ? 'badge-success' : s.status === 'failed' ? 'badge-error' : 'badge-ghost'" :title="s.error">
-                    {{ s.status }}
-                  </span>
-                </td>
-                <td class="text-base-content/60">{{ s.payload_summary }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p v-if="sends.length === 0" class="text-sm text-base-content/50">Nothing sent yet.</p>
+        <ResponsiveList :items="sends" :columns="sendColumns" :clickable="false">
+          <template #cell-event_type="{ value }"><code class="text-xs">{{ value }}</code></template>
+          <template #cell-status="{ item }">
+            <span class="badge badge-xs" :class="item.status === 'sent' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : 'badge-ghost'" :title="item.error">
+              {{ item.status }}
+            </span>
+          </template>
+          <template #cell-payload_summary="{ value }"><span class="text-sm text-base-content/60">{{ value }}</span></template>
+          <template #empty>
+            <span class="text-sm text-base-content/50">Nothing sent yet.</span>
+          </template>
+        </ResponsiveList>
       </div>
     </div>
   </div>

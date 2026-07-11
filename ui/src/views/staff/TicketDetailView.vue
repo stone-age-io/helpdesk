@@ -113,7 +113,10 @@ onMounted(load)
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-    <div class="flex flex-col lg:flex-row gap-4 items-start">
+    <!-- Two columns only from xl up: at lg the permanent nav sidebar already
+         takes ~16rem, so a side-by-side ticket sidebar would squeeze the
+         thread to a sliver. -->
+    <div class="flex flex-col xl:flex-row gap-4 items-start">
       <!-- Main column -->
       <div class="flex-1 space-y-4 w-full">
         <div class="card bg-base-100 shadow-sm">
@@ -174,7 +177,7 @@ onMounted(load)
       </div>
 
       <!-- Sidebar -->
-      <div class="w-full lg:w-80 space-y-4">
+      <div class="w-full xl:w-80 space-y-4">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body py-4 px-4 space-y-3">
             <div>

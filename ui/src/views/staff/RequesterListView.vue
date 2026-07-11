@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer, Requester } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import ActiveBadge from '@/components/ActiveBadge.vue'
 
 const auth = useAuthStore()
+
+const columns: Column<Requester>[] = [
+  { key: 'email', label: 'Email' },
+  { key: 'name', label: 'Name' },
+  { key: 'expand.customer.name', label: 'Customer' },
+  { key: 'active', label: 'Status' },
+]
 
 const requesters = ref<Requester[]>([])
 const customers = ref<Customer[]>([])
@@ -102,9 +111,13 @@ async function resetPassword(r: Requester) {
   }
 }
 
+// The edit panel renders above the list, which can be off-screen when the
+// triggering row is below the fold — bring it into view.
+const editCard = ref<HTMLElement | null>(null)
 function startEdit(r: Requester) {
   editing.value = r
   editForm.value = { name: r.name || '', email: r.email, customer: r.customer }
+  nextTick(() => editCard.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
 }
 
 async function saveEdit() {
@@ -159,56 +172,43 @@ onMounted(load)
 
     <input v-model="search" type="search" placeholder="Filter by email, name, customer…" class="input input-bordered input-sm w-full sm:w-72" />
 
-    <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
-    <div v-else-if="filtered.length === 0" class="text-center p-12 text-base-content/60">No requester accounts match.</div>
-
-    <div v-else class="overflow-x-auto bg-base-100 rounded-lg shadow-sm">
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Name</th>
-            <th>Customer</th>
-            <th>Status</th>
-            <th v-if="auth.isAdmin" class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="r in filtered" :key="r.id">
-            <tr>
-              <td>{{ r.email }}</td>
-              <td>{{ r.name || '—' }}</td>
-              <td>{{ r.expand?.customer?.name || '—' }}</td>
-              <td>
-                <span class="badge badge-sm" :class="r.active ? 'badge-success' : 'badge-ghost'">
-                  {{ r.active ? 'active' : 'inactive' }}
-                </span>
-              </td>
-              <td v-if="auth.isAdmin" class="text-right whitespace-nowrap">
-                <button class="btn btn-ghost btn-xs" @click="editing?.id === r.id ? (editing = null) : startEdit(r)">
-                  {{ editing?.id === r.id ? 'Cancel' : 'Edit' }}
-                </button>
-                <button class="btn btn-ghost btn-xs" @click="resetPassword(r)">Reset password</button>
-                <button class="btn btn-ghost btn-xs" @click="toggleActive(r)">
-                  {{ r.active ? 'Deactivate' : 'Activate' }}
-                </button>
-              </td>
-            </tr>
-            <tr v-if="editing?.id === r.id" class="bg-base-200/50">
-              <td :colspan="auth.isAdmin ? 5 : 4">
-                <form class="flex flex-wrap gap-2 items-start py-1" @submit.prevent="saveEdit">
-                  <input v-model="editForm.email" type="email" placeholder="email" class="input input-bordered input-sm w-56" required :disabled="saving" />
-                  <input v-model="editForm.name" type="text" placeholder="name" class="input input-bordered input-sm w-44" :disabled="saving" />
-                  <div class="w-56">
-                    <SearchSelect v-model="editForm.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
-                  </div>
-                  <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !editForm.email || !editForm.customer">Save</button>
-                </form>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+    <!-- Edit panel: lives above the list (an inline table row can't render
+         inside the mobile card layout). -->
+    <div v-if="editing" ref="editCard" class="card bg-base-100 shadow-sm">
+      <div class="card-body p-4 space-y-2">
+        <h2 class="card-title text-sm">Edit {{ editing.email }}</h2>
+        <form class="flex flex-col sm:flex-row sm:flex-wrap gap-2 items-stretch sm:items-start" @submit.prevent="saveEdit">
+          <input v-model="editForm.email" type="email" placeholder="email" class="input input-bordered input-sm w-full sm:w-56" required :disabled="saving" />
+          <input v-model="editForm.name" type="text" placeholder="name" class="input input-bordered input-sm w-full sm:w-44" :disabled="saving" />
+          <div class="w-full sm:w-56">
+            <SearchSelect v-model="editForm.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !editForm.email || !editForm.customer">Save</button>
+            <button type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="editing = null">Cancel</button>
+          </div>
+        </form>
+      </div>
     </div>
+
+    <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
+
+    <ResponsiveList v-else :items="filtered" :columns="columns" :clickable="false">
+      <template #cell-email="{ value }"><span class="text-sm">{{ value }}</span></template>
+      <template #card-email="{ value }"><div class="text-sm font-bold truncate">{{ value }}</div></template>
+      <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
+      <template v-if="auth.isAdmin" #actions="{ item }">
+        <button class="btn btn-ghost btn-xs" @click="editing?.id === item.id ? (editing = null) : startEdit(item)">
+          {{ editing?.id === item.id ? 'Cancel' : 'Edit' }}
+        </button>
+        <button class="btn btn-ghost btn-xs" @click="resetPassword(item)">Reset password</button>
+        <button class="btn btn-ghost btn-xs" @click="toggleActive(item)">
+          {{ item.active ? 'Deactivate' : 'Activate' }}
+        </button>
+      </template>
+      <template #empty>
+        <span class="text-base-content/60">No requester accounts match.</span>
+      </template>
+    </ResponsiveList>
   </div>
 </template>

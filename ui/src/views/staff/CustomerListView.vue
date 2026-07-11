@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer } from '@/types'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import ActiveBadge from '@/components/ActiveBadge.vue'
 
 const auth = useAuthStore()
+const router = useRouter()
+
+const columns: Column<Customer>[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'platform_org_id', label: 'Platform Org', mobileLabel: 'Org' },
+  { key: 'active', label: 'Active', mobileLabel: 'Status' },
+]
 
 const customers = ref<Customer[]>([])
 const loading = ref(true)
@@ -60,34 +70,19 @@ onMounted(load)
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
     <div v-else-if="error" class="alert alert-error">{{ error }}</div>
-    <div v-else-if="customers.length === 0" class="text-center p-12 text-base-content/60">No customers yet.</div>
 
-    <div v-else class="overflow-x-auto bg-base-100 rounded-lg shadow-sm">
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Platform Org</th>
-            <th>Active</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="c in customers"
-            :key="c.id"
-            class="hover cursor-pointer"
-            @click="$router.push(`/staff/customers/${c.id}`)"
-          >
-            <td class="font-medium">{{ c.name }}</td>
-            <td class="font-mono text-xs">{{ c.platform_org_id || '—' }}</td>
-            <td>
-              <span class="badge badge-sm" :class="c.active ? 'badge-success' : 'badge-ghost'">
-                {{ c.active ? 'active' : 'inactive' }}
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <ResponsiveList
+      v-else
+      :items="customers"
+      :columns="columns"
+      @row-click="(c) => router.push(`/staff/customers/${c.id}`)"
+    >
+      <template #cell-name="{ value }"><span class="font-medium text-sm">{{ value }}</span></template>
+      <template #cell-platform_org_id="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
+      <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
+      <template #empty>
+        <span class="text-base-content/60">No customers yet.</span>
+      </template>
+    </ResponsiveList>
   </div>
 </template>

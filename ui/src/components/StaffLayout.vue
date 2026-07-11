@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import AppSidebar from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
-const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const showPassword = ref(false)
 
-function logout() {
-  auth.logout()
-  router.push('/login')
-}
+// Any navigation dismisses the mobile drawer — sidebar links close it
+// themselves, but keyboard shortcuts and other programmatic pushes would
+// otherwise change the page behind the still-open overlay.
+watch(
+  () => route.fullPath,
+  () => {
+    const drawer = document.getElementById('sidebar-drawer') as HTMLInputElement | null
+    if (drawer) drawer.checked = false
+  },
+)
 
 // Global shortcuts: '/' focuses the queue search (navigating there first
 // if needed), 'n' opens the new-ticket form. Suppressed while typing in
@@ -45,34 +50,43 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="min-h-screen bg-base-200">
-    <div class="navbar bg-base-100 shadow-sm px-4">
-      <div class="flex-1 gap-1">
-        <span class="text-xl font-bold mr-4">Helpdesk</span>
-        <router-link to="/staff/dashboard" class="btn btn-ghost btn-sm" active-class="btn-active">Dashboard</router-link>
-        <router-link to="/staff/tickets" class="btn btn-ghost btn-sm" active-class="btn-active">Tickets</router-link>
-        <router-link to="/staff/customers" class="btn btn-ghost btn-sm" active-class="btn-active">Customers</router-link>
-        <router-link to="/staff/requesters" class="btn btn-ghost btn-sm" active-class="btn-active">Requesters</router-link>
-        <router-link v-if="auth.isAdmin" to="/staff/staff" class="btn btn-ghost btn-sm" active-class="btn-active">Staff</router-link>
-        <router-link v-if="auth.isAdmin" to="/staff/notifications" class="btn btn-ghost btn-sm" active-class="btn-active">Notifications</router-link>
-      </div>
-      <div class="flex-none gap-2">
-        <ThemeToggle />
-        <div class="dropdown dropdown-end">
-          <div tabindex="0" role="button" class="btn btn-ghost btn-sm">
-            {{ auth.record?.name || auth.record?.email }}
-            <span class="badge badge-ghost badge-sm">{{ auth.record?.role }}</span>
+  <!-- daisyUI drawer shell: overlay sidebar below lg (checkbox-driven, no
+       JS), permanent sidebar column on lg+. <main> is the only scroller. -->
+  <div class="drawer lg:drawer-open h-dvh">
+    <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
+
+    <div class="drawer-content flex flex-col min-h-0">
+      <!-- Sticky header, mobile only (sidebar is permanent on lg+). A 3-column
+           grid (1fr · auto · 1fr) keeps the brand dead-center regardless of
+           how many buttons flank it. -->
+      <header class="navbar bg-base-100 border-b border-base-300 min-h-[4rem] lg:hidden sticky top-0 z-30 pad-safe-top">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full">
+          <div class="justify-self-start">
+            <label for="sidebar-drawer" class="btn btn-square btn-ghost" aria-label="Open navigation menu">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </label>
           </div>
-          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1 z-30">
-            <li><a @click="showPassword = true">Change password</a></li>
-            <li><a @click="logout">Sign out</a></li>
-          </ul>
+          <span class="justify-self-center font-bold text-lg">Helpdesk</span>
+          <div class="justify-self-end">
+            <ThemeToggle />
+          </div>
         </div>
-      </div>
+      </header>
+
+      <main class="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-base-200">
+        <div class="mx-auto w-full max-w-7xl p-4 lg:p-6 pad-safe-bottom">
+          <router-view />
+        </div>
+      </main>
     </div>
-    <main class="p-4 md:p-6 max-w-7xl mx-auto">
-      <router-view />
-    </main>
+
+    <div class="drawer-side z-40">
+      <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
+      <AppSidebar @change-password="showPassword = true" />
+    </div>
+
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
   </div>
 </template>
