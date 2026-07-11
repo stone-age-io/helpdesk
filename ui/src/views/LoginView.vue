@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -36,7 +37,10 @@ async function submit() {
   <div class="min-h-screen bg-base-200 flex items-center justify-center p-4">
     <div class="card bg-base-100 shadow-xl w-full max-w-sm">
       <div class="card-body">
-        <h1 class="card-title text-2xl mb-2">Helpdesk</h1>
+        <div class="flex justify-between items-start">
+          <h1 class="card-title text-2xl mb-2">Helpdesk</h1>
+          <ThemeToggle />
+        </div>
         <form class="space-y-4" @submit.prevent="submit">
           <div class="form-control">
             <label class="label"><span class="label-text">Email</span></label>

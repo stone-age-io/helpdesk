@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Ticket } from '@/types'
@@ -16,8 +16,10 @@ async function countOf(filter: string): Promise<number> {
   return res.totalItems
 }
 
-async function load() {
-  loading.value = true
+// quiet=true refreshes in place without the spinner swap — used by the
+// realtime subscription so live updates don't flash the page.
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
   try {
     const active = `status != 'resolved' && status != 'closed'`
     const [open, inProgress, waiting, urgent, unassigned] = await Promise.all([
@@ -36,11 +38,30 @@ async function load() {
       })
     ).items
   } finally {
-    loading.value = false
+    if (!quiet) loading.value = false
   }
 }
 
-onMounted(load)
+// Live counts: any ticket change refreshes after a short collapse window.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+let unsubscribe: (() => void) | null = null
+
+onMounted(async () => {
+  await load()
+  try {
+    unsubscribe = await pb.collection('tickets').subscribe('*', () => {
+      clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => load(true), 800)
+    })
+  } catch {
+    // Realtime is progressive enhancement.
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(reloadTimer)
+  unsubscribe?.()
+})
 </script>
 
 <template>

@@ -9,6 +9,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	pbmailer "github.com/pocketbase/pocketbase/tools/mailer"
 
 	"github.com/stone-age-io/helpdesk/internal/authz"
 )
@@ -25,6 +26,7 @@ func RegisterRoutes(e *core.ServeEvent) {
 	e.Router.GET("/api/helpdesk/notifications", listTemplates)
 	e.Router.PATCH("/api/helpdesk/notifications/{event_type}", updateTemplate)
 	e.Router.GET("/api/helpdesk/notifications/{event_type}/defaults", templateDefaults)
+	e.Router.POST("/api/helpdesk/notifications/{event_type}/test", sendTestEmail)
 }
 
 // templateDTO is the JSON shape returned to the staff SPA. Mirrors the
@@ -202,6 +204,61 @@ func normalizeRecipients(in Recipients) (Recipients, error) {
 		out.Extras = append(out.Extras, addr)
 	}
 	return out, nil
+}
+
+// sendTestEmail renders the template against SampleContext and mails the
+// calling admin — a preflight for template edits. The request body may
+// carry unsaved subject/body overrides so the admin can test before
+// saving; omitted fields fall back to the stored row. Render failures are
+// 400s; a transport failure is reported in-band ({sent:false, error}) so
+// the SPA can show "SMTP not configured" without treating it as a crash.
+// Deliberately synchronous and not written to the send log — a test is
+// operator feedback, not audit history.
+func sendTestEmail(re *core.RequestEvent) error {
+	if err := requireAdmin(re); err != nil {
+		return err
+	}
+	eventType := re.Request.PathValue("event_type")
+
+	rec, err := re.App.FindFirstRecordByFilter(
+		CollectionName, "event_type = {:t}", dbx.Params{"t": eventType})
+	if err != nil || rec == nil {
+		return re.NotFoundError("template not found", nil)
+	}
+
+	var body struct {
+		Subject *string `json:"subject,omitempty"`
+		Body    *string `json:"body,omitempty"`
+	}
+	if err := re.BindBody(&body); err != nil {
+		return re.BadRequestError("invalid request body", err)
+	}
+	subjectSrc := rec.GetString("subject")
+	bodySrc := rec.GetString("body")
+	if body.Subject != nil {
+		subjectSrc = *body.Subject
+	}
+	if body.Body != nil {
+		bodySrc = *body.Body
+	}
+
+	subject, rendered, err := Render(subjectSrc, bodySrc, SampleContext())
+	if err != nil {
+		return re.BadRequestError(err.Error(), nil)
+	}
+
+	to := re.Auth.GetString("email")
+	settings := re.App.Settings()
+	sendErr := re.App.NewMailClient().Send(&pbmailer.Message{
+		From:    mail.Address{Address: settings.Meta.SenderAddress, Name: settings.Meta.SenderName},
+		To:      []mail.Address{{Address: to}},
+		Subject: "[TEST] " + subject,
+		Text:    rendered,
+	})
+	if sendErr != nil {
+		return re.JSON(http.StatusOK, map[string]any{"sent": false, "error": sendErr.Error()})
+	}
+	return re.JSON(http.StatusOK, map[string]any{"sent": true, "to": to, "subject": subject})
 }
 
 // templateDefaults returns the compiled-in subject + body for the given

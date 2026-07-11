@@ -6,28 +6,9 @@ import (
 	"time"
 )
 
-// sampleContext returns a fully-populated TicketContext so every default
-// template has the fields it references.
-func sampleContext() TicketContext {
-	return TicketContext{
-		Ticket: TicketInfo{
-			ID:        "t1",
-			Number:    42,
-			Title:     "Pump fault on line 3",
-			Body:      "Vibration sensor reports repeated overcurrent.",
-			Status:    "in_progress",
-			OldStatus: "open",
-			Priority:  "high",
-			Source:    "nats",
-			URL:       "https://helpdesk.example.com/t/t1",
-		},
-		Customer:  "Acme Corp",
-		Requester: PersonInfo{Name: "Rita Requester", Email: "rita@acme.example"},
-		Assignee:  PersonInfo{Name: "Sam Staff", Email: "sam@816tech.example"},
-		Comment:   &CommentInfo{AuthorName: "Sam Staff", Body: "Heading out tomorrow.", ByStaff: true},
-		Visit:     &VisitInfo{ScheduledAt: "2026-07-14 14:00:00.000Z", AssigneeName: "Sam Staff", Notes: "Bring spare motor"},
-	}
-}
+// sampleContext is the shared preview payload — the render regression
+// tests exercise the same context the test-send route uses.
+func sampleContext() TicketContext { return SampleContext() }
 
 // TestDefaultsRenderAgainstTicketContext is the regression test that
 // catches "operator field reference broke" — every seeded default must

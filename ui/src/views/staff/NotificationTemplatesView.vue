@@ -84,6 +84,29 @@ async function save() {
   }
 }
 
+// Send the CURRENT editor contents (saved or not) rendered against sample
+// data to the logged-in admin — a preflight before saving.
+const testing = ref(false)
+const testResult = ref('')
+async function sendTest() {
+  if (!selected.value) return
+  testing.value = true
+  testResult.value = ''
+  error.value = ''
+  try {
+    const res = await pb.send(`/api/helpdesk/notifications/${selected.value.event_type}/test`, {
+      method: 'POST',
+      body: { subject: form.value.subject, body: form.value.body },
+    })
+    testResult.value = res.sent ? `Sent to ${res.to}` : `Send failed: ${res.error}`
+  } catch (err: any) {
+    testResult.value = ''
+    error.value = err?.data?.message || err?.message || 'Test send failed'
+  } finally {
+    testing.value = false
+  }
+}
+
 // Refill the textareas from the compiled-in defaults; nothing persists
 // until Save is clicked.
 async function resetToDefaults() {
@@ -180,9 +203,16 @@ onMounted(load)
             <textarea v-model="form.extras" rows="2" class="textarea textarea-bordered textarea-sm font-mono" placeholder="ops@example.com" :disabled="saving"></textarea>
           </div>
 
-          <div class="flex justify-between items-center pt-1">
-            <button class="btn btn-ghost btn-sm" :disabled="saving" @click="resetToDefaults">Reset to defaults</button>
+          <div class="flex flex-wrap justify-between items-center gap-2 pt-1">
             <div class="flex items-center gap-2">
+              <button class="btn btn-ghost btn-sm" :disabled="saving" @click="resetToDefaults">Reset to defaults</button>
+              <button class="btn btn-ghost btn-sm" :disabled="testing" @click="sendTest">
+                <span v-if="testing" class="loading loading-spinner loading-xs"></span>
+                Send test to me
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <span v-if="testResult" class="text-sm" :class="testResult.startsWith('Sent') ? 'text-success' : 'text-error'">{{ testResult }}</span>
               <span v-if="savedFlash" class="text-success text-sm">Saved</span>
               <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
                 <span v-if="saving" class="loading loading-spinner loading-xs"></span>

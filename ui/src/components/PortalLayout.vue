@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -23,6 +24,7 @@ function logout() {
         <router-link to="/portal/tickets/new" class="btn btn-ghost btn-sm" active-class="btn-active">New Ticket</router-link>
       </div>
       <div class="flex-none gap-2">
+        <ThemeToggle />
         <div class="dropdown dropdown-end">
           <div tabindex="0" role="button" class="btn btn-ghost btn-sm">{{ auth.record?.name || auth.record?.email }}</div>
           <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1 z-30">

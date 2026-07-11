@@ -81,3 +81,28 @@ func (c TicketContext) AssigneeEmail() string {
 func (c TicketContext) PayloadSummary() string {
 	return fmt.Sprintf("#%d · %s", c.Ticket.Number, c.Customer)
 }
+
+// SampleContext returns a fully-populated TicketContext for previewing:
+// every field the default templates reference is set, so any event type's
+// template renders against it. Used by the test-send route and the render
+// regression tests.
+func SampleContext() TicketContext {
+	return TicketContext{
+		Ticket: TicketInfo{
+			ID:        "sample1",
+			Number:    42,
+			Title:     "Pump fault on line 3",
+			Body:      "Vibration sensor reports repeated overcurrent.",
+			Status:    "in_progress",
+			OldStatus: "open",
+			Priority:  "high",
+			Source:    "nats",
+			URL:       "https://helpdesk.example.com/t/sample1",
+		},
+		Customer:  "Acme Corp",
+		Requester: PersonInfo{Name: "Rita Requester", Email: "rita@acme.example"},
+		Assignee:  PersonInfo{Name: "Sam Staff", Email: "sam@816tech.example"},
+		Comment:   &CommentInfo{AuthorName: "Sam Staff", Body: "Heading out tomorrow with a replacement motor.", ByStaff: true},
+		Visit:     &VisitInfo{ScheduledAt: "2026-07-14 14:00:00.000Z", AssigneeName: "Sam Staff", Notes: "Bring spare motor"},
+	}
+}
