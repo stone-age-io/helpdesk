@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
@@ -7,16 +7,15 @@ import type { Ticket, TicketPriority, TicketStatus } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import Pager from '@/components/Pager.vue'
 import { formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-// Lite version of the staff queue: the collection rules scope the list to
-// this requester's customer and those lists are small, so we load once and
-// filter client-side — instant filters, and CSV export is just the filtered
-// array with no second fetch.
+// The collection rules already scope this list to the requester's customer;
+// we page and filter server-side so a long-lived company's history stays fast.
 const columns: Column<Ticket>[] = [
   { key: 'number', label: '#', class: 'w-16' },
   { key: 'title', label: 'Title', hideOnMobile: true },
@@ -29,6 +28,10 @@ const tickets = ref<Ticket[]>([])
 const loading = ref(true)
 const error = ref('')
 
+const page = ref(1)
+const totalPages = ref(1)
+const perPage = 30
+
 // Filters. Status defaults to "active" (everything not resolved/closed);
 // initial values may come from the URL query (dashboard tiles link here).
 const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
@@ -37,24 +40,30 @@ const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const search = ref('')
 const mineOnly = ref(false)
 
-const filtered = computed(() => {
-  const text = search.value.trim().toLowerCase()
-  return tickets.value.filter((t) => {
-    if (status.value === 'active') {
-      if (t.status === 'resolved' || t.status === 'closed') return false
-    } else if (status.value && t.status !== status.value) return false
-    if (priority.value && t.priority !== priority.value) return false
-    if (mineOnly.value && t.requester !== auth.record?.id) return false
-    if (text && !t.title.toLowerCase().includes(text) && !(t.body || '').toLowerCase().includes(text)) return false
-    return true
-  })
-})
+function buildFilter(): string {
+  const parts: string[] = []
+  if (status.value === 'active') parts.push(`status != 'resolved' && status != 'closed'`)
+  else if (status.value) parts.push(`status = '${status.value}'`)
+  if (priority.value) parts.push(`priority = '${priority.value}'`)
+  if (mineOnly.value && auth.record?.id) parts.push(`requester = '${auth.record.id}'`)
+  if (search.value.trim()) {
+    const raw = search.value.trim().replace(/'/g, "\\'")
+    parts.push(`(title ~ '${raw}' || body ~ '${raw}')`)
+  }
+  return parts.join(' && ')
+}
 
+// quiet=true refreshes in place without the spinner swap (realtime updates).
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   error.value = ''
   try {
-    tickets.value = await pb.collection('tickets').getFullList<Ticket>({ sort: '-created' })
+    const res = await pb.collection('tickets').getList<Ticket>(page.value, perPage, {
+      filter: buildFilter(),
+      sort: '-created',
+    })
+    tickets.value = res.items
+    totalPages.value = res.totalPages
   } catch (err: any) {
     error.value = err?.message || 'Failed to load tickets'
   } finally {
@@ -62,23 +71,48 @@ async function load(quiet = false) {
   }
 }
 
-// --- CSV export of the current filter — the portal "report" ---
+watch([status, priority, mineOnly], () => {
+  page.value = 1
+  load()
+})
+watch(page, () => load())
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    load()
+  }, 300)
+})
+
+// --- CSV export of the current filter (all pages) — the portal "report" ---
 function csvEscape(v: unknown): string {
   const s = String(v ?? '')
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
-function exportCsv() {
-  const header = ['number', 'title', 'status', 'priority', 'created', 'updated']
-  const lines = [header.join(',')]
-  for (const t of filtered.value) {
-    lines.push([t.number, t.title, t.status, t.priority, t.created, t.updated || ''].map(csvEscape).join(','))
+const exporting = ref(false)
+async function exportCsv() {
+  exporting.value = true
+  error.value = ''
+  try {
+    const rows = await pb.collection('tickets').getFullList<Ticket>({ filter: buildFilter(), sort: '-created' })
+    const header = ['number', 'title', 'status', 'priority', 'created', 'updated']
+    const lines = [header.join(',')]
+    for (const t of rows) {
+      lines.push([t.number, t.title, t.status, t.priority, t.created, t.updated || ''].map(csvEscape).join(','))
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  } catch (err: any) {
+    error.value = err?.message || 'Export failed'
+  } finally {
+    exporting.value = false
   }
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(a.href)
 }
 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
@@ -124,7 +158,8 @@ onUnmounted(() => {
         <button class="btn btn-sm flex-1 sm:flex-none" :class="mineOnly ? 'btn-primary' : 'btn-ghost'" @click="mineOnly = !mineOnly">
           Created by me
         </button>
-        <button class="btn btn-sm btn-ghost flex-1 sm:flex-none" :disabled="filtered.length === 0" @click="exportCsv">
+        <button class="btn btn-sm btn-ghost flex-1 sm:flex-none" :disabled="exporting || tickets.length === 0" @click="exportCsv">
+          <span v-if="exporting" class="loading loading-spinner loading-xs"></span>
           Export CSV
         </button>
       </div>
@@ -135,7 +170,7 @@ onUnmounted(() => {
 
     <ResponsiveList
       v-else
-      :items="filtered"
+      :items="tickets"
       :columns="columns"
       @row-click="(t) => router.push(`/portal/tickets/${t.id}`)"
     >
@@ -157,5 +192,7 @@ onUnmounted(() => {
         <span class="text-base-content/60">No tickets match.</span>
       </template>
     </ResponsiveList>
+
+    <Pager v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>

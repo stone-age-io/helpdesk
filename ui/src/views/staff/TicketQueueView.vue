@@ -9,6 +9,7 @@ import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import Pager from '@/components/Pager.vue'
 import { formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
@@ -422,10 +423,6 @@ onUnmounted(() => {
       </template>
     </ResponsiveList>
 
-    <div v-if="totalPages > 1" class="flex justify-center gap-2">
-      <button class="btn btn-sm" :disabled="page <= 1" @click="page--">«</button>
-      <span class="btn btn-sm btn-ghost no-animation">{{ page }} / {{ totalPages }}</span>
-      <button class="btn btn-sm" :disabled="page >= totalPages" @click="page++">»</button>
-    </div>
+    <Pager v-model:page="page" :total-pages="totalPages" />
   </div>
 </template>

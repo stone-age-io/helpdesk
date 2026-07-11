@@ -3,17 +3,17 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Requester, Staff, Ticket, TicketCategory, TicketComment } from '@/types'
+import type { Customer, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
-import ActivityCard from '@/components/ActivityCard.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
-import { format } from 'date-fns'
+import Avatar from '@/components/Avatar.vue'
+import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +22,7 @@ const id = route.params.id as string
 
 const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
+const events = ref<TicketEvent[]>([])
 const staff = ref<Staff[]>([])
 const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
@@ -36,6 +37,9 @@ const posting = ref(false)
 // When off, field edits are saved without emailing the requester — for
 // triage cleanup, a mis-set status, or an internal reassignment.
 const notify = ref(true)
+// Provenance fields (asset/location/source) are rarely edited — folded away
+// so the rail stays short.
+const showDetails = ref(false)
 
 // Inline title/body editing.
 const editingHeader = ref(false)
@@ -48,6 +52,20 @@ const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, 
 const requesterOptions = computed(() =>
   requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
 )
+
+// One chronological stream: comments (full cards) interleaved with the audit
+// events (compact rows), oldest first, composer pinned at the bottom. This is
+// the reorg — the standalone activity card is gone; its events now live here.
+type TimelineItem =
+  | { kind: 'comment'; key: string; created: string; comment: TicketComment }
+  | { kind: 'event'; key: string; created: string; event: TicketEvent }
+const timeline = computed<TimelineItem[]>(() => {
+  const items: TimelineItem[] = [
+    ...comments.value.map((c) => ({ kind: 'comment' as const, key: 'c' + c.id, created: c.created, comment: c })),
+    ...events.value.map((e) => ({ kind: 'event' as const, key: 'e' + e.id, created: e.created, event: e })),
+  ]
+  return items.sort((a, b) => a.created.localeCompare(b.created))
+})
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
@@ -69,11 +87,23 @@ async function loadComments() {
   })
 }
 
+async function loadEvents() {
+  try {
+    events.value = await pb.collection('ticket_events').getFullList<TicketEvent>({
+      filter: `ticket = '${id}'`,
+      sort: 'created',
+      expand: 'actor_staff,actor_user',
+    })
+  } catch {
+    // Timeline still works from comments alone if the audit read fails.
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    await Promise.all([loadTicket(), loadComments()])
+    await Promise.all([loadTicket(), loadComments(), loadEvents()])
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
@@ -158,6 +188,9 @@ async function postComment() {
   }
 }
 
+function authorRecord(c: TicketComment): Record<string, any> | null {
+  return c.expand?.author_staff || c.expand?.author_user || null
+}
 function authorLabel(c: TicketComment): string {
   const s = c.expand?.author_staff
   if (s) return s.name || s.email
@@ -165,6 +198,14 @@ function authorLabel(c: TicketComment): string {
   if (u) return u.name || u.email
   return 'System'
 }
+
+function actorRecord(e: TicketEvent): Record<string, any> | null {
+  return e.expand?.actor_staff || e.expand?.actor_user || null
+}
+function actorName(e: TicketEvent): string {
+  return e.expand?.actor_staff?.name || e.expand?.actor_user?.name || e.expand?.actor_user?.email || 'System'
+}
+const humanize = (v?: string) => (v || '').replace(/_/g, ' ')
 
 // Live updates: another agent's reply, a status change, or a requester
 // comment lands without a manual refresh. Debounced to collapse bursts.
@@ -174,16 +215,19 @@ function scheduleReload() {
   reloadTimer = setTimeout(() => {
     loadTicket().catch(() => {})
     loadComments().catch(() => {})
+    loadEvents().catch(() => {})
   }, 500)
 }
 let unsubTicket: (() => void) | null = null
 let unsubComments: (() => void) | null = null
+let unsubEvents: (() => void) | null = null
 
 onMounted(async () => {
   await load()
   try {
     unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
     unsubComments = await pb.collection('ticket_comments').subscribe('*', scheduleReload)
+    unsubEvents = await pb.collection('ticket_events').subscribe('*', scheduleReload)
   } catch {
     // Realtime is progressive enhancement; the view works without it.
   }
@@ -193,6 +237,7 @@ onUnmounted(() => {
   clearTimeout(reloadTimer)
   unsubTicket?.()
   unsubComments?.()
+  unsubEvents?.()
 })
 </script>
 
@@ -214,8 +259,8 @@ onUnmounted(() => {
          takes ~16rem, so a side-by-side ticket sidebar would squeeze the
          thread to a sliver. -->
     <div class="flex flex-col xl:flex-row gap-4 items-start">
-      <!-- Main column -->
-      <div class="flex-1 space-y-4 w-full">
+      <!-- Main column: header + unified timeline + composer -->
+      <div class="flex-1 space-y-4 w-full min-w-0">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
             <template v-if="!editingHeader">
@@ -242,25 +287,41 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Thread -->
+        <!-- Unified timeline: comments as cards, audit events as inline rows -->
         <div class="space-y-2">
-          <div
-            v-for="c in comments"
-            :key="c.id"
-            class="card shadow-sm"
-            :class="c.internal ? 'bg-warning/10 border border-warning/30' : 'bg-base-100'"
-          >
-            <div class="card-body py-3 px-4">
-              <div class="flex items-center gap-2 text-xs text-base-content/60">
-                <span class="font-semibold text-base-content">{{ authorLabel(c) }}</span>
-                <span v-if="c.internal" class="badge badge-warning badge-xs">internal</span>
-                <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
+          <template v-for="item in timeline" :key="item.key">
+            <!-- Comment -->
+            <div
+              v-if="item.kind === 'comment'"
+              class="card shadow-sm"
+              :class="item.comment.internal ? 'bg-warning/10 border border-warning/30' : 'bg-base-100'"
+            >
+              <div class="card-body py-3 px-4">
+                <div class="flex items-center gap-2 text-xs text-base-content/60">
+                  <Avatar :record="authorRecord(item.comment)" :name="authorLabel(item.comment)" size="xs" />
+                  <span class="font-semibold text-base-content">{{ authorLabel(item.comment) }}</span>
+                  <span v-if="item.comment.internal" class="badge badge-warning badge-xs">internal</span>
+                  <span>{{ format(new Date(item.comment.created), 'MMM d, yyyy HH:mm') }}</span>
+                </div>
+                <p class="whitespace-pre-wrap text-sm">{{ item.comment.body }}</p>
+                <AttachmentList :record="item.comment" :files="item.comment.attachments" />
               </div>
-              <p class="whitespace-pre-wrap text-sm">{{ c.body }}</p>
-              <AttachmentList :record="c" :files="c.attachments" />
             </div>
-          </div>
-          <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No comments yet.</p>
+
+            <!-- Audit event -->
+            <div v-else class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug">
+              <Avatar :record="actorRecord(item.event)" :name="actorName(item.event)" size="xs" />
+              <span class="flex-1">
+                <span class="font-semibold text-base-content">{{ actorName(item.event) }}</span>
+                changed {{ item.event.field }}
+                <span class="text-base-content/50">{{ humanize(item.event.old_value) || '—' }}</span>
+                →
+                <span class="font-medium text-base-content/80">{{ humanize(item.event.new_value) || '—' }}</span>
+                <span class="text-base-content/40"> · {{ formatDistanceToNow(new Date(item.event.created), { addSuffix: true }) }}</span>
+              </span>
+            </div>
+          </template>
+          <p v-if="timeline.length === 0" class="text-sm text-base-content/50 px-1">No activity yet.</p>
         </div>
 
         <!-- Composer -->
@@ -288,10 +349,47 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Sidebar -->
-      <div class="w-full xl:w-80 space-y-4">
+      <!-- Controls rail: sticky so the workflow fields stay in view while the
+           timeline scrolls. -->
+      <div class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body py-4 px-4 space-y-3">
+            <!-- Hot controls first -->
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Status</span></label>
+              <select class="select select-bordered select-sm" :value="ticket.status" @change="updateField('status', ($event.target as HTMLSelectElement).value)">
+                <option v-for="s in TICKET_STATUSES" :key="s" :value="s">{{ s.replace('_', ' ') }}</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Priority</span></label>
+              <select class="select select-bordered select-sm" :value="ticket.priority" @change="updateField('priority', ($event.target as HTMLSelectElement).value)">
+                <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1 gap-2">
+                <span class="label-text text-xs">Assignee</span>
+                <span v-if="ticket.expand?.assignee" class="flex items-center gap-1 label-text-alt">
+                  <Avatar :record="ticket.expand.assignee" :name="ticket.expand.assignee.name" size="xs" />
+                </span>
+              </label>
+              <SearchSelect
+                :model-value="ticket.assignee || ''"
+                :options="staffOptions"
+                size="sm"
+                empty-label="Unassigned"
+                placeholder="Type a name…"
+                @update:model-value="updateField('assignee', $event)"
+              />
+            </div>
+            <label class="label cursor-pointer justify-start gap-2 py-1">
+              <input v-model="notify" type="checkbox" class="toggle toggle-sm toggle-primary" />
+              <span class="label-text text-xs">Email requester on changes</span>
+            </label>
+
+            <div class="divider my-0"></div>
+
             <div class="form-control">
               <label class="label py-1">
                 <span class="label-text text-xs">Customer</span>
@@ -327,65 +425,44 @@ onUnmounted(() => {
                 @update:model-value="patchPlain({ category: $event })"
               />
             </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
-              <input
-                :value="ticket.asset || ''"
-                type="text"
-                maxlength="200"
-                class="input input-bordered input-sm"
-                placeholder="Device / system"
-                @change="patchPlain({ asset: ($event.target as HTMLInputElement).value })"
-              />
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-              <input
-                :value="ticket.location || ''"
-                type="text"
-                maxlength="200"
-                class="input input-bordered input-sm"
-                placeholder="Where"
-                @change="patchPlain({ location: ($event.target as HTMLInputElement).value })"
-              />
-            </div>
-            <div>
-              <div class="text-xs text-base-content/60">Source</div>
-              <div class="text-sm">{{ ticket.source }}</div>
-            </div>
-            <label class="label cursor-pointer justify-start gap-2 py-1">
-              <input v-model="notify" type="checkbox" class="toggle toggle-sm toggle-primary" />
-              <span class="label-text text-xs">Email requester on changes</span>
-            </label>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Status</span></label>
-              <select class="select select-bordered select-sm" :value="ticket.status" @change="updateField('status', ($event.target as HTMLSelectElement).value)">
-                <option v-for="s in TICKET_STATUSES" :key="s" :value="s">{{ s.replace('_', ' ') }}</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Priority</span></label>
-              <select class="select select-bordered select-sm" :value="ticket.priority" @change="updateField('priority', ($event.target as HTMLSelectElement).value)">
-                <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Assignee</span></label>
-              <SearchSelect
-                :model-value="ticket.assignee || ''"
-                :options="staffOptions"
-                size="sm"
-                empty-label="Unassigned"
-                placeholder="Type a name…"
-                @update:model-value="updateField('assignee', $event)"
-              />
-            </div>
+
+            <!-- Provenance: collapsed by default, rarely edited -->
+            <button class="btn btn-ghost btn-xs justify-start -ml-1 w-fit" @click="showDetails = !showDetails">
+              {{ showDetails ? '▾' : '▸' }} Details
+            </button>
+            <template v-if="showDetails">
+              <div class="form-control">
+                <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
+                <input
+                  :value="ticket.asset || ''"
+                  type="text"
+                  maxlength="200"
+                  class="input input-bordered input-sm"
+                  placeholder="Device / system"
+                  @change="patchPlain({ asset: ($event.target as HTMLInputElement).value })"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+                <input
+                  :value="ticket.location || ''"
+                  type="text"
+                  maxlength="200"
+                  class="input input-bordered input-sm"
+                  placeholder="Where"
+                  @change="patchPlain({ location: ($event.target as HTMLInputElement).value })"
+                />
+              </div>
+              <div>
+                <div class="text-xs text-base-content/60">Source</div>
+                <div class="text-sm">{{ ticket.source }}</div>
+              </div>
+            </template>
           </div>
         </div>
 
         <TimeEntriesCard :ticket-id="id" />
         <VisitsCard :ticket-id="id" :staff="staff" />
-        <ActivityCard :ticket-id="id" />
       </div>
     </div>
   </div>

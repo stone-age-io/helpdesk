@@ -13,6 +13,7 @@ export interface Staff extends BaseRecord {
   name: string
   role: 'agent' | 'admin'
   active: boolean
+  avatar?: string
 }
 
 export interface Requester extends BaseRecord {
@@ -20,6 +21,7 @@ export interface Requester extends BaseRecord {
   name: string
   customer: string
   active: boolean
+  avatar?: string
 }
 
 export interface Customer extends BaseRecord {
