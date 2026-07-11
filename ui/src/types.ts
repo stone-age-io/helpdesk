@@ -56,6 +56,15 @@ export interface TicketComment extends BaseRecord {
   attachments?: string[]
 }
 
+export interface TicketEvent extends BaseRecord {
+  ticket: string
+  field: 'status' | 'priority' | 'assignee'
+  old_value?: string
+  new_value?: string
+  actor_staff?: string
+  actor_user?: string
+}
+
 export interface TimeEntry extends BaseRecord {
   ticket: string
   staff: string

@@ -3,10 +3,12 @@ import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import ProfileModal from '@/components/ProfileModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 const showPassword = ref(false)
+const showProfile = ref(false)
 
 const sections: NavSection[] = [
   {
@@ -63,9 +65,10 @@ watch(
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" brand="Support" home="/portal/dashboard" @change-password="showPassword = true" />
+      <AppSidebar :sections="sections" brand="Support" home="/portal/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
+    <ProfileModal v-if="showProfile" @close="showProfile = false" />
   </div>
 </template>

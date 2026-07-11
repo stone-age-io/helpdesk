@@ -3,11 +3,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Staff, Ticket, TicketComment } from '@/types'
+import type { Customer, Requester, Staff, Ticket, TicketComment } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
+import ActivityCard from '@/components/ActivityCard.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
@@ -21,6 +22,8 @@ const id = route.params.id as string
 const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
 const staff = ref<Staff[]>([])
+const customers = ref<Customer[]>([])
+const requesters = ref<Requester[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -32,17 +35,27 @@ const posting = ref(false)
 // triage cleanup, a mis-set status, or an internal reassignment.
 const notify = ref(true)
 
-const requesterName = computed(() => {
-  const r = ticket.value?.expand?.requester
-  return r ? r.name || r.email : null
-})
+// Inline title/body editing.
+const editingHeader = ref(false)
+const editTitle = ref('')
+const editBody = ref('')
 
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+const requesterOptions = computed(() =>
+  requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
+)
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
     expand: 'customer,assignee,requester',
   })
+}
+
+async function loadRequesters(customerId: string) {
+  requesters.value = customerId
+    ? await pb.collection('users').getFullList<Requester>({ filter: `customer = '${customerId}'`, sort: 'name' })
+    : []
 }
 
 async function loadComments() {
@@ -59,6 +72,8 @@ async function load() {
   try {
     await Promise.all([loadTicket(), loadComments()])
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
+    customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
+    await loadRequesters(ticket.value?.customer || '')
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -66,6 +81,7 @@ async function load() {
   }
 }
 
+// updateField carries the quiet-notify intent (status/assignee can email).
 async function updateField(field: 'status' | 'priority' | 'assignee', value: string) {
   if (!ticket.value) return
   try {
@@ -81,6 +97,39 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
   } catch (err: any) {
     error.value = err?.message || `Failed to update ${field}`
   }
+}
+
+// patchPlain saves fields that never trigger email (title/body/customer/
+// requester), so no quiet header is needed.
+async function patchPlain(fields: Record<string, string>) {
+  if (!ticket.value) return
+  try {
+    ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
+      expand: 'customer,assignee,requester',
+    })
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to save'
+  }
+}
+
+function startEditHeader() {
+  if (!ticket.value) return
+  editTitle.value = ticket.value.title
+  editBody.value = ticket.value.body || ''
+  editingHeader.value = true
+}
+async function saveHeader() {
+  if (!editTitle.value.trim()) return
+  await patchPlain({ title: editTitle.value.trim(), body: editBody.value.trim() })
+  editingHeader.value = false
+}
+
+// Changing customer clears the requester (it must belong to the customer),
+// then reloads the requester picker for the new company.
+async function changeCustomer(value: string) {
+  if (!value || value === ticket.value?.customer) return
+  await patchPlain({ customer: value, requester: '' })
+  await loadRequesters(value)
 }
 
 async function postComment() {
@@ -165,15 +214,26 @@ onUnmounted(() => {
       <div class="flex-1 space-y-4 w-full">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <div class="flex items-center gap-2 flex-wrap">
-              <h1 class="text-xl font-bold">#{{ ticket.number }} — {{ ticket.title }}</h1>
-              <TicketBadges :status="ticket.status" :priority="ticket.priority" />
-            </div>
-            <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
-            <AttachmentList :record="ticket" :files="ticket.attachments" />
-            <p v-if="ticket.origin_subject" class="text-xs font-mono text-base-content/50 mt-2">
-              via {{ ticket.origin_subject }}
-            </p>
+            <template v-if="!editingHeader">
+              <div class="flex items-start gap-2 flex-wrap">
+                <h1 class="text-xl font-bold flex-1">#{{ ticket.number }} — {{ ticket.title }}</h1>
+                <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+                <button class="btn btn-ghost btn-xs" @click="startEditHeader">Edit</button>
+              </div>
+              <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
+              <AttachmentList :record="ticket" :files="ticket.attachments" />
+              <p v-if="ticket.origin_subject" class="text-xs font-mono text-base-content/50 mt-2">
+                via {{ ticket.origin_subject }}
+              </p>
+            </template>
+            <template v-else>
+              <input v-model="editTitle" type="text" maxlength="300" class="input input-bordered input-sm w-full font-bold" />
+              <textarea v-model="editBody" rows="5" class="textarea textarea-bordered w-full mt-2" placeholder="Details"></textarea>
+              <div class="flex justify-end gap-2 mt-2">
+                <button class="btn btn-ghost btn-sm" @click="editingHeader = false">Cancel</button>
+                <button class="btn btn-primary btn-sm" :disabled="!editTitle.trim()" @click="saveHeader">Save</button>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -227,17 +287,29 @@ onUnmounted(() => {
       <div class="w-full xl:w-80 space-y-4">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body py-4 px-4 space-y-3">
-            <div>
-              <div class="text-xs text-base-content/60">Customer</div>
-              <router-link
-                v-if="ticket.expand?.customer"
-                :to="`/staff/customers/${ticket.customer}`"
-                class="link link-hover font-medium"
-              >{{ ticket.expand.customer.name }}</router-link>
+            <div class="form-control">
+              <label class="label py-1">
+                <span class="label-text text-xs">Customer</span>
+                <router-link v-if="ticket.expand?.customer" :to="`/staff/customers/${ticket.customer}`" class="label-text-alt link link-hover">view →</router-link>
+              </label>
+              <SearchSelect
+                :model-value="ticket.customer || ''"
+                :options="customerOptions"
+                size="sm"
+                placeholder="Type a customer…"
+                @update:model-value="changeCustomer"
+              />
             </div>
-            <div v-if="requesterName">
-              <div class="text-xs text-base-content/60">Requester</div>
-              <div class="text-sm">{{ requesterName }}</div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Requester</span></label>
+              <SearchSelect
+                :model-value="ticket.requester || ''"
+                :options="requesterOptions"
+                size="sm"
+                empty-label="None"
+                placeholder="Type a name or email…"
+                @update:model-value="patchPlain({ requester: $event })"
+              />
             </div>
             <div>
               <div class="text-xs text-base-content/60">Source</div>
@@ -275,6 +347,7 @@ onUnmounted(() => {
 
         <TimeEntriesCard :ticket-id="id" />
         <VisitsCard :ticket-id="id" :staff="staff" />
+        <ActivityCard :ticket-id="id" />
       </div>
     </div>
   </div>

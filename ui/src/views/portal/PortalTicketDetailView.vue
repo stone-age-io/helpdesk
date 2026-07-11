@@ -147,6 +147,7 @@ onUnmounted(() => {
         <div class="flex items-center gap-2 flex-wrap">
           <h1 class="text-xl font-bold">#{{ ticket.number }} — {{ ticket.title }}</h1>
           <TicketBadges :status="ticket.status" />
+          <span v-if="ticket.assignee" class="badge badge-ghost badge-sm gap-1" title="An agent is working on this ticket">🧑‍🔧 Agent assigned</span>
         </div>
         <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
         <AttachmentList :record="ticket" :files="ticket.attachments" />

@@ -197,14 +197,17 @@ onMounted(load)
       <template #cell-email="{ value }"><span class="text-sm">{{ value }}</span></template>
       <template #card-email="{ value }"><div class="text-sm font-bold truncate">{{ value }}</div></template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
-      <template v-if="auth.isAdmin" #actions="{ item }">
-        <button class="btn btn-ghost btn-xs" @click="editing?.id === item.id ? (editing = null) : startEdit(item)">
-          {{ editing?.id === item.id ? 'Cancel' : 'Edit' }}
-        </button>
-        <button class="btn btn-ghost btn-xs" @click="resetPassword(item)">Reset password</button>
-        <button class="btn btn-ghost btn-xs" @click="toggleActive(item)">
-          {{ item.active ? 'Deactivate' : 'Activate' }}
-        </button>
+      <template #actions="{ item }">
+        <router-link class="btn btn-ghost btn-xs" :to="`/staff/tickets?search=${encodeURIComponent(item.email)}`">Tickets</router-link>
+        <template v-if="auth.isAdmin">
+          <button class="btn btn-ghost btn-xs" @click="editing?.id === item.id ? (editing = null) : startEdit(item)">
+            {{ editing?.id === item.id ? 'Cancel' : 'Edit' }}
+          </button>
+          <button class="btn btn-ghost btn-xs" @click="resetPassword(item)">Reset password</button>
+          <button class="btn btn-ghost btn-xs" @click="toggleActive(item)">
+            {{ item.active ? 'Deactivate' : 'Activate' }}
+          </button>
+        </template>
       </template>
       <template #empty>
         <span class="text-base-content/60">No requester accounts match.</span>

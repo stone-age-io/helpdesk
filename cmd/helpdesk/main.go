@@ -19,6 +19,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/stone-age-io/helpdesk/config"
+	"github.com/stone-age-io/helpdesk/internal/activity"
 	"github.com/stone-age-io/helpdesk/internal/authfix"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
@@ -58,6 +59,7 @@ func main() {
 
 	tickets.Register(app)
 	visits.Register(app)
+	activity.Register(app)
 	authfix.EnforceEmailVisibility(app)
 
 	// Outbound email: ticket lifecycle hooks → templated sends. The notifier

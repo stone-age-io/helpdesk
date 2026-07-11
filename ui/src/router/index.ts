@@ -5,6 +5,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },
+    { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/ForgotPasswordView.vue') },
+    { path: '/reset-password', name: 'reset-password', component: () => import('@/views/ResetPasswordView.vue') },
 
     // Staff app
     {
@@ -12,7 +14,7 @@ const router = createRouter({
       component: () => import('@/components/StaffLayout.vue'),
       meta: { requires: 'staff' },
       children: [
-        { path: '', redirect: '/staff/tickets' },
+        { path: '', redirect: '/staff/dashboard' },
         { path: 'dashboard', name: 'dashboard', component: () => import('@/views/staff/DashboardView.vue') },
         { path: 'tickets', name: 'tickets', component: () => import('@/views/staff/TicketQueueView.vue') },
         { path: 'tickets/new', name: 'ticket-new', component: () => import('@/views/staff/TicketFormView.vue') },
@@ -53,7 +55,7 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   if (to.name === 'login') {
-    if (auth.isStaff) return '/staff/tickets'
+    if (auth.isStaff) return '/staff/dashboard'
     if (auth.isRequester) return '/portal/dashboard'
     return true
   }
@@ -62,8 +64,8 @@ router.beforeEach((to) => {
   if (!requires) return true
   if (!auth.isAuthenticated) return { name: 'login' }
   if (requires === 'staff' && !auth.isStaff) return '/portal/dashboard'
-  if (requires === 'requester' && !auth.isRequester) return '/staff/tickets'
-  if (to.meta.adminOnly && !auth.isAdmin) return '/staff/tickets'
+  if (requires === 'requester' && !auth.isRequester) return '/staff/dashboard'
+  if (to.meta.adminOnly && !auth.isAdmin) return '/staff/dashboard'
   return true
 })
 

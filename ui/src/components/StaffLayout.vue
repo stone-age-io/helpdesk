@@ -3,11 +3,13 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import ProfileModal from '@/components/ProfileModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
 const showPassword = ref(false)
+const showProfile = ref(false)
 
 const sections: NavSection[] = [
   {
@@ -109,9 +111,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" home="/staff/tickets" @change-password="showPassword = true" />
+      <AppSidebar :sections="sections" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
+    <ProfileModal v-if="showProfile" @close="showProfile = false" />
   </div>
 </template>

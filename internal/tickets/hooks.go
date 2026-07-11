@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/stone-age-io/helpdesk/internal/activity"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 )
 
@@ -48,6 +49,9 @@ func Register(app *pocketbase.PocketBase) {
 		case "resolved", "closed":
 			ticket.Set("status", "open")
 			notifications.Suppress(ticket)
+			// Attribute the reopen to the requester whose comment triggered it
+			// so the audit timeline names them, not "system".
+			activity.SetActor(ticket, "users", e.Record.GetString("author_user"))
 			if err := e.App.Save(ticket); err != nil {
 				// Best-effort: a failed reopen must not fail the comment write.
 				slog.Warn("auto-reopen failed", "ticket", ticket.Id, "err", err)

@@ -23,7 +23,7 @@ async function submit() {
     if (redirect && redirect.startsWith('/')) {
       router.push(redirect)
     } else {
-      router.push(auth.isStaff ? '/staff/tickets' : '/portal/dashboard')
+      router.push(auth.isStaff ? '/staff/dashboard' : '/portal/dashboard')
     }
   } catch {
     error.value = 'Invalid email or password.'
@@ -55,6 +55,7 @@ async function submit() {
             <span v-if="loading" class="loading loading-spinner loading-sm"></span>
             Sign in
           </button>
+          <router-link to="/forgot-password" class="link link-hover text-sm block text-center">Forgot password?</router-link>
         </form>
       </div>
     </div>

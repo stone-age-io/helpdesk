@@ -15,6 +15,8 @@ export interface Column<T = any> {
   mobileLabel?: string
   /** Skip this column in the mobile card grid (e.g. when the card header slot already shows it). */
   hideOnMobile?: boolean
+  /** Make the desktop header a click-to-sort control (emits `sort` with this key). */
+  sortable?: boolean
 }
 
 interface Props {
@@ -25,17 +27,23 @@ interface Props {
   selectable?: boolean
   /** Selected item ids (v-model:selected). Selection can span pages. */
   selected?: string[]
+  /** Active sort column key + direction, for the sortable-header arrows. */
+  sortKey?: string
+  sortDir?: 'asc' | 'desc'
 }
 
 const props = withDefaults(defineProps<Props>(), {
   clickable: true,
   selectable: false,
   selected: () => [],
+  sortKey: '',
+  sortDir: 'desc',
 })
 
 const emit = defineEmits<{
   'row-click': [item: T]
   'update:selected': [ids: string[]]
+  sort: [key: string]
 }>()
 
 function get(obj: any, path: string): any {
@@ -121,7 +129,16 @@ function handleKey(e: KeyboardEvent, item: T) {
               />
             </th>
             <th v-for="col in columns" :key="col.key" :class="col.class" class="text-[11px] uppercase tracking-wider opacity-60">
-              {{ col.label }}
+              <button
+                v-if="col.sortable"
+                type="button"
+                class="inline-flex items-center gap-1 uppercase tracking-wider hover:opacity-100"
+                @click.stop="emit('sort', col.key)"
+              >
+                {{ col.label }}
+                <span v-if="sortKey === col.key" class="text-primary">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+              </button>
+              <template v-else>{{ col.label }}</template>
             </th>
             <th v-if="$slots.actions" class="text-right text-[11px] uppercase tracking-wider opacity-60">Actions</th>
           </tr>

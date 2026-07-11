@@ -27,7 +27,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const emit = defineEmits<{ (e: 'change-password'): void }>()
+const emit = defineEmits<{ (e: 'change-password'): void; (e: 'edit-profile'): void }>()
 
 // Hide admin-only items from non-admins; drop sections left empty.
 const visibleSections = computed<NavSection[]>(() =>
@@ -66,6 +66,12 @@ function changePassword() {
   closeDropdown()
   closeDrawer()
   emit('change-password')
+}
+
+function editProfile() {
+  closeDropdown()
+  closeDrawer()
+  emit('edit-profile')
 }
 
 function logout() {
@@ -135,6 +141,7 @@ function logout() {
           <span class="text-base-content/40 text-lg leading-none pr-1">⋮</span>
         </div>
         <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-52 p-1 mb-1 z-50">
+          <li><a @click="editProfile">Edit profile</a></li>
           <li><a @click="changePassword">Change password</a></li>
           <li><a class="text-error" @click="logout">Sign out</a></li>
         </ul>

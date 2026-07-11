@@ -150,7 +150,10 @@ onMounted(load)
       <div class="space-y-4">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <h2 class="card-title text-base">Recent Tickets</h2>
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-base">Recent Tickets</h2>
+              <router-link :to="`/staff/tickets?customer=${id}`" class="link link-hover text-sm">View all →</router-link>
+            </div>
             <ul class="space-y-1">
               <li v-for="t in tickets" :key="t.id">
                 <router-link :to="`/staff/tickets/${t.id}`" class="flex items-center gap-2 text-sm link-hover">
@@ -169,7 +172,7 @@ onMounted(load)
             <h2 class="card-title text-base">Requesters</h2>
             <ul class="space-y-1">
               <li v-for="r in requesters" :key="r.id" class="text-sm flex items-center gap-2">
-                <span class="flex-1">{{ r.name || r.email }}</span>
+                <router-link :to="`/staff/tickets?search=${encodeURIComponent(r.email)}`" class="flex-1 link link-hover truncate" title="View this requester's tickets">{{ r.name || r.email }}</router-link>
                 <span class="text-base-content/50">{{ r.email }}</span>
                 <span class="badge badge-xs" :class="r.active ? 'badge-success' : 'badge-ghost'">{{ r.active ? 'active' : 'inactive' }}</span>
               </li>
