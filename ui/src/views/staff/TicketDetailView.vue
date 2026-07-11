@@ -4,12 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
-import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
-import SearchSelect from '@/components/SearchSelect.vue'
+import TicketPropertiesFields from '@/components/TicketPropertiesFields.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
 import Avatar from '@/components/Avatar.vue'
@@ -37,9 +36,13 @@ const posting = ref(false)
 // When off, field edits are saved without emailing the requester — for
 // triage cleanup, a mis-set status, or an internal reassignment.
 const notify = ref(true)
-// Provenance fields (asset/location/source) are rarely edited — folded away
-// so the rail stays short.
-const showDetails = ref(false)
+
+// Reactive Tailwind `xl` breakpoint so the properties/time/visits panel
+// renders exactly once — in the desktop rail, or grouped under the header on
+// mobile — rather than mounting in both spots and fetching twice.
+const isDesktop = ref(window.matchMedia('(min-width: 1280px)').matches)
+let mq: MediaQueryList | undefined
+const onBreakpoint = (e: MediaQueryListEvent) => (isDesktop.value = e.matches)
 
 // Inline title/body editing.
 const editingHeader = ref(false)
@@ -223,6 +226,8 @@ let unsubComments: (() => void) | null = null
 let unsubEvents: (() => void) | null = null
 
 onMounted(async () => {
+  mq = window.matchMedia('(min-width: 1280px)')
+  mq.addEventListener('change', onBreakpoint)
   await load()
   try {
     unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
@@ -235,6 +240,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTimeout(reloadTimer)
+  mq?.removeEventListener('change', onBreakpoint)
   unsubTicket?.()
   unsubComments?.()
   unsubEvents?.()
@@ -287,6 +293,36 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Mobile: the whole meta group (properties + time + visits) sits
+             directly under the header, so nothing is stranded at the bottom.
+             Properties collapse behind a summary; time and visits read as part
+             of the same section. Rendered here OR in the desktop rail below —
+             never both, so the fetch-on-mount cards don't load twice. -->
+        <div v-if="!isDesktop" class="space-y-4">
+          <details class="group card bg-base-100 shadow-sm">
+            <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-3 px-4 [&::-webkit-details-marker]:hidden">
+              <span class="font-semibold text-sm">Properties</span>
+              <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+              <span class="ml-auto text-base-content/50 transition-transform group-open:rotate-90">▸</span>
+            </summary>
+            <div class="px-4 pb-4 space-y-3">
+              <TicketPropertiesFields
+                v-model:notify="notify"
+                :ticket="ticket"
+                :staff-options="staffOptions"
+                :customer-options="customerOptions"
+                :category-options="categoryOptions"
+                :requester-options="requesterOptions"
+                @update-field="updateField"
+                @patch="patchPlain"
+                @change-customer="changeCustomer"
+              />
+            </div>
+          </details>
+          <TimeEntriesCard :ticket-id="id" />
+          <VisitsCard :ticket-id="id" :staff="staff" />
+        </div>
+
         <!-- Unified timeline: comments as cards, audit events as inline rows -->
         <div class="space-y-2">
           <template v-for="item in timeline" :key="item.key">
@@ -324,8 +360,9 @@ onUnmounted(() => {
           <p v-if="timeline.length === 0" class="text-sm text-base-content/50 px-1">No activity yet.</p>
         </div>
 
-        <!-- Composer -->
-        <div class="card bg-base-100 shadow-sm">
+        <!-- Composer. Sticky at the viewport bottom on mobile so replying is
+             always in reach no matter how long the timeline; static on desktop. -->
+        <div class="card bg-base-100 shadow-sm sticky bottom-0 z-20 shadow-lg xl:static xl:z-auto xl:shadow-sm">
           <div class="card-body py-3 px-4 space-y-2">
             <textarea
               v-model="newComment"
@@ -349,115 +386,23 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Controls rail: sticky so the workflow fields stay in view while the
-           timeline scrolls. -->
-      <div class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
+      <!-- Desktop controls rail: sticky so the workflow fields stay in view
+           while the timeline scrolls. On mobile the same panel renders under
+           the header (above) instead. -->
+      <div v-if="isDesktop" class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body py-4 px-4 space-y-3">
-            <!-- Hot controls first -->
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Status</span></label>
-              <select class="select select-bordered select-sm" :value="ticket.status" @change="updateField('status', ($event.target as HTMLSelectElement).value)">
-                <option v-for="s in TICKET_STATUSES" :key="s" :value="s">{{ s.replace('_', ' ') }}</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Priority</span></label>
-              <select class="select select-bordered select-sm" :value="ticket.priority" @change="updateField('priority', ($event.target as HTMLSelectElement).value)">
-                <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1 gap-2">
-                <span class="label-text text-xs">Assignee</span>
-                <span v-if="ticket.expand?.assignee" class="flex items-center gap-1 label-text-alt">
-                  <Avatar :record="ticket.expand.assignee" :name="ticket.expand.assignee.name" size="xs" />
-                </span>
-              </label>
-              <SearchSelect
-                :model-value="ticket.assignee || ''"
-                :options="staffOptions"
-                size="sm"
-                empty-label="Unassigned"
-                placeholder="Type a name…"
-                @update:model-value="updateField('assignee', $event)"
-              />
-            </div>
-            <label class="label cursor-pointer justify-start gap-2 py-1">
-              <input v-model="notify" type="checkbox" class="toggle toggle-sm toggle-primary" />
-              <span class="label-text text-xs">Email requester on changes</span>
-            </label>
-
-            <div class="divider my-0"></div>
-
-            <div class="form-control">
-              <label class="label py-1">
-                <span class="label-text text-xs">Customer</span>
-                <router-link v-if="ticket.expand?.customer" :to="`/staff/customers/${ticket.customer}`" class="label-text-alt link link-hover">view →</router-link>
-              </label>
-              <SearchSelect
-                :model-value="ticket.customer || ''"
-                :options="customerOptions"
-                size="sm"
-                placeholder="Type a customer…"
-                @update:model-value="changeCustomer"
-              />
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Requester</span></label>
-              <SearchSelect
-                :model-value="ticket.requester || ''"
-                :options="requesterOptions"
-                size="sm"
-                empty-label="None"
-                placeholder="Type a name or email…"
-                @update:model-value="patchPlain({ requester: $event })"
-              />
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Category</span></label>
-              <SearchSelect
-                :model-value="ticket.category || ''"
-                :options="categoryOptions"
-                size="sm"
-                empty-label="None"
-                placeholder="Classify…"
-                @update:model-value="patchPlain({ category: $event })"
-              />
-            </div>
-
-            <!-- Provenance: collapsed by default, rarely edited -->
-            <button class="btn btn-ghost btn-xs justify-start -ml-1 w-fit" @click="showDetails = !showDetails">
-              {{ showDetails ? '▾' : '▸' }} Details
-            </button>
-            <template v-if="showDetails">
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
-                <input
-                  :value="ticket.asset || ''"
-                  type="text"
-                  maxlength="200"
-                  class="input input-bordered input-sm"
-                  placeholder="Device / system"
-                  @change="patchPlain({ asset: ($event.target as HTMLInputElement).value })"
-                />
-              </div>
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-                <input
-                  :value="ticket.location || ''"
-                  type="text"
-                  maxlength="200"
-                  class="input input-bordered input-sm"
-                  placeholder="Where"
-                  @change="patchPlain({ location: ($event.target as HTMLInputElement).value })"
-                />
-              </div>
-              <div>
-                <div class="text-xs text-base-content/60">Source</div>
-                <div class="text-sm">{{ ticket.source }}</div>
-              </div>
-            </template>
+            <TicketPropertiesFields
+              v-model:notify="notify"
+              :ticket="ticket"
+              :staff-options="staffOptions"
+              :customer-options="customerOptions"
+              :category-options="categoryOptions"
+              :requester-options="requesterOptions"
+              @update-field="updateField"
+              @patch="patchPlain"
+              @change-customer="changeCustomer"
+            />
           </div>
         </div>
 
