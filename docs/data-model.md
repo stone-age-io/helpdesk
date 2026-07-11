@@ -89,8 +89,10 @@ ticket), and it matches the app's grain. `asset`/`location` are deliberately
 free text, **not** a CMDB — the helpdesk keeps no asset catalog or sites
 collection.
 
-Rules: read `StaffRule` (staff read it for the picker; requesters never see
-it); create/update/delete `AdminRule`.
+Rules: read `StaffRule || RequesterRule` (staff use it for the picker;
+requesters read it so a ticket's category **badge** resolves portal-side —
+opened by `1808000000`; the taxonomy is non-sensitive labels);
+create/update/delete `AdminRule`.
 
 ### `ticket_comments` — the thread
 
@@ -115,8 +117,13 @@ One row per workflow-field change: `ticket` (cascade), `field`, `old_value`,
 `new_value` (stored already human-readable), `actor_staff` / `actor_user`,
 `created`. Written by `internal/activity`.
 
-Rules: read `StaffRule` (the trail names technicians, so it is **never**
-portal-side). No create/update/delete API rule — only the server hooks write
+Rules: read `StaffRule || (RequesterRule && field = 'status' &&
+ticket.customer = @request.auth.customer)` — staff see the whole trail;
+requesters see only **status** transitions on their own tickets, for the
+portal progress timeline (amended by `1808000000`). Priority/assignee events
+never match (their values are staff names — the roster we hide), and the
+actor relations stay staff-gated so an actor expand is dropped for a
+requester. No create/update/delete API rule — only the server hooks write
 here, via `app.Save`, which bypasses collection rules, so the trail can't be
 forged through the API.
 

@@ -36,8 +36,11 @@ async function submit() {
 </script>
 
 <template>
-  <div class="space-y-4 max-w-2xl">
-    <h1 class="text-2xl font-bold">New Ticket</h1>
+  <div class="space-y-4 max-w-2xl mx-auto">
+    <div>
+      <h1 class="text-2xl font-bold">New Ticket</h1>
+      <p class="text-sm text-base-content/60 mt-1">Tell us what's going on — our team will follow up by email.</p>
+    </div>
 
     <form class="card bg-base-100 shadow-sm" @submit.prevent="submit">
       <div class="card-body space-y-3">

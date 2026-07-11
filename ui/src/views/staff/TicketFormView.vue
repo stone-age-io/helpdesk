@@ -81,7 +81,7 @@ onMounted(loadOptions)
 </script>
 
 <template>
-  <div class="max-w-2xl space-y-4">
+  <div class="max-w-6xl mx-auto space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
         <li><a @click="router.push('/staff/tickets')">Tickets</a></li>
@@ -90,75 +90,85 @@ onMounted(loadOptions)
     </div>
     <h1 class="text-2xl font-bold">New Ticket</h1>
 
-    <form class="card bg-base-100 shadow-sm" @submit.prevent="submit">
-      <div class="card-body space-y-3">
-        <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
+    <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">Customer *</span></label>
-          <SearchSelect
-            v-model="form.customer"
-            :options="customerOptions"
-            placeholder="Type to find a customer…"
-            :disabled="loading"
-            @update:model-value="loadRequesters"
-          />
-        </div>
+    <form @submit.prevent="submit" class="space-y-4">
+      <!-- Two columns mirroring the ticket detail view: the "what" on the
+           left, the "how we're filing it" metadata on the right. -->
+      <div class="flex flex-col xl:flex-row gap-4 items-start">
+        <!-- Main: the problem -->
+        <div class="flex-1 w-full min-w-0 card bg-base-100 shadow-sm">
+          <div class="card-body space-y-3">
+            <div class="form-control">
+              <label class="label"><span class="label-text">Customer *</span></label>
+              <SearchSelect
+                v-model="form.customer"
+                :options="customerOptions"
+                placeholder="Type to find a customer…"
+                :disabled="loading"
+                @update:model-value="loadRequesters"
+              />
+            </div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">Title *</span></label>
-          <input v-model="form.title" type="text" class="input input-bordered" required :disabled="loading" />
-        </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text">Title *</span></label>
+              <input v-model="form.title" type="text" class="input input-bordered" required :disabled="loading" />
+            </div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">Details</span></label>
-          <textarea v-model="form.body" rows="5" class="textarea textarea-bordered" :disabled="loading"></textarea>
-        </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text">Details</span></label>
+              <textarea v-model="form.body" rows="8" class="textarea textarea-bordered" :disabled="loading"></textarea>
+            </div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">Attachments</span></label>
-          <FileInput v-model:files="files" :disabled="loading" />
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div class="form-control">
-            <label class="label"><span class="label-text">Category</span></label>
-            <SearchSelect v-model="form.category" :options="categoryOptions" empty-label="None" placeholder="Classify…" :disabled="loading" />
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text">Asset</span></label>
-            <input v-model="form.asset" type="text" maxlength="200" class="input input-bordered" placeholder="Device / system" :disabled="loading" />
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text">Location</span></label>
-            <input v-model="form.location" type="text" maxlength="200" class="input input-bordered" placeholder="Where" :disabled="loading" />
+            <div class="form-control">
+              <label class="label"><span class="label-text">Attachments</span></label>
+              <FileInput v-model:files="files" :disabled="loading" />
+            </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div class="form-control">
-            <label class="label"><span class="label-text">Priority</span></label>
-            <select v-model="form.priority" class="select select-bordered" :disabled="loading">
-              <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
-            </select>
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text">Assignee</span></label>
-            <SearchSelect v-model="form.assignee" :options="staffOptions" empty-label="Unassigned" placeholder="Type a name…" :disabled="loading" />
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text">Requester</span></label>
-            <SearchSelect v-model="form.requester" :options="requesterOptions" empty-label="None" placeholder="Type a name or email…" :disabled="loading || !form.customer" />
-          </div>
-        </div>
+        <!-- Rail: classification + assignment -->
+        <div class="w-full xl:w-80 card bg-base-100 shadow-sm">
+          <div class="card-body space-y-3 py-4 px-4">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Priority</span></label>
+              <select v-model="form.priority" class="select select-bordered select-sm" :disabled="loading">
+                <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Assignee</span></label>
+              <SearchSelect v-model="form.assignee" :options="staffOptions" size="sm" empty-label="Unassigned" placeholder="Type a name…" :disabled="loading" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Requester</span></label>
+              <SearchSelect v-model="form.requester" :options="requesterOptions" size="sm" empty-label="None" placeholder="Type a name or email…" :disabled="loading || !form.customer" />
+            </div>
 
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" class="btn btn-ghost" :disabled="loading" @click="router.back()">Cancel</button>
-          <button type="submit" class="btn btn-primary" :disabled="loading || !form.customer || !form.title.trim()">
-            <span v-if="loading" class="loading loading-spinner loading-sm"></span>
-            Create
-          </button>
+            <div class="divider my-0"></div>
+
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Category</span></label>
+              <SearchSelect v-model="form.category" :options="categoryOptions" size="sm" empty-label="None" placeholder="Classify…" :disabled="loading" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
+              <input v-model="form.asset" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Device / system" :disabled="loading" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+              <input v-model="form.location" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Where" :disabled="loading" />
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-ghost" :disabled="loading" @click="router.back()">Cancel</button>
+        <button type="submit" class="btn btn-primary" :disabled="loading || !form.customer || !form.title.trim()">
+          <span v-if="loading" class="loading loading-spinner loading-sm"></span>
+          Create
+        </button>
       </div>
     </form>
   </div>

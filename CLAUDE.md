@@ -50,7 +50,9 @@ application URL live in PocketBase settings (dashboard), not the YAML.
   requester sees only their own company's tickets and only non-internal
   comments — enforced by collection rules in `migrations/1800000000_init.go`,
   the home of all access rules (later migrations may amend specific rules,
-  e.g. `1803000000` opens visit reads to requesters); `docs/data-model.md`
+  e.g. `1803000000` opens visit reads to requesters, and `1808000000` opens
+  status-only ticket_events + category reads for the portal timeline);
+  `docs/data-model.md`
   summarizes every collection and rule. Both auth collections stamp
   `emailVisibility = true` on create (`internal/authfix`) — PB masks emails
   by default, which would otherwise break the staff roster, the assignee
