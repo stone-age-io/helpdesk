@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
-import type { TimeEntry, Visit } from '@/types'
+import type { Ticket, TimeEntry, Visit } from '@/types'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 
-// Aggregate the data the app already captures — logged time and completed
-// visits — over a date range. No new storage; just rollups the per-ticket
-// cards never surfaced. Handy for month-end billing and utilization.
+// Aggregate the data the app already captures — logged time, completed
+// visits, and ticket volume — over a date range. No new storage; just
+// rollups the per-ticket cards never surfaced. Handy for month-end billing,
+// utilization, and spotting what breaks most.
+//
+// Ticket rollups count tickets *created* in the range. Resolution-time and
+// reopen-rate metrics need the ticket_events history and land in a later
+// pass (they aren't derivable from ticket fields alone).
 
 const entries = ref<TimeEntry[]>([])
 const doneVisits = ref<Visit[]>([])
+const tickets = ref<Ticket[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -32,7 +39,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    ;[entries.value, doneVisits.value] = await Promise.all([
+    ;[entries.value, doneVisits.value, tickets.value] = await Promise.all([
       pb.collection('time_entries').getFullList<TimeEntry>({
         filter: rangeFilter('work_date'),
         sort: '-work_date',
@@ -42,6 +49,11 @@ async function load() {
         filter: `status = 'completed' && ${rangeFilter('completed_at')}`,
         sort: '-completed_at',
         expand: 'assignee,ticket,ticket.customer',
+      }),
+      pb.collection('tickets').getFullList<Ticket>({
+        filter: rangeFilter('created'),
+        sort: '-created',
+        expand: 'category',
       }),
     ])
   } catch (err: any) {
@@ -80,6 +92,36 @@ const byCustomer = computed(() =>
 
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
 const totalVisits = computed(() => doneVisits.value.length)
+const totalTickets = computed(() => tickets.value.length)
+
+// Ticket volume by category (created in range): total + how many are still
+// open, so a big "Uncategorized" or a hot category jumps out.
+interface CatRow {
+  label: string
+  color?: string
+  count: number
+  open: number
+}
+const byCategory = computed<CatRow[]>(() => {
+  const map = new Map<string, CatRow>()
+  for (const t of tickets.value) {
+    const cat = t.expand?.category
+    const label = cat?.name || 'Uncategorized'
+    if (!map.has(label)) map.set(label, { label, color: cat?.color, count: 0, open: 0 })
+    const row = map.get(label)!
+    row.count += 1
+    if (t.status !== 'resolved' && t.status !== 'closed') row.open += 1
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count)
+})
+
+// Source mix (portal / agent / nats / webhook): how much work arrives by
+// each channel — the machine-generated share is the automation story.
+const bySource = computed(() =>
+  [...tickets.value.reduce((m, t) => m.set(t.source, (m.get(t.source) || 0) + 1), new Map<string, number>()).entries()]
+    .map(([source, count]) => ({ source, count, pct: totalTickets.value ? Math.round((count / totalTickets.value) * 100) : 0 }))
+    .sort((a, b) => b.count - a.count),
+)
 
 function fmtHours(m: number): string {
   if (!m) return '—'
@@ -165,6 +207,10 @@ onMounted(load)
           <div class="stat-title">Visits completed</div>
           <div class="stat-value text-2xl">{{ totalVisits }}</div>
         </div>
+        <div class="stat">
+          <div class="stat-title">Tickets created</div>
+          <div class="stat-value text-2xl">{{ totalTickets }}</div>
+        </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -205,6 +251,44 @@ onMounted(load)
                   <td class="text-right font-mono">{{ r.visits || '—' }}</td>
                 </tr>
                 <tr v-if="byCustomer.length === 0"><td colspan="3" class="text-base-content/50">No activity in range.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ticket volume: what came in during the range, by category and by
+           channel. Counts tickets created in the range. -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body p-4 space-y-2">
+            <h2 class="font-semibold text-sm">Tickets by category</h2>
+            <table class="table table-sm">
+              <thead><tr><th>Category</th><th class="text-right">Total</th><th class="text-right">Open</th></tr></thead>
+              <tbody>
+                <tr v-for="r in byCategory" :key="r.label">
+                  <td><CategoryBadge v-if="r.label !== 'Uncategorized'" :name="r.label" :color="r.color" /><span v-else class="text-base-content/50">Uncategorized</span></td>
+                  <td class="text-right font-mono">{{ r.count }}</td>
+                  <td class="text-right font-mono">{{ r.open || '—' }}</td>
+                </tr>
+                <tr v-if="byCategory.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body p-4 space-y-2">
+            <h2 class="font-semibold text-sm">Tickets by source</h2>
+            <table class="table table-sm">
+              <thead><tr><th>Source</th><th class="text-right">Count</th><th class="text-right">Share</th></tr></thead>
+              <tbody>
+                <tr v-for="r in bySource" :key="r.source">
+                  <td class="capitalize">{{ r.source }}</td>
+                  <td class="text-right font-mono">{{ r.count }}</td>
+                  <td class="text-right font-mono">{{ r.pct }}%</td>
+                </tr>
+                <tr v-if="bySource.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
               </tbody>
             </table>
           </div>

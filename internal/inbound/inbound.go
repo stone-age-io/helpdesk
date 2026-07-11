@@ -40,6 +40,12 @@ type Payload struct {
 	// customer when it matches; silently ignored otherwise.
 	RequesterEmail string `json:"requester_email,omitempty"`
 	DedupeKey      string `json:"dedupe_key,omitempty"`
+	// Category is an optional ticket_categories key; unknown/inactive keys are
+	// ignored (ticket still created, unclassified). Asset/Location are optional
+	// free-text provenance fields.
+	Category string `json:"category,omitempty"`
+	Asset    string `json:"asset,omitempty"`
+	Location string `json:"location,omitempty"`
 }
 
 // Register binds both routes.
@@ -122,6 +128,15 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 	rec.Set("body", p.Body)
 	rec.Set("priority", priority)
 	rec.Set("source", "webhook")
+	rec.Set("asset", strings.TrimSpace(p.Asset))
+	rec.Set("location", strings.TrimSpace(p.Location))
+	if key := strings.TrimSpace(p.Category); key != "" {
+		if cat, err := app.FindFirstRecordByFilter(
+			"ticket_categories", "key = {:k} && active = true",
+			dbx.Params{"k": key}); err == nil && cat != nil {
+			rec.Set("category", cat.Id)
+		}
+	}
 	if p.DedupeKey != "" {
 		rec.Set("dedupe_key", p.DedupeKey)
 	}

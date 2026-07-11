@@ -35,9 +35,14 @@ type CreatePayload struct {
 	// that retries (or a flapping sensor stamping a stable key) creates one
 	// ticket, not many.
 	DedupeKey string `json:"dedupe_key,omitempty"`
-	// Thing and Location are optional provenance hints from things/rule-router.
+	// Thing and Location are optional provenance hints from things/rule-router,
+	// stored on the ticket as the structured asset/location fields.
 	Thing    string `json:"thing,omitempty"`
 	Location string `json:"location,omitempty"`
+	// Category is an optional ticket_categories key. An unknown or inactive
+	// key is ignored (the ticket is still created, unclassified) — same
+	// graceful-degradation stance as an unmapped org.
+	Category string `json:"category,omitempty"`
 }
 
 // Outcome tells the dispatcher how to ack the underlying JetStream message.
@@ -187,10 +192,17 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	rec := core.NewRecord(col)
 	rec.Set("customer", customer.Id)
 	rec.Set("title", strings.TrimSpace(payload.Title))
-	rec.Set("body", buildBody(payload))
+	rec.Set("body", strings.TrimSpace(payload.Body))
 	rec.Set("priority", priority)
 	rec.Set("source", "nats")
 	rec.Set("origin_subject", subject)
+	// Provenance hints as structured, filterable/reportable fields (they used
+	// to be folded into the body as a trailing [thing · location] line).
+	rec.Set("asset", strings.TrimSpace(payload.Thing))
+	rec.Set("location", strings.TrimSpace(payload.Location))
+	if catID := c.resolveCategory(payload.Category); catID != "" {
+		rec.Set("category", catID)
+	}
 	if payload.DedupeKey != "" {
 		rec.Set("dedupe_key", payload.DedupeKey)
 	}
@@ -206,25 +218,21 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	return Ack
 }
 
-// buildBody folds the optional thing/location provenance hints into the
-// ticket body so agents see them without a schema addition.
-func buildBody(p CreatePayload) string {
-	body := strings.TrimSpace(p.Body)
-	var tags []string
-	if p.Thing != "" {
-		tags = append(tags, "thing: "+p.Thing)
+// resolveCategory maps an optional category key to a ticket_categories id.
+// Empty/unknown/inactive → "" (leave the ticket unclassified) rather than an
+// error: a machine publisher naming a category the operator hasn't created
+// shouldn't drop the ticket.
+func (c *Consumer) resolveCategory(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
 	}
-	if p.Location != "" {
-		tags = append(tags, "location: "+p.Location)
+	cat, err := c.app.FindFirstRecordByFilter(
+		"ticket_categories", "key = {:k} && active = true", dbx.Params{"k": key})
+	if err != nil || cat == nil {
+		return ""
 	}
-	if len(tags) == 0 {
-		return body
-	}
-	tagLine := "[" + strings.Join(tags, " · ") + "]"
-	if body == "" {
-		return tagLine
-	}
-	return body + "\n\n" + tagLine
+	return cat.Id
 }
 
 func isNotFound(err error) bool {

@@ -18,16 +18,17 @@ authenticated webhook.
 - **Two identity classes**: `staff` (agents/admins, cross-customer) and
   requesters (`users`, scoped to one customer). One login page; the router
   shows the right shell.
-- **Staff workspace**: a dashboard landing page; a ticket queue with search,
-  status/priority/assignee/customer filters, saved views, bulk assign/status,
-  and CSV export; a reports view; and admin for customers, requesters, staff,
-  and notification templates.
+- **Staff workspace**: a dashboard landing (queue counts, backlog aging, weekly
+  inflow); a ticket queue with search, status/priority/assignee/customer/category
+  filters, saved views, bulk assign/status, and CSV export; a reports view
+  (time & visits by tech/customer, ticket volume by category and source); and
+  admin for customers, requesters, staff, categories, and notification templates.
 - **Requester portal**: a company dashboard, a searchable list of their own
   tickets, threaded ticket detail with attachments, a new-ticket form, and a
   read-only visit schedule.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee,
-  comment threads with staff-only internal notes, time entries, site
-  visits.
+  admin-managed categories + free-text asset/location, comment threads with
+  staff-only internal notes, time entries, site visits.
 - **Activity & files**: workflow changes (status/priority/assignee) recorded
   to a staff-only audit timeline; file attachments on tickets and comments; a
   public requester reply on a resolved/closed ticket auto-reopens it.

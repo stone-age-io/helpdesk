@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Requester, Staff, Ticket, TicketComment } from '@/types'
+import type { Customer, Requester, Staff, Ticket, TicketCategory, TicketComment } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
 import ActivityCard from '@/components/ActivityCard.vue'
@@ -24,6 +25,7 @@ const comments = ref<TicketComment[]>([])
 const staff = ref<Staff[]>([])
 const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
+const categories = ref<TicketCategory[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -42,13 +44,14 @@ const editBody = ref('')
 
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, label: c.name })))
 const requesterOptions = computed(() =>
   requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
 )
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
-    expand: 'customer,assignee,requester',
+    expand: 'customer,assignee,requester,category',
   })
 }
 
@@ -73,6 +76,7 @@ async function load() {
     await Promise.all([loadTicket(), loadComments()])
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
+    categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
     await loadRequesters(ticket.value?.customer || '')
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
@@ -89,7 +93,7 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
       id,
       { [field]: value },
       {
-        expand: 'customer,assignee,requester',
+        expand: 'customer,assignee,requester,category',
         // The backend hook reads this header and skips the outbound email.
         headers: notify.value ? {} : { 'X-Helpdesk-Quiet': '1' },
       },
@@ -105,7 +109,7 @@ async function patchPlain(fields: Record<string, string>) {
   if (!ticket.value) return
   try {
     ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
-      expand: 'customer,assignee,requester',
+      expand: 'customer,assignee,requester,category',
     })
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
@@ -218,6 +222,7 @@ onUnmounted(() => {
               <div class="flex items-start gap-2 flex-wrap">
                 <h1 class="text-xl font-bold flex-1">#{{ ticket.number }} — {{ ticket.title }}</h1>
                 <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+                <CategoryBadge :name="ticket.expand?.category?.name" :color="ticket.expand?.category?.color" />
                 <button class="btn btn-ghost btn-xs" @click="startEditHeader">Edit</button>
               </div>
               <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
@@ -309,6 +314,39 @@ onUnmounted(() => {
                 empty-label="None"
                 placeholder="Type a name or email…"
                 @update:model-value="patchPlain({ requester: $event })"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Category</span></label>
+              <SearchSelect
+                :model-value="ticket.category || ''"
+                :options="categoryOptions"
+                size="sm"
+                empty-label="None"
+                placeholder="Classify…"
+                @update:model-value="patchPlain({ category: $event })"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
+              <input
+                :value="ticket.asset || ''"
+                type="text"
+                maxlength="200"
+                class="input input-bordered input-sm"
+                placeholder="Device / system"
+                @change="patchPlain({ asset: ($event.target as HTMLInputElement).value })"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+              <input
+                :value="ticket.location || ''"
+                type="text"
+                maxlength="200"
+                class="input input-bordered input-sm"
+                placeholder="Where"
+                @change="patchPlain({ location: ($event.target as HTMLInputElement).value })"
               />
             </div>
             <div>

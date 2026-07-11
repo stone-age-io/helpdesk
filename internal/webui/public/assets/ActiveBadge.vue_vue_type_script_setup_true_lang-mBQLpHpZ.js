@@ -1,0 +1,1 @@
+import{d as a,o as t,c as s,C as c,t as n}from"./index-BIiNzf_R.js";const l=a({__name:"ActiveBadge",props:{active:{type:Boolean}},setup(e){return(o,i)=>(t(),s("span",{class:c(["badge badge-sm",e.active?"badge-success":"badge-ghost"])},n(e.active?"active":"inactive"),3))}});export{l as _};

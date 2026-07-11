@@ -46,6 +46,45 @@ func TestCreateTicketBasics(t *testing.T) {
 	}
 }
 
+func TestCreateTicketClassification(t *testing.T) {
+	app, customer := setup(t)
+
+	catCol, _ := app.FindCollectionByNameOrId("ticket_categories")
+	cat := core.NewRecord(catCol)
+	cat.Set("name", "VoIP")
+	cat.Set("key", "voip")
+	cat.Set("active", true)
+	if err := app.Save(cat); err != nil {
+		t.Fatalf("seed category: %v", err)
+	}
+
+	// Known key + free-text asset/location all land on the ticket.
+	rec, _, err := CreateTicket(app, customer, Payload{
+		Title: "printer down", Category: "voip", Asset: "printer-3f", Location: "copy room",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec.GetString("category"); got != cat.Id {
+		t.Errorf("category: got %q, want %q", got, cat.Id)
+	}
+	if got := rec.GetString("asset"); got != "printer-3f" {
+		t.Errorf("asset: got %q", got)
+	}
+	if got := rec.GetString("location"); got != "copy room" {
+		t.Errorf("location: got %q", got)
+	}
+
+	// Unknown key → created, unclassified.
+	rec2, _, err := CreateTicket(app, customer, Payload{Title: "y", Category: "nope"})
+	if err != nil {
+		t.Fatalf("CreateTicket unknown category: %v", err)
+	}
+	if got := rec2.GetString("category"); got != "" {
+		t.Errorf("unknown category should not classify, got %q", got)
+	}
+}
+
 func TestCreateTicketRequiresTitle(t *testing.T) {
 	app, customer := setup(t)
 	if _, _, err := CreateTicket(app, customer, Payload{Body: "no title"}); err == nil {
