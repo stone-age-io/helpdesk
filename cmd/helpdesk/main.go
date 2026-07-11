@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"io/fs"
 	"log"
 	"strings"
@@ -18,7 +19,11 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/stone-age-io/helpdesk/config"
+	"github.com/stone-age-io/helpdesk/internal/inbound"
+	"github.com/stone-age-io/helpdesk/internal/ingest"
+	"github.com/stone-age-io/helpdesk/internal/natsx"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
+	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
@@ -81,12 +86,54 @@ func main() {
 		}
 	})
 
+	// NATS resources brought up only when actually serving (not for
+	// migrate/superuser subcommands) and torn down on terminate.
+	var (
+		nc       *natsx.Conn
+		consumer *ingest.Consumer
+	)
+
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		notifications.RegisterRoutes(e)
+		inbound.Register(e)
+
+		// NATS ingestion is best-effort: the helpdesk boots and serves
+		// portal/agent/webhook traffic without a broker; machine tickets
+		// resume when connectivity returns and the durable consumer picks
+		// up where it left off.
+		if cfg.NATS.Enabled() {
+			var err error
+			nc, err = natsx.Connect(cfg.NATS.URLs, cfg.NATS.CredsFile)
+			if err != nil {
+				log.Printf("nats connect failed (tickets arrive via portal/webhook only): %v", err)
+			} else {
+				subj := subjects.Default()
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
+				if _, err := nc.EnsureStream(ctx, cfg.NATS.Stream, subj.StreamWildcards()); err != nil {
+					log.Printf("nats stream setup failed: %v", err)
+				} else {
+					consumer = ingest.New(app, nc.JS, cfg.NATS.Stream, cfg.NATS.Durable, subj)
+					if err := consumer.Start(ctx); err != nil {
+						log.Printf("nats consumer start failed: %v", err)
+						consumer = nil
+					}
+				}
+			}
+		}
+
 		if err := serveSPA(e); err != nil {
 			return err
 		}
 		log.Printf("helpdesk serving (dataDir=%s, nats=%v)", cfg.DataDir, cfg.NATS.Enabled())
+		return e.Next()
+	})
+
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		consumer.Stop()
+		if nc != nil {
+			_ = nc.Close()
+		}
 		return e.Next()
 	})
 
