@@ -1,0 +1,61 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },
+
+    // Staff app
+    {
+      path: '/staff',
+      component: () => import('@/components/StaffLayout.vue'),
+      meta: { requires: 'staff' },
+      children: [
+        { path: '', redirect: '/staff/tickets' },
+        { path: 'dashboard', name: 'dashboard', component: () => import('@/views/staff/DashboardView.vue') },
+        { path: 'tickets', name: 'tickets', component: () => import('@/views/staff/TicketQueueView.vue') },
+        { path: 'tickets/new', name: 'ticket-new', component: () => import('@/views/staff/TicketFormView.vue') },
+        { path: 'tickets/:id', name: 'ticket-detail', component: () => import('@/views/staff/TicketDetailView.vue') },
+        { path: 'customers', name: 'customers', component: () => import('@/views/staff/CustomerListView.vue') },
+        { path: 'customers/:id', name: 'customer-detail', component: () => import('@/views/staff/CustomerDetailView.vue') },
+        { path: 'requesters', name: 'requesters', component: () => import('@/views/staff/RequesterListView.vue') },
+      ],
+    },
+
+    // Requester portal
+    {
+      path: '/portal',
+      component: () => import('@/components/PortalLayout.vue'),
+      meta: { requires: 'requester' },
+      children: [
+        { path: '', redirect: '/portal/tickets' },
+        { path: 'tickets', name: 'portal-tickets', component: () => import('@/views/portal/MyTicketsView.vue') },
+        { path: 'tickets/new', name: 'portal-ticket-new', component: () => import('@/views/portal/NewTicketView.vue') },
+        { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
+      ],
+    },
+
+    { path: '/', redirect: '/login' },
+    { path: '/:pathMatch(.*)*', redirect: '/login' },
+  ],
+})
+
+router.beforeEach((to) => {
+  const auth = useAuthStore()
+
+  if (to.name === 'login') {
+    if (auth.isStaff) return '/staff/tickets'
+    if (auth.isRequester) return '/portal/tickets'
+    return true
+  }
+
+  const requires = to.matched.find((r) => r.meta.requires)?.meta.requires
+  if (!requires) return true
+  if (!auth.isAuthenticated) return { name: 'login' }
+  if (requires === 'staff' && !auth.isStaff) return '/portal/tickets'
+  if (requires === 'requester' && !auth.isRequester) return '/staff/tickets'
+  return true
+})
+
+export default router
