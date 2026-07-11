@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
@@ -9,6 +9,7 @@ import CategoryBadge from '@/components/CategoryBadge.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
 import Avatar from '@/components/Avatar.vue'
+import TicketProgress from '@/components/TicketProgress.vue'
 import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
@@ -23,27 +24,10 @@ const statusEvents = ref<TicketEvent[]>([])
 const loading = ref(true)
 const error = ref('')
 
-// Status stepper: collapse the raw event churn (a status can bounce back and
-// forth) into the canonical lifecycle a requester cares about. "Current" is
-// derived from the ticket's status now — not the furthest stage ever reached —
-// so a reopened ticket reads sensibly instead of showing a regression.
-const STEPS = ['Open', 'In progress', 'Resolved'] as const
-function stageIndex(status?: string): number {
-  if (status === 'resolved' || status === 'closed') return 2
-  if (status === 'in_progress' || status === 'waiting') return 1
-  return 0
-}
-const currentStage = computed(() => stageIndex(ticket.value?.status))
-// Name the terminal stage by the actual status.
-const stepLabel = (i: number) => (i === 2 && ticket.value?.status === 'closed' ? 'Closed' : STEPS[i])
-// First time the ticket entered a stage (stage 0 = creation). The status read
-// rule (migration 1808000000) scopes ticket_events to field='status' on the
-// requester's own tickets; the actor is never requested, so nothing leaks.
-function stepReachedAt(i: number): string {
-  if (i === 0) return ticket.value?.created || ''
-  return statusEvents.value.find((e) => stageIndex(e.new_value) === i)?.created || ''
-}
-
+// The status stepper lives in <TicketProgress>; statusEvents feeds it. The
+// read rule (migration 1808000000) scopes ticket_events to field='status' on
+// the requester's own tickets, and the actor is never requested — nothing
+// leaks.
 const newComment = ref('')
 const commentFiles = ref<File[]>([])
 const posting = ref(false)
@@ -208,6 +192,40 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Mobile: status + progress collapsed directly under the header, so
+             the context isn't buried below the conversation. Desktop keeps the
+             detail cards in the rail. -->
+        <details class="group xl:hidden card bg-base-100 shadow-sm">
+          <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-3 px-4 [&::-webkit-details-marker]:hidden">
+            <span class="font-semibold text-sm">Status</span>
+            <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+            <span class="ml-auto text-base-content/50 transition-transform group-open:rotate-90">▸</span>
+          </summary>
+          <div class="px-4 pb-4 space-y-3">
+            <div class="space-y-2 text-sm">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Category</span>
+                <CategoryBadge
+                  v-if="ticket.expand?.category?.name"
+                  :name="ticket.expand?.category?.name"
+                  :color="ticket.expand?.category?.color"
+                />
+                <span v-else class="text-base-content/40">—</span>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Opened</span>
+                <span>{{ format(new Date(ticket.created), 'MMM d, yyyy') }}</span>
+              </div>
+              <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Updated</span>
+                <span>{{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</span>
+              </div>
+            </div>
+            <div class="divider my-0"></div>
+            <TicketProgress :ticket="ticket" :status-events="statusEvents" />
+          </div>
+        </details>
+
         <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
         <!-- Conversation -->
@@ -236,8 +254,9 @@ onUnmounted(() => {
           <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No replies yet.</p>
         </div>
 
-        <!-- Composer -->
-        <div class="card bg-base-100 shadow-sm">
+        <!-- Composer. Sticky at the viewport bottom on mobile so replying is
+             always in reach; static on desktop. -->
+        <div class="card bg-base-100 shadow-sm sticky bottom-0 z-20 shadow-lg xl:static xl:z-auto xl:shadow-sm">
           <div class="card-body py-3 px-4 space-y-2">
             <textarea
               v-model="newComment"
@@ -257,9 +276,9 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Rail: read-only details -->
+      <!-- Rail: read-only details (desktop; mobile shows the collapsible above) -->
       <div class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
-        <div class="card bg-base-100 shadow-sm">
+        <div class="card bg-base-100 shadow-sm hidden xl:block">
           <div class="card-body py-4 px-4 gap-2 text-sm">
             <div class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Status</span>
@@ -289,39 +308,10 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Progress stepper -->
-        <div class="card bg-base-100 shadow-sm">
+        <!-- Progress stepper (desktop; mobile shows it in the collapsible above) -->
+        <div class="card bg-base-100 shadow-sm hidden xl:block">
           <div class="card-body py-4 px-4">
-            <h2 class="font-semibold text-sm mb-2">Progress</h2>
-            <ol>
-              <li v-for="(_, i) in STEPS" :key="i" class="flex gap-3 relative pb-4 last:pb-0">
-                <!-- connector -->
-                <span
-                  v-if="i < STEPS.length - 1"
-                  class="absolute left-[5px] top-3.5 -bottom-0.5 w-px"
-                  :class="i < currentStage ? 'bg-primary' : 'bg-base-300'"
-                ></span>
-                <!-- dot -->
-                <span
-                  class="relative z-10 mt-1 w-2.5 h-2.5 rounded-full shrink-0"
-                  :class="
-                    i < currentStage
-                      ? 'bg-primary'
-                      : i === currentStage
-                        ? 'bg-primary ring-4 ring-primary/20'
-                        : 'bg-base-300'
-                  "
-                ></span>
-                <div class="flex-1 -mt-0.5">
-                  <div class="text-sm" :class="i <= currentStage ? 'font-medium' : 'text-base-content/40'">
-                    {{ stepLabel(i) }}
-                  </div>
-                  <div v-if="i <= currentStage && stepReachedAt(i)" class="text-xs text-base-content/50">
-                    {{ format(new Date(stepReachedAt(i)), 'MMM d, HH:mm') }}
-                  </div>
-                </div>
-              </li>
-            </ol>
+            <TicketProgress :ticket="ticket" :status-events="statusEvents" />
           </div>
         </div>
 
