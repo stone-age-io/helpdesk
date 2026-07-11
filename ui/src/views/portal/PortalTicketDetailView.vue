@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Ticket, TicketComment, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
+import AttachmentList from '@/components/AttachmentList.vue'
+import FileInput from '@/components/FileInput.vue'
 import { format } from 'date-fns'
 
 const route = useRoute()
@@ -19,7 +21,12 @@ const loading = ref(true)
 const error = ref('')
 
 const newComment = ref('')
+const commentFiles = ref<File[]>([])
 const posting = ref(false)
+
+async function loadTicket() {
+  ticket.value = await pb.collection('tickets').getOne<Ticket>(id)
+}
 
 async function loadComments() {
   // Rules already exclude internal notes for requesters.
@@ -46,7 +53,7 @@ async function loadVisits() {
 async function load() {
   loading.value = true
   try {
-    ticket.value = await pb.collection('tickets').getOne<Ticket>(id)
+    await loadTicket()
     await loadComments()
     await loadVisits()
   } catch (err: any) {
@@ -65,15 +72,32 @@ async function postComment() {
       ticket: id,
       author_user: auth.record?.id,
       body: newComment.value.trim(),
+      attachments: commentFiles.value,
     })
     newComment.value = ''
-    await loadComments()
+    commentFiles.value = []
+    // Replying on a resolved/closed ticket reopens it server-side; refresh
+    // the header so the requester sees the status flip back to open.
+    await Promise.all([loadTicket(), loadComments()])
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
   } finally {
     posting.value = false
   }
 }
+
+// Live updates: a staff reply or status change appears without a refresh.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleReload() {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    loadTicket().catch(() => {})
+    loadComments().catch(() => {})
+    loadVisits()
+  }, 500)
+}
+let unsubTicket: (() => void) | null = null
+let unsubComments: (() => void) | null = null
 
 const visitBadge: Record<string, string> = {
   requested: 'badge-warning',
@@ -89,7 +113,21 @@ function authorLabel(c: TicketComment): string {
   return 'System'
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  try {
+    unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
+    unsubComments = await pb.collection('ticket_comments').subscribe('*', scheduleReload)
+  } catch {
+    // Realtime is progressive enhancement; the view works without it.
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(reloadTimer)
+  unsubTicket?.()
+  unsubComments?.()
+})
 </script>
 
 <template>
@@ -111,6 +149,7 @@ onMounted(load)
           <TicketBadges :status="ticket.status" />
         </div>
         <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
+        <AttachmentList :record="ticket" :files="ticket.attachments" />
       </div>
     </div>
 
@@ -144,6 +183,7 @@ onMounted(load)
             <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
           </div>
           <p class="whitespace-pre-wrap text-sm">{{ c.body }}</p>
+          <AttachmentList :record="c" :files="c.attachments" />
         </div>
       </div>
       <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No replies yet.</p>
@@ -158,6 +198,7 @@ onMounted(load)
           placeholder="Add a reply…"
           :disabled="posting"
         ></textarea>
+        <FileInput v-model:files="commentFiles" :disabled="posting" />
         <div class="flex justify-end">
           <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
             <span v-if="posting" class="loading loading-spinner loading-xs"></span>

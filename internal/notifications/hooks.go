@@ -1,10 +1,40 @@
 package notifications
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
+
+// suppressField is a transient (non-persisted) record flag. When set on a
+// ticket before it is saved, the ticket update hook skips its outbound email
+// for that one save. It rides the shared record instance from the request
+// hook into the after-success hook; custom keys are never written to a
+// column and never serialized to the API (that needs WithCustomData, which
+// we never set).
+const suppressField = "_suppressNotify"
+
+// Suppress marks a record so the notification hooks skip email for the
+// current save. Used for server-initiated changes that would double up on a
+// message already sent another way — e.g. the requester comment that
+// auto-reopens a resolved ticket (internal/tickets): the comment email
+// already tells staff, so a second "status changed" mail would be noise.
+func Suppress(r *core.Record) { r.SetRaw(suppressField, true) }
+
+func suppressed(r *core.Record) bool { return r.GetBool(suppressField) }
+
+// quietRequested reports whether the caller asked for a silent update via the
+// X-Helpdesk-Quiet header — the staff UI sends it when the agent turns off
+// "email requester" for a triage edit, mis-set-status fix, or internal
+// reassignment.
+func quietRequested(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.Header.Get("X-Helpdesk-Quiet"))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
 
 // RegisterHooks binds the record hooks that turn ticket activity into
 // notification events:
@@ -27,7 +57,22 @@ func RegisterHooks(app core.App, n *Notifier) {
 		return e.Next()
 	})
 
+	// A staff client can pass X-Helpdesk-Quiet on a ticket update to change
+	// it without emailing anyone. The flag is stamped on the record here (in
+	// the request-scoped hook, the only place the header is reachable) and
+	// read back in the after-success hook below, which rides the same record
+	// instance.
+	app.OnRecordUpdateRequest("tickets").BindFunc(func(e *core.RecordRequestEvent) error {
+		if quietRequested(e.Request) {
+			Suppress(e.Record)
+		}
+		return e.Next()
+	})
+
 	app.OnRecordAfterUpdateSuccess("tickets").BindFunc(func(e *core.RecordEvent) error {
+		if suppressed(e.Record) {
+			return e.Next() // silent update — see Suppress / X-Helpdesk-Quiet
+		}
 		orig := e.Record.Original()
 		if old, now := orig.GetString("status"), e.Record.GetString("status"); old != now {
 			ctx := buildTicketContext(e.App, e.Record)

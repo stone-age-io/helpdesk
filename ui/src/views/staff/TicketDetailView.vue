@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
@@ -9,6 +9,8 @@ import TicketBadges from '@/components/TicketBadges.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
 import VisitsCard from '@/components/VisitsCard.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
+import AttachmentList from '@/components/AttachmentList.vue'
+import FileInput from '@/components/FileInput.vue'
 import { format } from 'date-fns'
 
 const route = useRoute()
@@ -24,7 +26,11 @@ const error = ref('')
 
 const newComment = ref('')
 const internalNote = ref(false)
+const commentFiles = ref<File[]>([])
 const posting = ref(false)
+// When off, field edits are saved without emailing the requester — for
+// triage cleanup, a mis-set status, or an internal reassignment.
+const notify = ref(true)
 
 const requesterName = computed(() => {
   const r = ticket.value?.expand?.requester
@@ -33,18 +39,25 @@ const requesterName = computed(() => {
 
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 
+async function loadTicket() {
+  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
+    expand: 'customer,assignee,requester',
+  })
+}
+
+async function loadComments() {
+  comments.value = await pb.collection('ticket_comments').getFullList<TicketComment>({
+    filter: `ticket = '${id}'`,
+    sort: 'created',
+    expand: 'author_staff,author_user',
+  })
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
-      expand: 'customer,assignee,requester',
-    })
-    comments.value = await pb.collection('ticket_comments').getFullList<TicketComment>({
-      filter: `ticket = '${id}'`,
-      sort: 'created',
-      expand: 'author_staff,author_user',
-    })
+    await Promise.all([loadTicket(), loadComments()])
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
@@ -56,9 +69,15 @@ async function load() {
 async function updateField(field: 'status' | 'priority' | 'assignee', value: string) {
   if (!ticket.value) return
   try {
-    ticket.value = await pb.collection('tickets').update<Ticket>(id, { [field]: value }, {
-      expand: 'customer,assignee,requester',
-    })
+    ticket.value = await pb.collection('tickets').update<Ticket>(
+      id,
+      { [field]: value },
+      {
+        expand: 'customer,assignee,requester',
+        // The backend hook reads this header and skips the outbound email.
+        headers: notify.value ? {} : { 'X-Helpdesk-Quiet': '1' },
+      },
+    )
   } catch (err: any) {
     error.value = err?.message || `Failed to update ${field}`
   }
@@ -73,14 +92,12 @@ async function postComment() {
       author_staff: auth.record?.id,
       body: newComment.value.trim(),
       internal: internalNote.value,
+      attachments: commentFiles.value,
     })
     newComment.value = ''
     internalNote.value = false
-    comments.value = await pb.collection('ticket_comments').getFullList<TicketComment>({
-      filter: `ticket = '${id}'`,
-      sort: 'created',
-      expand: 'author_staff,author_user',
-    })
+    commentFiles.value = []
+    await loadComments()
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
   } finally {
@@ -96,7 +113,34 @@ function authorLabel(c: TicketComment): string {
   return 'System'
 }
 
-onMounted(load)
+// Live updates: another agent's reply, a status change, or a requester
+// comment lands without a manual refresh. Debounced to collapse bursts.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleReload() {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    loadTicket().catch(() => {})
+    loadComments().catch(() => {})
+  }, 500)
+}
+let unsubTicket: (() => void) | null = null
+let unsubComments: (() => void) | null = null
+
+onMounted(async () => {
+  await load()
+  try {
+    unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
+    unsubComments = await pb.collection('ticket_comments').subscribe('*', scheduleReload)
+  } catch {
+    // Realtime is progressive enhancement; the view works without it.
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(reloadTimer)
+  unsubTicket?.()
+  unsubComments?.()
+})
 </script>
 
 <template>
@@ -126,6 +170,7 @@ onMounted(load)
               <TicketBadges :status="ticket.status" :priority="ticket.priority" />
             </div>
             <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
+            <AttachmentList :record="ticket" :files="ticket.attachments" />
             <p v-if="ticket.origin_subject" class="text-xs font-mono text-base-content/50 mt-2">
               via {{ ticket.origin_subject }}
             </p>
@@ -147,6 +192,7 @@ onMounted(load)
                 <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
               </div>
               <p class="whitespace-pre-wrap text-sm">{{ c.body }}</p>
+              <AttachmentList :record="c" :files="c.attachments" />
             </div>
           </div>
           <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No comments yet.</p>
@@ -162,6 +208,7 @@ onMounted(load)
               placeholder="Write a reply…"
               :disabled="posting"
             ></textarea>
+            <FileInput v-model:files="commentFiles" :disabled="posting" />
             <div class="flex justify-between items-center">
               <label class="label cursor-pointer gap-2">
                 <input v-model="internalNote" type="checkbox" class="checkbox checkbox-sm checkbox-warning" :disabled="posting" />
@@ -196,6 +243,10 @@ onMounted(load)
               <div class="text-xs text-base-content/60">Source</div>
               <div class="text-sm">{{ ticket.source }}</div>
             </div>
+            <label class="label cursor-pointer justify-start gap-2 py-1">
+              <input v-model="notify" type="checkbox" class="toggle toggle-sm toggle-primary" />
+              <span class="label-text text-xs">Email requester on changes</span>
+            </label>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Status</span></label>
               <select class="select select-bordered select-sm" :value="ticket.status" @change="updateField('status', ($event.target as HTMLSelectElement).value)">

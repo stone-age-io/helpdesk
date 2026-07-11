@@ -149,8 +149,19 @@ function buildFilter(): string {
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
   else if (assignee.value) parts.push(`assignee = '${assignee.value}'`)
   if (search.value.trim()) {
-    const q = search.value.trim().replace(/'/g, "\\'")
-    parts.push(`(title ~ '${q}' || body ~ '${q}')`)
+    const raw = search.value.trim()
+    const q = raw.replace(/'/g, "\\'")
+    const clauses = [
+      `title ~ '${q}'`,
+      `body ~ '${q}'`,
+      `customer.name ~ '${q}'`,
+      `requester.name ~ '${q}'`,
+      `requester.email ~ '${q}'`,
+    ]
+    // A bare number matches the ticket number exactly — the most common
+    // "pull up #142" lookup.
+    if (/^\d+$/.test(raw)) clauses.push(`number = ${raw}`)
+    parts.push(`(${clauses.join(' || ')})`)
   }
   return parts.join(' && ')
 }
@@ -233,7 +244,7 @@ onUnmounted(() => {
     </div>
 
     <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2">
-      <input ref="searchEl" v-model="search" type="search" placeholder="Search title or body…  ( / )" class="input input-bordered input-sm w-full sm:w-64" />
+      <input ref="searchEl" v-model="search" type="search" placeholder="Search #, title, customer, requester…  ( / )" class="input input-bordered input-sm w-full sm:w-64" />
       <select v-model="status" class="select select-bordered select-sm w-full sm:w-auto">
         <option value="active">Active</option>
         <option value="">All statuses</option>

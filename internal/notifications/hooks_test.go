@@ -237,6 +237,58 @@ func TestStatusChangeNotifiesRequester(t *testing.T) {
 	}
 }
 
+// A Suppress'd update is silent — the same status change that mails the
+// requester above sends nothing when the quiet flag is set.
+func TestSuppressedUpdateSendsNoEmail(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	h.drain(t)
+
+	loaded, _ := h.app.FindRecordById("tickets", ticket.Id)
+	loaded.Set("status", "resolved")
+	notifications.Suppress(loaded)
+	if err := h.app.Save(loaded); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := h.drain(t); len(got) != 0 {
+		t.Errorf("suppressed update should send no mail, got %v", got)
+	}
+}
+
+// A requester replying on a resolved ticket reopens it, but the reopen is
+// silent (the comment already carried the news): the requester is not mailed
+// a redundant status-change, and the ticket ends up open.
+func TestRequesterCommentReopenIsSilent(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	h.drain(t)
+
+	resolved, _ := h.app.FindRecordById("tickets", ticket.Id)
+	resolved.Set("status", "resolved")
+	if err := h.app.Save(resolved); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	h.drain(t)
+
+	h.createComment(t, ticket, map[string]any{"author_user": h.requester.Id})
+	got := h.drain(t)
+	if slices.Contains(got, "rita@acme.example") {
+		t.Errorf("reopen should not mail the requester who commented: %v", got)
+	}
+	if s := statusOfTicket(t, h.app, ticket.Id); s != "open" {
+		t.Errorf("requester comment should reopen resolved ticket, got %q", s)
+	}
+}
+
+func statusOfTicket(t *testing.T, app *pocketbase.PocketBase, id string) string {
+	t.Helper()
+	rec, err := app.FindRecordById("tickets", id)
+	if err != nil {
+		t.Fatalf("reload ticket: %v", err)
+	}
+	return rec.GetString("status")
+}
+
 func TestNoOpUpdateSendsNothing(t *testing.T) {
 	h := setupHarness(t)
 	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})

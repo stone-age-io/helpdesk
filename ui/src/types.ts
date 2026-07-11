@@ -44,6 +44,7 @@ export interface Ticket extends BaseRecord {
   requester?: string
   source: TicketSource
   origin_subject?: string
+  attachments?: string[]
 }
 
 export interface TicketComment extends BaseRecord {
@@ -52,6 +53,7 @@ export interface TicketComment extends BaseRecord {
   author_user?: string
   body: string
   internal: boolean
+  attachments?: string[]
 }
 
 export interface TimeEntry extends BaseRecord {
@@ -70,6 +72,7 @@ export interface Visit extends BaseRecord {
   ticket: string
   assignee?: string
   scheduled_at?: string
+  completed_at?: string
   status: VisitStatus
   location?: string
   notes?: string

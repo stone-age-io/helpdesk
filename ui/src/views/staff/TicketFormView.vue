@@ -5,12 +5,14 @@ import { pb } from '@/pb'
 import type { Customer, Requester, Staff } from '@/types'
 import { TICKET_PRIORITIES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
+import FileInput from '@/components/FileInput.vue'
 
 const router = useRouter()
 
 const customers = ref<Customer[]>([])
 const staff = ref<Staff[]>([])
 const requesters = ref<Requester[]>([])
+const files = ref<File[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -59,6 +61,7 @@ async function submit() {
     const rec = await pb.collection('tickets').create({
       ...form.value,
       source: 'agent',
+      attachments: files.value,
     })
     router.push(`/staff/tickets/${rec.id}`)
   } catch (err: any) {
@@ -104,6 +107,11 @@ onMounted(loadOptions)
         <div class="form-control">
           <label class="label"><span class="label-text">Details</span></label>
           <textarea v-model="form.body" rows="5" class="textarea textarea-bordered" :disabled="loading"></textarea>
+        </div>
+
+        <div class="form-control">
+          <label class="label"><span class="label-text">Attachments</span></label>
+          <FileInput v-model:files="files" :disabled="loading" />
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">

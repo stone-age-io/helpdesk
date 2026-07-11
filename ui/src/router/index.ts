@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'tickets/new', name: 'ticket-new', component: () => import('@/views/staff/TicketFormView.vue') },
         { path: 'tickets/:id', name: 'ticket-detail', component: () => import('@/views/staff/TicketDetailView.vue') },
         { path: 'dispatch', name: 'dispatch', component: () => import('@/views/staff/DispatchView.vue') },
+        { path: 'reports', name: 'reports', component: () => import('@/views/staff/ReportsView.vue') },
       { path: 'customers', name: 'customers', component: () => import('@/views/staff/CustomerListView.vue') },
         { path: 'customers/:id', name: 'customer-detail', component: () => import('@/views/staff/CustomerDetailView.vue') },
         { path: 'requesters', name: 'requesters', component: () => import('@/views/staff/RequesterListView.vue') },

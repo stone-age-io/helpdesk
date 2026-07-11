@@ -3,12 +3,14 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
+import FileInput from '@/components/FileInput.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 
 const title = ref('')
 const body = ref('')
+const files = ref<File[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -22,6 +24,7 @@ async function submit() {
       title: title.value.trim(),
       body: body.value.trim(),
       source: 'portal',
+      attachments: files.value,
     })
     router.push(`/portal/tickets/${rec.id}`)
   } catch (err: any) {
@@ -46,6 +49,10 @@ async function submit() {
         <div class="form-control">
           <label class="label"><span class="label-text">Details</span></label>
           <textarea v-model="body" rows="6" class="textarea textarea-bordered" placeholder="What happened? What did you expect?" :disabled="loading"></textarea>
+        </div>
+        <div class="form-control">
+          <label class="label"><span class="label-text">Attachments</span></label>
+          <FileInput v-model:files="files" :disabled="loading" />
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" class="btn btn-ghost" :disabled="loading" @click="router.back()">Cancel</button>

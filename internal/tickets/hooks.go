@@ -3,14 +3,18 @@
 package tickets
 
 import (
+	"log/slog"
+
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/stone-age-io/helpdesk/internal/notifications"
 )
 
-// Register binds the ticket create hook: assigns the next sequential ticket
-// number and defaults status/priority/source when the writer omitted them.
-// PocketBase serializes writes on one SQLite connection, and the unique index
-// on `number` is the collision backstop.
+// Register binds the ticket create hook (sequential number + field defaults)
+// and the comment-driven auto-reopen. PocketBase serializes writes on one
+// SQLite connection, and the unique index on `number` is the collision
+// backstop.
 func Register(app *pocketbase.PocketBase) {
 	app.OnRecordCreate("tickets").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetInt("number") == 0 {
@@ -24,6 +28,30 @@ func Register(app *pocketbase.PocketBase) {
 		}
 		if e.Record.GetString("source") == "" {
 			e.Record.Set("source", "agent")
+		}
+		return e.Next()
+	})
+
+	// A requester replying on a resolved or closed ticket reopens it — if they
+	// still have a problem, it isn't done. Internal notes and staff comments
+	// never reopen. The reopen is silent (Suppress): the comment itself
+	// already emailed staff, so a second status-change mail would be noise.
+	app.OnRecordAfterCreateSuccess("ticket_comments").BindFunc(func(e *core.RecordEvent) error {
+		if e.Record.GetBool("internal") || e.Record.GetString("author_user") == "" {
+			return e.Next()
+		}
+		ticket, err := e.App.FindRecordById("tickets", e.Record.GetString("ticket"))
+		if err != nil {
+			return e.Next()
+		}
+		switch ticket.GetString("status") {
+		case "resolved", "closed":
+			ticket.Set("status", "open")
+			notifications.Suppress(ticket)
+			if err := e.App.Save(ticket); err != nil {
+				// Best-effort: a failed reopen must not fail the comment write.
+				slog.Warn("auto-reopen failed", "ticket", ticket.Id, "err", err)
+			}
 		}
 		return e.Next()
 	})

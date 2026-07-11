@@ -23,6 +23,120 @@ func seedCustomer(t *testing.T, app core.App, name string) *core.Record {
 	return rec
 }
 
+func seedRequester(t *testing.T, app core.App, customer *core.Record) *core.Record {
+	t.Helper()
+	col, _ := app.FindCollectionByNameOrId("users")
+	rec := core.NewRecord(col)
+	rec.Set("email", "rita@acme.example")
+	rec.Set("name", "Rita")
+	rec.Set("customer", customer.Id)
+	rec.Set("active", true)
+	rec.SetPassword("test-password-123")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save requester: %v", err)
+	}
+	return rec
+}
+
+func seedTicket(t *testing.T, app core.App, customer *core.Record, status string) *core.Record {
+	t.Helper()
+	col, _ := app.FindCollectionByNameOrId("tickets")
+	rec := core.NewRecord(col)
+	rec.Set("customer", customer.Id)
+	rec.Set("title", "pump fault")
+	rec.Set("status", status)
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save ticket: %v", err)
+	}
+	return rec
+}
+
+func addComment(t *testing.T, app core.App, ticket *core.Record, set map[string]any) {
+	t.Helper()
+	col, _ := app.FindCollectionByNameOrId("ticket_comments")
+	rec := core.NewRecord(col)
+	rec.Set("ticket", ticket.Id)
+	rec.Set("body", "still broken")
+	for k, v := range set {
+		rec.Set(k, v)
+	}
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save comment: %v", err)
+	}
+}
+
+func statusOf(t *testing.T, app core.App, id string) string {
+	t.Helper()
+	rec, err := app.FindRecordById("tickets", id)
+	if err != nil {
+		t.Fatalf("reload ticket: %v", err)
+	}
+	return rec.GetString("status")
+}
+
+func TestRequesterCommentReopensResolvedTicket(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	requester := seedRequester(t, app, customer)
+
+	for _, status := range []string{"resolved", "closed"} {
+		ticket := seedTicket(t, app, customer, status)
+		addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
+		if got := statusOf(t, app, ticket.Id); got != "open" {
+			t.Errorf("%s ticket: requester comment should reopen to open, got %q", status, got)
+		}
+	}
+}
+
+func TestStaffCommentDoesNotReopen(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	staffCol, _ := app.FindCollectionByNameOrId("staff")
+	agent := core.NewRecord(staffCol)
+	agent.Set("email", "sam@816tech.example")
+	agent.Set("name", "Sam")
+	agent.Set("role", "agent")
+	agent.Set("active", true)
+	agent.SetPassword("test-password-123")
+	if err := app.Save(agent); err != nil {
+		t.Fatalf("save staff: %v", err)
+	}
+
+	ticket := seedTicket(t, app, customer, "resolved")
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	if got := statusOf(t, app, ticket.Id); got != "resolved" {
+		t.Errorf("staff comment should not reopen, got %q", got)
+	}
+}
+
+func TestInternalNoteDoesNotReopen(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	requester := seedRequester(t, app, customer)
+
+	ticket := seedTicket(t, app, customer, "resolved")
+	addComment(t, app, ticket, map[string]any{"author_user": requester.Id, "internal": true})
+	if got := statusOf(t, app, ticket.Id); got != "resolved" {
+		t.Errorf("internal note should not reopen, got %q", got)
+	}
+}
+
+func TestCommentOnOpenTicketStaysOpen(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	requester := seedRequester(t, app, customer)
+
+	ticket := seedTicket(t, app, customer, "in_progress")
+	addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
+	if got := statusOf(t, app, ticket.Id); got != "in_progress" {
+		t.Errorf("comment on active ticket should not change status, got %q", got)
+	}
+}
+
 func TestTicketNumberAssignment(t *testing.T) {
 	app := testutil.SetupApp(t)
 	Register(app)

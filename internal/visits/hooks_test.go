@@ -129,6 +129,65 @@ func TestRequestedToScheduledRequiresTimeAndTech(t *testing.T) {
 	}
 }
 
+func TestCompletedStampsCompletedAt(t *testing.T) {
+	app, f := setup(t)
+	rec, err := newVisit(t, app, map[string]any{
+		"ticket": f.ticket.Id, "assignee": f.tech.Id, "status": "scheduled",
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("save scheduled visit: %v", err)
+	}
+	if !rec.GetDateTime("completed_at").IsZero() {
+		t.Error("completed_at should be empty on a scheduled visit")
+	}
+
+	rec.Set("status", "completed")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("complete visit: %v", err)
+	}
+	if rec.GetDateTime("completed_at").IsZero() {
+		t.Error("completed_at should be stamped when a visit is completed")
+	}
+}
+
+func TestCompletedAtPreservedWhenSupplied(t *testing.T) {
+	app, f := setup(t)
+	// A visit closed out after the fact carries its real completion time.
+	rec, err := newVisit(t, app, map[string]any{
+		"ticket": f.ticket.Id, "assignee": f.tech.Id, "status": "completed",
+		"completed_at": "2026-07-10 09:30:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("save completed visit: %v", err)
+	}
+	if got := rec.GetDateTime("completed_at").String(); got[:10] != "2026-07-10" {
+		t.Errorf("completed_at overwritten: got %q, want the supplied 2026-07-10", got)
+	}
+}
+
+func TestCompletedAtClearedWhenReopened(t *testing.T) {
+	app, f := setup(t)
+	rec, err := newVisit(t, app, map[string]any{
+		"ticket": f.ticket.Id, "assignee": f.tech.Id, "status": "completed",
+	})
+	if err != nil {
+		t.Fatalf("save completed visit: %v", err)
+	}
+	if rec.GetDateTime("completed_at").IsZero() {
+		t.Fatal("precondition: completed_at should be stamped")
+	}
+
+	rec.Set("status", "scheduled")
+	rec.Set("scheduled_at", "2026-07-20 10:00:00.000Z")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("reschedule visit: %v", err)
+	}
+	if !rec.GetDateTime("completed_at").IsZero() {
+		t.Error("completed_at should clear when a visit leaves completed")
+	}
+}
+
 // TestPortalVisitReadRule exercises the migration's relation-hop read rule
 // directly (no HTTP): a requester sees visits on their own company's
 // tickets and nothing else.

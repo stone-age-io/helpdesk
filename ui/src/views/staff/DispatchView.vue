@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Staff, Visit, VisitStatus } from '@/types'
+import type { Customer, Staff, Visit, VisitStatus } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
@@ -14,6 +14,7 @@ const router = useRouter()
 const requested = ref<Visit[]>([])
 const visits = ref<Visit[]>([])
 const staff = ref<Staff[]>([])
+const customers = ref<Customer[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -21,11 +22,13 @@ const error = ref('')
 // live in their own bucket above, so the status filter never includes them.
 const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
 const technician = ref(q('technician'))
+const customer = ref(q('customer'))
 const status = ref<VisitStatus | ''>((q('status') as any) || 'scheduled')
 const from = ref(q('from'))
 const to = ref(q('to'))
 
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 
 // Ticket priority drives the dispatch order of the requested bucket.
 // Sorted client-side: a PocketBase relation-hop sort on a select field
@@ -72,6 +75,7 @@ const visitColumns: Column<Visit>[] = [
   { key: 'customer', label: 'Customer', format: (_, item) => customerName(item) },
   { key: 'assignee', label: 'Technician', format: (_, item) => item.expand?.assignee?.name || '—' },
   { key: 'location', label: 'Location', class: 'max-w-48 truncate' },
+  { key: 'completed_at', label: 'Completed', class: 'whitespace-nowrap text-base-content/60', format: (v) => (v ? format(new Date(v), 'MMM d HH:mm') : '—') },
   { key: 'status', label: 'Status' },
 ]
 
@@ -92,6 +96,7 @@ function buildFilter(): string {
   if (status.value) parts.push(`status = '${status.value}'`)
   else parts.push(`status != 'requested'`)
   if (technician.value) parts.push(`assignee = '${technician.value}'`)
+  if (customer.value) parts.push(`ticket.customer = '${customer.value}'`)
   if (from.value) parts.push(`scheduled_at >= '${pbTime(from.value, false)}'`)
   if (to.value) parts.push(`scheduled_at <= '${pbTime(to.value, true)}'`)
   return parts.join(' && ')
@@ -123,12 +128,92 @@ async function load(quiet = false) {
 async function loadFilterOptions() {
   try {
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
+    customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
   } catch {
-    // Filter dropdown degrades gracefully; the lists still load.
+    // Filter dropdowns degrade gracefully; the lists still load.
   }
 }
 
-watch([technician, status, from, to], () => load())
+// --- CSV export of the current visit filter (all matching rows) ---
+const exporting = ref(false)
+function csvEscape(v: unknown): string {
+  const s = String(v ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+function exportCsv() {
+  exporting.value = true
+  try {
+    const header = ['ticket', 'customer', 'technician', 'scheduled_at', 'completed_at', 'status', 'location', 'notes']
+    const lines = [header.join(',')]
+    for (const v of visits.value) {
+      lines.push(
+        [
+          v.expand?.ticket?.number ?? '',
+          customerName(v),
+          v.expand?.assignee?.name || '',
+          v.scheduled_at || '',
+          v.completed_at || '',
+          v.status,
+          v.location || '',
+          v.notes || '',
+        ]
+          .map(csvEscape)
+          .join(','),
+      )
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `visits-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  } finally {
+    exporting.value = false
+  }
+}
+
+// --- inline scheduling: act on the "Needs scheduling" queue without
+// opening each ticket. Also reschedules an already-scheduled visit. ---
+const scheduling = ref<Visit | null>(null)
+const savingSched = ref(false)
+const schedError = ref('')
+const schedForm = ref({ scheduled_at: '', assignee: '', location: '', notes: '' })
+
+function openSchedule(v: Visit) {
+  scheduling.value = v
+  schedError.value = ''
+  schedForm.value = {
+    scheduled_at: v.scheduled_at ? format(new Date(v.scheduled_at), "yyyy-MM-dd'T'HH:mm") : '',
+    assignee: v.assignee || '',
+    location: v.location || '',
+    notes: v.notes || '',
+  }
+}
+function closeSchedule() {
+  scheduling.value = null
+}
+async function submitSchedule() {
+  if (!scheduling.value || !schedForm.value.scheduled_at || !schedForm.value.assignee) return
+  savingSched.value = true
+  schedError.value = ''
+  try {
+    await pb.collection('visits').update(scheduling.value.id, {
+      assignee: schedForm.value.assignee,
+      scheduled_at: new Date(schedForm.value.scheduled_at).toISOString(),
+      status: 'scheduled',
+      location: schedForm.value.location.trim(),
+      notes: schedForm.value.notes.trim(),
+    })
+    closeSchedule()
+    await load()
+  } catch (err: any) {
+    schedError.value = err?.message || 'Failed to schedule visit'
+  } finally {
+    savingSched.value = false
+  }
+}
+
+watch([technician, customer, status, from, to], () => load())
 
 // Live updates: visit changes anywhere (ticket card, this view, another
 // agent) refresh both lists after a short collapse window.
@@ -167,13 +252,14 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
 
     <template v-else>
       <!-- Visits an agent promoted but nobody has scheduled yet: the
-           dispatcher's inbox, ordered by ticket priority then age. -->
+           dispatcher's inbox, ordered by ticket priority then age. Click a
+           row to schedule it in place. -->
       <section class="space-y-2">
         <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60">
           Needs scheduling
           <span v-if="requestedSorted.length" class="badge badge-warning badge-sm align-middle">{{ requestedSorted.length }}</span>
         </h2>
-        <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="open">
+        <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="openSchedule">
           <template #cell-priority="{ item }"><TicketBadges :priority="item.expand?.ticket?.priority" /></template>
         </ResponsiveList>
         <p v-else class="text-sm text-base-content/50">Nothing waiting on a dispatcher.</p>
@@ -186,6 +272,9 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
           <div class="w-full sm:w-52">
             <SearchSelect v-model="technician" :options="staffOptions" size="sm" empty-label="All technicians" placeholder="Technician…" />
           </div>
+          <div class="w-full sm:w-52">
+            <SearchSelect v-model="customer" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
+          </div>
           <select v-model="status" class="select select-bordered select-sm w-full sm:w-auto">
             <option value="scheduled">Scheduled</option>
             <option value="completed">Completed</option>
@@ -194,6 +283,10 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
           </select>
           <input v-model="from" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="From" />
           <input v-model="to" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="To" />
+          <button class="btn btn-sm btn-ghost w-full sm:w-auto" :disabled="exporting || visits.length === 0" @click="exportCsv">
+            <span v-if="exporting" class="loading loading-spinner loading-xs"></span>
+            Export CSV
+          </button>
         </div>
 
         <p v-if="dayGroups.length === 0" class="text-sm text-base-content/50">No visits match.</p>
@@ -214,5 +307,34 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
         </div>
       </section>
     </template>
+
+    <!-- Inline schedule/reschedule modal. -->
+    <div v-if="scheduling" class="modal modal-open" @click.self="closeSchedule">
+      <div class="modal-box space-y-3">
+        <h3 class="font-bold">
+          Schedule visit
+          <span class="font-normal text-base-content/60">#{{ scheduling.expand?.ticket?.number }}</span>
+        </h3>
+        <p v-if="schedError" class="text-error text-sm">{{ schedError }}</p>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs">Date &amp; time</span></label>
+          <input v-model="schedForm.scheduled_at" type="datetime-local" class="input input-bordered input-sm w-full" :disabled="savingSched" />
+        </div>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs">Technician</span></label>
+          <SearchSelect v-model="schedForm.assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="savingSched" />
+        </div>
+        <input v-model="schedForm.location" type="text" placeholder="location" class="input input-bordered input-sm w-full" :disabled="savingSched" />
+        <input v-model="schedForm.notes" type="text" placeholder="notes" class="input input-bordered input-sm w-full" :disabled="savingSched" />
+        <div class="modal-action">
+          <button class="btn btn-sm btn-ghost" :disabled="savingSched" @click="closeSchedule">Cancel</button>
+          <button class="btn btn-sm" @click="open(scheduling)">Open ticket</button>
+          <button class="btn btn-sm btn-primary" :disabled="savingSched || !schedForm.scheduled_at || !schedForm.assignee" @click="submitSchedule">
+            <span v-if="savingSched" class="loading loading-spinner loading-xs"></span>
+            Schedule
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
