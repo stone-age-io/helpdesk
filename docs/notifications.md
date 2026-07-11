@@ -1,0 +1,113 @@
+# Outbound email
+
+Helpdesk sends transactional email from ticket, comment, and visit activity.
+Templates live in the `notification_templates` collection and are edited from
+the staff SPA (**Notifications**, admin-only); the compiled-in defaults in
+`internal/notifications/defaults.go` back the "Reset to defaults" button and
+seed the rows on first run.
+
+Everything here is **best-effort and never blocks a write**:
+
+- No SMTP configured (PocketBase → Settings → Mail) → the notifier is a clean
+  no-op. The app runs fine without email.
+- Sends are async goroutines fired from `OnRecordAfter*Success` hooks, so an
+  email can never precede its own DB commit, and a mail failure never fails
+  the ticket/comment/visit save.
+- Every attempt (success or failure) is written to `notification_send_log`
+  (visible in the SPA) so you can answer "did the customer get that mail?".
+
+## Events
+
+Seven event types, each one template row. "Fires when" is the exact
+condition; visit events fire on **transitions**, not raw saves.
+
+| Event                    | Fires when                                                        | Default recipients      |
+| ------------------------ | ----------------------------------------------------------------- | ----------------------- |
+| `ticket.created`         | a ticket is created                                               | requester + all staff   |
+| `ticket.assigned`        | `assignee` is newly set or changed                                | assignee                |
+| `ticket.commented`       | a **public** comment is created (internal notes never send)       | requester + assignee\*  |
+| `ticket.status_changed`  | `status` changes                                                  | requester               |
+| `visit.scheduled`        | a visit becomes `scheduled` (created scheduled, or requested→scheduled) | requester + assignee |
+| `visit.rescheduled`      | `scheduled_at` moves while the visit stays `scheduled`            | requester + assignee    |
+| `visit.canceled`         | a **scheduled** visit becomes `canceled`                          | requester + assignee    |
+
+\* On comments the author's own side is blanked (see Suppression). A staff
+comment therefore mails the requester; a requester comment mails the
+assignee.
+
+**Deliberately silent** (no event): completing a visit, canceling a bare
+`requested` visit (nothing was announced yet), and swapping a visit's
+technician without changing the time.
+
+For visit events the visit's **technician** (`assignee`) overrides the
+ticket's assignee in the payload — both the `{{.Visit.AssigneeName}}` field
+and the assignee recipient class point at whoever is dispatched.
+
+## Recipient classes
+
+Each template's audience is a JSON spec on the row (editable in the SPA); an
+empty column falls back to the event's compiled-in default.
+
+| Class       | Resolves to                                                    |
+| ----------- | -------------------------------------------------------------- |
+| `requester` | the ticket's requester — **only if** the payload has one. Machine tickets (no requester) resolve to nothing. |
+| `assignee`  | the ticket's (or visit's) assigned staff member, when present. |
+| `all_staff` | every `staff` row with `active = true`.                        |
+| `extras`    | free-form addresses, e.g. a shared ops mailbox.                |
+
+All classes off + empty `extras` = a no-op skip, not an error.
+
+## Suppression — when a mail is deliberately not sent
+
+Four independent mechanisms, all designed to prevent noise:
+
+1. **Author-side blanking** (comments) — the payload suppresses the side that
+   authored the comment, so nobody is emailed about their own comment.
+2. **`X-Helpdesk-Quiet: 1` header** — the staff UI sends this on a ticket
+   update that shouldn't email anyone (triage cleanup, mis-set-status fix,
+   an internal reassignment). The request hook flags the record; the
+   after-success hook skips the send.
+3. **`notifications.Suppress(record)`** — a server-initiated change whose news
+   already went out another way marks itself silent. The one use is
+   auto-reopen: a requester's comment reopens a resolved ticket, but the
+   comment mail already alerted staff, so the status-change mail is skipped.
+4. **Day-keyed dedupe** — `SendIfFirst` writes `notification_dedupe` with a
+   unique index on (event, ref, UTC-day), so a flapping source can't email
+   the same person about the same thing twice in a day.
+
+## Template syntax
+
+Go `text/template`. Fields come from `TicketContext`
+(`internal/notifications/context.go`): `.Ticket.{Number,Title,Body,Status,
+Priority,Source,URL,OldStatus}`, `.Customer`, `.Requester.Name`,
+`.Assignee.Name`, `.Comment.{AuthorName,Body}`, `.Visit.{ScheduledAt,
+Location,Notes,AssigneeName,OldScheduledAt}`. A missing relation renders as a
+zero value (a machine ticket with no requester simply renders nothing for
+that side), so guard optional blocks with `{{if ...}}`.
+
+Small FuncMap: `formatTime`, `statusLabel`, `pluralize`.
+
+`.Ticket.URL` is the role-neutral deep link `{AppURL}/t/{id}` — the SPA
+router forwards `/t/{id}` to the staff or portal detail view by who is logged
+in. Set the **Application URL** in the PocketBase dashboard or the link is
+empty (the default templates tolerate that).
+
+## Editor API
+
+Admin staff only, under `/api/helpdesk/notifications`:
+
+- `GET  /api/helpdesk/notifications` — list templates.
+- `PATCH /api/helpdesk/notifications/{event_type}` — edit subject, body,
+  recipients, enabled. Parse-validates the templates before saving, so a bad
+  `{{...}}` is rejected at edit time rather than at send time.
+- `GET  /api/helpdesk/notifications/{event_type}/defaults` — the compiled-in
+  copy (backs "Reset to defaults").
+- `POST /api/helpdesk/notifications/{event_type}/test` — render the current
+  draft and send a test to the caller.
+
+## Retention
+
+`notification_send_log` and `notification_dedupe` are pruned daily at 03:15
+local, keeping 90 days (`sendLogRetentionDays` in `cmd/helpdesk/main.go`).
+The cron is process-local; if the app is down at fire time, the next live
+tick clears the backlog.

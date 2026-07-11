@@ -18,9 +18,19 @@ authenticated webhook.
 - **Two identity classes**: `staff` (agents/admins, cross-customer) and
   requesters (`users`, scoped to one customer). One login page; the router
   shows the right shell.
+- **Staff workspace**: a dashboard landing page; a ticket queue with search,
+  status/priority/assignee/customer filters, saved views, bulk assign/status,
+  and CSV export; a reports view; and admin for customers, requesters, staff,
+  and notification templates.
+- **Requester portal**: a company dashboard, a searchable list of their own
+  tickets, threaded ticket detail with attachments, a new-ticket form, and a
+  read-only visit schedule.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee,
   comment threads with staff-only internal notes, time entries, site
   visits.
+- **Activity & files**: workflow changes (status/priority/assignee) recorded
+  to a staff-only audit timeline; file attachments on tickets and comments; a
+  public requester reply on a resolved/closed ticket auto-reopens it.
 - **Lite dispatch**: promote a ticket to on-site work with a `requested`
   visit (no tech/time yet), schedule it from the staff Dispatch view
   (needs-scheduling bucket + day-grouped list), free-text visit location.
@@ -31,10 +41,13 @@ authenticated webhook.
   the SPA) fired from record hooks — created / assigned / commented /
   status changed / visit scheduled / rescheduled / canceled — with
   per-event recipient specs, a send log, and day-keyed dedupe. No SMTP
-  configured = clean no-op.
+  configured = clean no-op. See [docs/notifications.md](docs/notifications.md).
 - **Inbound machine tickets**: NATS durable consumer + authenticated
   webhook (`POST /api/helpdesk/inbound/{token}`), both idempotent via
   `dedupe_key`. See [docs/protocol.md](docs/protocol.md).
+- **Throughout the SPA**: live updates (PocketBase realtime subscriptions),
+  light/dark themes, keyboard shortcuts, responsive table-to-card layouts,
+  and self-service profile edits + forgot-password reset.
 
 ## Build & run
 
@@ -68,7 +81,10 @@ config/              viper Config (HELPDESK_ env prefix)
 migrations/          Go schema-as-code (collections, rules, seeds)
 internal/
   authz/             access-rule vocabulary shared by migrations + routes
-  tickets/           ticket-number assignment + field defaults (create hook)
+  tickets/           ticket-number assignment + field defaults, auto-reopen
+  visits/            visit status defaulting + scheduled-visit invariant
+  activity/          ticket_events audit trail (status/priority/assignee)
+  authfix/           auth-default fixups (email visibility on create)
   notifications/     notifier core, templates, lifecycle hooks, editor API
   subjects/          NATS subject grammar (helpdesk.{org}.tickets.{verb})
   natsx/             NATS connect (creds file) + inbox stream helper
@@ -77,7 +93,7 @@ internal/
   webui/             //go:embed all:public (committed SPA dist)
   testutil/          real-PB-against-t.TempDir() test harness
 ui/                  Vue 3 + Vite + Pinia + Tailwind + daisyUI SPA
-docs/                plan, wire protocol, configuration
+docs/                plan, data model, wire protocol, notifications, config
 ```
 
 ## Architecture notes
@@ -87,7 +103,8 @@ docs/                plan, wire protocol, configuration
   credentials, and the tenancy axes differ (platform tenant = customer org;
   helpdesk tenant = the MSP).
 - Tenancy is plain collection rules — `customers` + `users.customer` +
-  staff roles (`internal/authz`). No pb-tenancy.
+  staff roles (`internal/authz`). No pb-tenancy. See
+  [docs/data-model.md](docs/data-model.md).
 - NATS is best-effort: the app boots and serves portal/webhook traffic
   without a broker; the durable consumer resumes where it left off.
 - The org id in a machine ticket comes from the **subject** (rewritten by

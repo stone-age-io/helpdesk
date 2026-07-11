@@ -50,12 +50,31 @@ application URL live in PocketBase settings (dashboard), not the YAML.
   requester sees only their own company's tickets and only non-internal
   comments — enforced by collection rules in `migrations/1800000000_init.go`,
   the home of all access rules (later migrations may amend specific rules,
-  e.g. `1803000000` opens visit reads to requesters).
+  e.g. `1803000000` opens visit reads to requesters); `docs/data-model.md`
+  summarizes every collection and rule. Both auth collections stamp
+  `emailVisibility = true` on create (`internal/authfix`) — PB masks emails
+  by default, which would otherwise break the staff roster, the assignee
+  pickers, and requester lists.
 
 **Ticket lifecycle** (`internal/tickets`): a create hook assigns the next
 sequential `number` (unique index is the collision backstop) and defaults
 status/priority/source. Requesters interact via comments; ticket field
-updates are staff-only by rule.
+updates are staff-only by rule. A public requester comment on a
+`resolved`/`closed` ticket **auto-reopens** it — silently, since the comment
+itself already emailed staff. Tickets and comments carry **attachments**
+(≤6 files, 10 MB each); PB serves files only to callers who can view the
+owning record, so attachments on internal comments stay staff-only.
+
+**Audit trail** (`internal/activity`): every workflow-field change (status,
+priority, assignee) writes a `ticket_events` row rendered as a staff-only
+timeline. Reads are staff-only (the trail names technicians); it has no
+create/update API rule — the hooks write it server-side via `app.Save`
+(which bypasses collection rules), so it can't be forged or edited through
+the record API. The actor comes from request auth, or is set explicitly with
+`activity.SetActor` for server-initiated changes (e.g. the requester whose
+comment auto-reopened a ticket). Values are stored already human-readable
+(assignee resolved to a name), so the timeline needs no expands beyond the
+actor.
 
 **Visits / lite dispatch** (`internal/visits`): promoting a ticket to
 on-site work = creating a visit; the ticket schema stays untouched
@@ -66,7 +85,10 @@ that a *scheduled* visit has both `scheduled_at` and `assignee` (both
 optional at the schema level so a `requested` visit can exist before the
 dispatcher picks a tech/time; empty status defaults from whether a time
 is set). Free-text `location` carries dispatch directions — deliberately
-no sites collection. Staff schedule from the ticket detail card or the
+no sites collection. A visit entering `completed` stamps `completed_at`
+(guard hook — back-datable, cleared if it leaves `completed`), giving the
+Dispatch history a trustworthy "who went, when" that `updated` (bumps on any
+edit) couldn't. Staff schedule from the ticket detail card or the
 Dispatch view (needs-scheduling bucket sorted client-side by ticket
 priority — a PB relation-hop sort on a select would be alphabetical —
 plus a day-grouped, filterable list). Requesters get read-only visit
@@ -89,7 +111,13 @@ Recipients
 are a per-template JSON spec `{requester, assignee, all_staff, extras}`;
 the payload (`TicketContext`) implements `RequesterEmail()` /
 `AssigneeEmail()` and *suppresses the author's side* on comment events so
-nobody is emailed about their own comment. Hooks fire on
+nobody is emailed about their own comment. A save can also silence its own
+mail two ways: the staff UI sends `X-Helpdesk-Quiet: 1` on a ticket update
+that shouldn't email anyone (triage, mis-set-status fix, internal
+reassignment), and `notifications.Suppress(rec)` marks a server-initiated
+change whose message already went out another way (the auto-reopen); both
+ride a transient record flag from the request hook into the after-success
+hook. Hooks fire on
 `OnRecordAfter*Success` (status/assignee diffs read `Record.Original()`,
 which still holds pre-update values in the after-success hook — verified).
 Sends are async goroutines; a nil notifier and missing SMTP are both clean
@@ -99,7 +127,8 @@ A daily cron in `cmd/helpdesk/main.go` prunes both tables at 90 days.
 Editor API under `/api/helpdesk/notifications` (admin staff only; PATCH
 parse-validates templates before save; compiled-in defaults back the
 "Reset to defaults" affordance). Email deep links use the role-neutral SPA
-route `/t/{id}`.
+route `/t/{id}`. `docs/notifications.md` has the full event / recipient /
+suppression matrix.
 
 **NATS ingestion** (`internal/subjects`, `internal/natsx`,
 `internal/ingest`): customer apps publish `helpdesk.tickets.create` in
