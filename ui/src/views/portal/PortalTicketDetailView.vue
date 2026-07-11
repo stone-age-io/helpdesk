@@ -78,7 +78,7 @@ onMounted(load)
   <div v-else-if="ticket" class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/portal/tickets')">My Tickets</a></li>
+        <li><a @click="router.push('/portal/tickets')">Tickets</a></li>
         <li>#{{ ticket.number }}</li>
       </ul>
     </div>

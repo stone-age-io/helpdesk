@@ -1,52 +1,71 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
-const auth = useAuthStore()
-const router = useRouter()
+const route = useRoute()
 const showPassword = ref(false)
 
-function logout() {
-  auth.logout()
-  router.push('/login')
-}
+const sections: NavSection[] = [
+  {
+    items: [
+      { label: 'Dashboard', icon: '📊', path: '/portal/dashboard' },
+      { label: 'Tickets', icon: '🎫', path: '/portal/tickets' },
+      { label: 'New Ticket', icon: '➕', path: '/portal/tickets/new' },
+    ],
+  },
+]
+
+// Any navigation dismisses the mobile drawer — sidebar links close it
+// themselves, but programmatic pushes (dashboard tiles, ticket rows) would
+// otherwise change the page behind the still-open overlay.
+watch(
+  () => route.fullPath,
+  () => {
+    const drawer = document.getElementById('sidebar-drawer') as HTMLInputElement | null
+    if (drawer) drawer.checked = false
+  },
+)
 </script>
 
 <template>
-  <div class="min-h-dvh bg-base-200">
-    <!-- Two destinations don't justify a drawer; the requester portal keeps a
-         slim top bar. The account name collapses to an avatar on phones so
-         the row never overflows. -->
-    <div class="navbar bg-base-100 shadow-sm px-2 sm:px-4 sticky top-0 z-30 pad-safe-top">
-      <div class="flex-1 gap-1 min-w-0">
-        <span class="text-xl font-bold mr-2 sm:mr-4">Support</span>
-        <router-link to="/portal/tickets" class="btn btn-ghost btn-sm" active-class="btn-active">My Tickets</router-link>
-        <router-link to="/portal/tickets/new" class="btn btn-ghost btn-sm" active-class="btn-active">New Ticket</router-link>
-      </div>
-      <div class="flex-none gap-1 sm:gap-2">
-        <ThemeToggle />
-        <div class="dropdown dropdown-end">
-          <div tabindex="0" role="button" class="btn btn-ghost btn-sm" :title="auth.record?.email">
-            <span class="hidden sm:inline max-w-[12rem] truncate">{{ auth.record?.name || auth.record?.email }}</span>
-            <span class="sm:hidden avatar placeholder">
-              <span class="bg-neutral text-neutral-content rounded-full w-6 inline-flex items-center justify-center text-xs font-bold">
-                {{ auth.initial }}
-              </span>
-            </span>
+  <!-- Same drawer shell as StaffLayout: overlay sidebar below lg (checkbox-
+       driven, no JS), permanent sidebar column on lg+. <main> is the only
+       scroller. Duplicated on purpose — it's ~30 lines of stable markup. -->
+  <div class="drawer lg:drawer-open h-dvh">
+    <input id="sidebar-drawer" type="checkbox" class="drawer-toggle" />
+
+    <div class="drawer-content flex flex-col min-h-0">
+      <header class="navbar bg-base-100 border-b border-base-300 min-h-[4rem] lg:hidden sticky top-0 z-30 pad-safe-top">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full">
+          <div class="justify-self-start">
+            <label for="sidebar-drawer" class="btn btn-square btn-ghost" aria-label="Open navigation menu">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </label>
           </div>
-          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-48 p-1 z-30">
-            <li><a @click="showPassword = true">Change password</a></li>
-            <li><a @click="logout">Sign out</a></li>
-          </ul>
+          <span class="justify-self-center font-bold text-lg">Support</span>
+          <div class="justify-self-end">
+            <ThemeToggle />
+          </div>
         </div>
-      </div>
+      </header>
+
+      <main class="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-base-200">
+        <div class="mx-auto w-full max-w-5xl p-4 lg:p-6 pad-safe-bottom">
+          <router-view />
+        </div>
+      </main>
     </div>
-    <main class="p-4 md:p-6 max-w-4xl mx-auto pad-safe-bottom">
-      <router-view />
-    </main>
+
+    <div class="drawer-side z-40">
+      <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
+      <AppSidebar :sections="sections" brand="Support" home="/portal/dashboard" @change-password="showPassword = true" />
+    </div>
+
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
   </div>
 </template>

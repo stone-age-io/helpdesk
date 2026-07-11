@@ -23,7 +23,7 @@ async function submit() {
     if (redirect && redirect.startsWith('/')) {
       router.push(redirect)
     } else {
-      router.push(auth.isStaff ? '/staff/tickets' : '/portal/tickets')
+      router.push(auth.isStaff ? '/staff/tickets' : '/portal/dashboard')
     }
   } catch {
     error.value = 'Invalid email or password.'

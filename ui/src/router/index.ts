@@ -31,8 +31,9 @@ const router = createRouter({
       component: () => import('@/components/PortalLayout.vue'),
       meta: { requires: 'requester' },
       children: [
-        { path: '', redirect: '/portal/tickets' },
-        { path: 'tickets', name: 'portal-tickets', component: () => import('@/views/portal/MyTicketsView.vue') },
+        { path: '', redirect: '/portal/dashboard' },
+        { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue') },
+        { path: 'tickets', name: 'portal-tickets', component: () => import('@/views/portal/PortalTicketsView.vue') },
         { path: 'tickets/new', name: 'portal-ticket-new', component: () => import('@/views/portal/NewTicketView.vue') },
         { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
       ],
@@ -51,14 +52,14 @@ router.beforeEach((to) => {
 
   if (to.name === 'login') {
     if (auth.isStaff) return '/staff/tickets'
-    if (auth.isRequester) return '/portal/tickets'
+    if (auth.isRequester) return '/portal/dashboard'
     return true
   }
 
   const requires = to.matched.find((r) => r.meta.requires)?.meta.requires
   if (!requires) return true
   if (!auth.isAuthenticated) return { name: 'login' }
-  if (requires === 'staff' && !auth.isStaff) return '/portal/tickets'
+  if (requires === 'staff' && !auth.isStaff) return '/portal/dashboard'
   if (requires === 'requester' && !auth.isRequester) return '/staff/tickets'
   if (to.meta.adminOnly && !auth.isAdmin) return '/staff/tickets'
   return true

@@ -1,13 +1,36 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppSidebar from '@/components/AppSidebar.vue'
+import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
 const showPassword = ref(false)
+
+const sections: NavSection[] = [
+  {
+    items: [
+      { label: 'Dashboard', icon: '📊', path: '/staff/dashboard' },
+      { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
+    ],
+  },
+  {
+    title: 'Directory',
+    items: [
+      { label: 'Customers', icon: '🏢', path: '/staff/customers' },
+      { label: 'Requesters', icon: '🙋', path: '/staff/requesters' },
+    ],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { label: 'Staff', icon: '👥', path: '/staff/staff', adminOnly: true },
+      { label: 'Notifications', icon: '✉️', path: '/staff/notifications', adminOnly: true },
+    ],
+  },
+]
 
 // Any navigation dismisses the mobile drawer — sidebar links close it
 // themselves, but keyboard shortcuts and other programmatic pushes would
@@ -84,7 +107,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar @change-password="showPassword = true" />
+      <AppSidebar :sections="sections" home="/staff/tickets" @change-password="showPassword = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
