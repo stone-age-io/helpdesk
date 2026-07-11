@@ -20,6 +20,7 @@ const router = createRouter({
         { path: 'customers', name: 'customers', component: () => import('@/views/staff/CustomerListView.vue') },
         { path: 'customers/:id', name: 'customer-detail', component: () => import('@/views/staff/CustomerDetailView.vue') },
         { path: 'requesters', name: 'requesters', component: () => import('@/views/staff/RequesterListView.vue') },
+        { path: 'notifications', name: 'notifications', component: () => import('@/views/staff/NotificationTemplatesView.vue'), meta: { adminOnly: true } },
       ],
     },
 
@@ -35,6 +36,9 @@ const router = createRouter({
         { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
       ],
     },
+
+    // Role-neutral ticket deep link used by notification emails.
+    { path: '/t/:id', name: 'ticket-link', component: () => import('@/views/TicketLinkView.vue') },
 
     { path: '/', redirect: '/login' },
     { path: '/:pathMatch(.*)*', redirect: '/login' },
@@ -55,6 +59,7 @@ router.beforeEach((to) => {
   if (!auth.isAuthenticated) return { name: 'login' }
   if (requires === 'staff' && !auth.isStaff) return '/portal/tickets'
   if (requires === 'requester' && !auth.isRequester) return '/staff/tickets'
+  if (to.meta.adminOnly && !auth.isAdmin) return '/staff/tickets'
   return true
 })
 

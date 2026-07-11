@@ -11,18 +11,25 @@ import (
 	"io/fs"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/stone-age-io/helpdesk/config"
+	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
 	// Side-effect import: registers the schema migrations.
 	_ "github.com/stone-age-io/helpdesk/migrations"
 )
+
+// sendLogRetentionDays bounds the notification_send_log + dedupe tables.
+// 90 days matches the kiosk convention: long enough to debug "did the
+// customer get that email", short enough to keep SQLite lean.
+const sendLogRetentionDays = 90
 
 func main() {
 	cfg, err := config.Load()
@@ -44,7 +51,38 @@ func main() {
 
 	tickets.Register(app)
 
+	// Outbound email: ticket lifecycle hooks → templated sends. The notifier
+	// no-ops cleanly when SMTP isn't configured (PocketBase mail settings).
+	notifier := notifications.New(app)
+	notifications.RegisterHooks(app, notifier)
+
+	// Drain in-flight notification goroutines on shutdown before PB tears
+	// the DB down — a deliver() waking after the DB closes would panic
+	// inside FindCollectionByNameOrId. Bounded best-effort.
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		notifier.WaitInFlight(2 * time.Second)
+		return e.Next()
+	})
+
+	// Daily retention pass on the send log + dedupe table, well outside
+	// business hours. PB's Cron is process-local; if the app is down at
+	// fire time, the next live tick handles the backlog.
+	app.Cron().Add("notifications_retention", "15 3 * * *", func() {
+		cutoff := time.Now().UTC().AddDate(0, 0, -sendLogRetentionDays).Format("2006-01-02 15:04:05.000Z")
+		if deleted, err := notifier.PruneSendLog(cutoff); err != nil {
+			log.Printf("send log prune: %v", err)
+		} else if deleted > 0 {
+			log.Printf("send log prune: removed %d rows older than %d days", deleted, sendLogRetentionDays)
+		}
+		if deleted, err := notifier.PruneDedupe(cutoff); err != nil {
+			log.Printf("dedupe prune: %v", err)
+		} else if deleted > 0 {
+			log.Printf("dedupe prune: removed %d rows older than %d days", deleted, sendLogRetentionDays)
+		}
+	})
+
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		notifications.RegisterRoutes(e)
 		if err := serveSPA(e); err != nil {
 			return err
 		}

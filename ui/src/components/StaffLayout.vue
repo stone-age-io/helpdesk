@@ -20,6 +20,7 @@ function logout() {
         <router-link to="/staff/tickets" class="btn btn-ghost btn-sm" active-class="btn-active">Tickets</router-link>
         <router-link to="/staff/customers" class="btn btn-ghost btn-sm" active-class="btn-active">Customers</router-link>
         <router-link to="/staff/requesters" class="btn btn-ghost btn-sm" active-class="btn-active">Requesters</router-link>
+        <router-link v-if="auth.isAdmin" to="/staff/notifications" class="btn btn-ghost btn-sm" active-class="btn-active">Notifications</router-link>
       </div>
       <div class="flex-none gap-2">
         <span class="text-sm text-base-content/70">

@@ -9,6 +9,11 @@
 package authz
 
 const (
+	// StaffCollection and RequesterCollection name the two auth collections
+	// for route-level guards (collection rules use the literals below).
+	StaffCollection     = "staff"
+	RequesterCollection = "users"
+
 	// StaffRule matches any authenticated staff member (agent or admin).
 	StaffRule = "@request.auth.collectionName = 'staff'"
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 
 const email = ref('')
@@ -16,7 +17,13 @@ async function submit() {
   error.value = ''
   try {
     await auth.login(email.value, password.value)
-    router.push(auth.isStaff ? '/staff/tickets' : '/portal/tickets')
+    // Honor an email deep link (/t/{id}) that bounced through login.
+    const redirect = route.query.redirect as string | undefined
+    if (redirect && redirect.startsWith('/')) {
+      router.push(redirect)
+    } else {
+      router.push(auth.isStaff ? '/staff/tickets' : '/portal/tickets')
+    }
   } catch {
     error.value = 'Invalid email or password.'
   } finally {

@@ -74,3 +74,33 @@ export interface Visit extends BaseRecord {
 
 export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
 export const TICKET_PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent']
+
+// Shapes served by the /api/helpdesk/notifications routes (not raw records).
+
+export interface NotificationRecipients {
+  requester: boolean
+  assignee: boolean
+  all_staff: boolean
+  extras: string[]
+}
+
+export interface NotificationTemplate {
+  id: string
+  event_type: string
+  name: string
+  enabled: boolean
+  subject: string
+  body: string
+  updated: string
+  updated_by: string
+  recipients: NotificationRecipients
+}
+
+export interface NotificationSendLog extends BaseRecord {
+  event_type: string
+  template?: string
+  recipient: string
+  status: 'sent' | 'failed' | 'skipped'
+  error?: string
+  payload_summary?: string
+}
