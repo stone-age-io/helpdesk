@@ -8,6 +8,7 @@ import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
+import Avatar from '@/components/Avatar.vue'
 import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
@@ -22,17 +23,26 @@ const statusEvents = ref<TicketEvent[]>([])
 const loading = ref(true)
 const error = ref('')
 
-// A requester-safe progress trail: the ticket's creation, then each status
-// transition. The read rule (migration 1808000000) scopes ticket_events to
-// field='status' for the requester's own tickets, and the actor is never
-// requested — so no technician identity leaks here.
-const humanizeStatus = (s?: string) => (s || '').replace(/_/g, ' ')
-const progress = computed(() => {
-  const steps: { label: string; at: string }[] = []
-  if (ticket.value) steps.push({ label: 'Opened', at: ticket.value.created })
-  for (const e of statusEvents.value) steps.push({ label: humanizeStatus(e.new_value), at: e.created })
-  return steps
-})
+// Status stepper: collapse the raw event churn (a status can bounce back and
+// forth) into the canonical lifecycle a requester cares about. "Current" is
+// derived from the ticket's status now — not the furthest stage ever reached —
+// so a reopened ticket reads sensibly instead of showing a regression.
+const STEPS = ['Open', 'In progress', 'Resolved'] as const
+function stageIndex(status?: string): number {
+  if (status === 'resolved' || status === 'closed') return 2
+  if (status === 'in_progress' || status === 'waiting') return 1
+  return 0
+}
+const currentStage = computed(() => stageIndex(ticket.value?.status))
+// Name the terminal stage by the actual status.
+const stepLabel = (i: number) => (i === 2 && ticket.value?.status === 'closed' ? 'Closed' : STEPS[i])
+// First time the ticket entered a stage (stage 0 = creation). The status read
+// rule (migration 1808000000) scopes ticket_events to field='status' on the
+// requester's own tickets; the actor is never requested, so nothing leaks.
+function stepReachedAt(i: number): string {
+  if (i === 0) return ticket.value?.created || ''
+  return statusEvents.value.find((e) => stageIndex(e.new_value) === i)?.created || ''
+}
 
 const newComment = ref('')
 const commentFiles = ref<File[]>([])
@@ -107,7 +117,7 @@ async function postComment() {
     commentFiles.value = []
     // Replying on a resolved/closed ticket reopens it server-side; refresh
     // the header so the requester sees the status flip back to open.
-    await Promise.all([loadTicket(), loadComments()])
+    await Promise.all([loadTicket(), loadComments(), loadStatusEvents()])
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
   } finally {
@@ -135,12 +145,24 @@ const visitBadge: Record<string, string> = {
   completed: 'badge-success',
 }
 
+// Comment identity, portal-side. A staff reply's author record isn't readable
+// here (we hide the technician), so it shows as a neutral "Support" — never
+// the fall-through "System" it used to render as. The requester's own replies
+// read as "You".
+const isSupport = (c: TicketComment) => !!c.author_staff
+const isMine = (c: TicketComment) => !!c.author_user && c.author_user === auth.record?.id
 function authorLabel(c: TicketComment): string {
-  const s = c.expand?.author_staff
-  if (s) return `${s.name || 'Support'} (support)`
+  if (isSupport(c)) return 'Support'
+  if (isMine(c)) return 'You'
   const u = c.expand?.author_user
   if (u) return u.name || u.email
+  if (c.author_user) return 'Requester'
   return 'System'
+}
+function authorRecord(c: TicketComment): Record<string, any> | null {
+  if (isSupport(c)) return null
+  if (isMine(c)) return auth.record
+  return c.expand?.author_user || null
 }
 
 onMounted(async () => {
@@ -172,90 +194,156 @@ onUnmounted(() => {
       </ul>
     </div>
 
-    <div class="card bg-base-100 shadow-sm">
-      <div class="card-body">
-        <div class="flex items-center gap-2 flex-wrap">
-          <h1 class="text-xl font-bold">#{{ ticket.number }} — {{ ticket.title }}</h1>
-          <TicketBadges :status="ticket.status" :priority="ticket.priority" />
-          <CategoryBadge v-if="ticket.expand?.category?.name" :name="ticket.expand?.category?.name" :color="ticket.expand?.category?.color" />
-          <span v-if="ticket.assignee" class="badge badge-ghost badge-sm gap-1" title="An agent is working on this ticket">🧑‍🔧 Agent assigned</span>
-        </div>
-        <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
-        <AttachmentList :record="ticket" :files="ticket.attachments" />
-        <div class="text-xs text-base-content/50 mt-2">
-          Opened {{ format(new Date(ticket.created), 'MMM d, yyyy') }}
-          <template v-if="ticket.updated"> · Updated {{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</template>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="progress.length > 1" class="card bg-base-100 shadow-sm">
-      <div class="card-body py-3 px-4">
-        <h2 class="font-semibold text-sm mb-1">Progress</h2>
-        <ol class="space-y-2">
-          <li v-for="(step, i) in progress" :key="i" class="flex items-center gap-3 text-sm">
-            <span
-              class="w-2 h-2 rounded-full shrink-0"
-              :class="i === progress.length - 1 ? 'bg-primary' : 'bg-base-content/30'"
-            ></span>
-            <span class="capitalize font-medium flex-1">{{ step.label }}</span>
-            <span class="text-xs text-base-content/50 whitespace-nowrap">{{ format(new Date(step.at), 'MMM d, HH:mm') }}</span>
-          </li>
-        </ol>
-      </div>
-    </div>
-
-    <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm">
-      <div class="card-body py-3 px-4 space-y-2">
-        <h2 class="font-semibold text-sm">Site Visits</h2>
-        <ul class="space-y-2">
-          <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
-            <div class="flex items-center gap-2">
-              <template v-if="v.status === 'requested'">
-                <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
-              </template>
-              <template v-else>
-                <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
-              </template>
-              <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
-            </div>
-            <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
-          </li>
-        </ul>
-      </div>
-    </div>
-
-    <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
-
-    <div class="space-y-2">
-      <div v-for="c in comments" :key="c.id" class="card bg-base-100 shadow-sm">
-        <div class="card-body py-3 px-4">
-          <div class="flex items-center gap-2 text-xs text-base-content/60">
-            <span class="font-semibold text-base-content">{{ authorLabel(c) }}</span>
-            <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
+    <div class="flex flex-col xl:flex-row gap-4 items-start">
+      <!-- Main: subject + conversation + composer -->
+      <div class="flex-1 w-full min-w-0 space-y-4">
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h1 class="text-xl font-bold">#{{ ticket.number }} — {{ ticket.title }}</h1>
+            <p v-if="ticket.assignee" class="text-xs text-base-content/60 flex items-center gap-1">
+              🧑‍🔧 An agent is working on this ticket
+            </p>
+            <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
+            <AttachmentList :record="ticket" :files="ticket.attachments" />
           </div>
-          <p class="whitespace-pre-wrap text-sm">{{ c.body }}</p>
-          <AttachmentList :record="c" :files="c.attachments" />
+        </div>
+
+        <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
+
+        <!-- Conversation -->
+        <div class="space-y-2">
+          <div v-for="c in comments" :key="c.id" class="card bg-base-100 shadow-sm">
+            <div class="card-body py-3 px-4">
+              <div class="flex items-start gap-2.5">
+                <!-- Staff replies get a neutral support glyph (no technician
+                     avatar); requesters get their own avatar. -->
+                <div v-if="isSupport(c)" class="avatar placeholder shrink-0">
+                  <div class="w-8 rounded-full bg-primary/15 text-primary"><span class="text-sm">🛟</span></div>
+                </div>
+                <Avatar v-else :record="authorRecord(c)" :name="authorLabel(c)" size="sm" />
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
+                    <span class="font-semibold text-base-content">{{ authorLabel(c) }}</span>
+                    <span v-if="isSupport(c)" class="badge badge-ghost badge-xs">support</span>
+                    <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
+                  </div>
+                  <p class="whitespace-pre-wrap text-sm mt-0.5">{{ c.body }}</p>
+                  <AttachmentList :record="c" :files="c.attachments" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No replies yet.</p>
+        </div>
+
+        <!-- Composer -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body py-3 px-4 space-y-2">
+            <textarea
+              v-model="newComment"
+              rows="3"
+              class="textarea textarea-bordered w-full"
+              placeholder="Add a reply…"
+              :disabled="posting"
+            ></textarea>
+            <FileInput v-model:files="commentFiles" :disabled="posting" />
+            <div class="flex justify-end">
+              <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
+                <span v-if="posting" class="loading loading-spinner loading-xs"></span>
+                Reply
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No replies yet.</p>
-    </div>
 
-    <div class="card bg-base-100 shadow-sm">
-      <div class="card-body py-3 px-4 space-y-2">
-        <textarea
-          v-model="newComment"
-          rows="3"
-          class="textarea textarea-bordered w-full"
-          placeholder="Add a reply…"
-          :disabled="posting"
-        ></textarea>
-        <FileInput v-model:files="commentFiles" :disabled="posting" />
-        <div class="flex justify-end">
-          <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
-            <span v-if="posting" class="loading loading-spinner loading-xs"></span>
-            Reply
-          </button>
+      <!-- Rail: read-only details -->
+      <div class="w-full xl:w-80 space-y-4 xl:sticky xl:top-4 self-stretch xl:self-start">
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body py-4 px-4 gap-2 text-sm">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Status</span>
+              <TicketBadges :status="ticket.status" />
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Priority</span>
+              <TicketBadges :priority="ticket.priority" />
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Category</span>
+              <CategoryBadge
+                v-if="ticket.expand?.category?.name"
+                :name="ticket.expand?.category?.name"
+                :color="ticket.expand?.category?.color"
+              />
+              <span v-else class="text-base-content/40">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Opened</span>
+              <span>{{ format(new Date(ticket.created), 'MMM d, yyyy') }}</span>
+            </div>
+            <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Updated</span>
+              <span>{{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress stepper -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body py-4 px-4">
+            <h2 class="font-semibold text-sm mb-2">Progress</h2>
+            <ol>
+              <li v-for="(_, i) in STEPS" :key="i" class="flex gap-3 relative pb-4 last:pb-0">
+                <!-- connector -->
+                <span
+                  v-if="i < STEPS.length - 1"
+                  class="absolute left-[5px] top-3.5 -bottom-0.5 w-px"
+                  :class="i < currentStage ? 'bg-primary' : 'bg-base-300'"
+                ></span>
+                <!-- dot -->
+                <span
+                  class="relative z-10 mt-1 w-2.5 h-2.5 rounded-full shrink-0"
+                  :class="
+                    i < currentStage
+                      ? 'bg-primary'
+                      : i === currentStage
+                        ? 'bg-primary ring-4 ring-primary/20'
+                        : 'bg-base-300'
+                  "
+                ></span>
+                <div class="flex-1 -mt-0.5">
+                  <div class="text-sm" :class="i <= currentStage ? 'font-medium' : 'text-base-content/40'">
+                    {{ stepLabel(i) }}
+                  </div>
+                  <div v-if="i <= currentStage && stepReachedAt(i)" class="text-xs text-base-content/50">
+                    {{ format(new Date(stepReachedAt(i)), 'MMM d, HH:mm') }}
+                  </div>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Site visits -->
+        <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm">
+          <div class="card-body py-4 px-4 space-y-2">
+            <h2 class="font-semibold text-sm">Site Visits</h2>
+            <ul class="space-y-2">
+              <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
+                <div class="flex items-center gap-2">
+                  <template v-if="v.status === 'requested'">
+                    <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
+                  </template>
+                  <template v-else>
+                    <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
+                  </template>
+                  <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
+                </div>
+                <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
