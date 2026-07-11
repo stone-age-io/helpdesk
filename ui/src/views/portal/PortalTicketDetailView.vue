@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Ticket, TicketComment } from '@/types'
+import type { Ticket, TicketComment, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import { format } from 'date-fns'
 
@@ -14,6 +14,7 @@ const id = route.params.id as string
 
 const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
+const visits = ref<Visit[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -29,11 +30,25 @@ async function loadComments() {
   })
 }
 
+async function loadVisits() {
+  // Read-only context: canceled visits are noise here. No expand — the
+  // technician's staff record isn't readable (or shown) portal-side.
+  try {
+    visits.value = await pb.collection('visits').getFullList<Visit>({
+      filter: `ticket = '${id}' && status != 'canceled'`,
+      sort: 'scheduled_at',
+    })
+  } catch {
+    // Optional context card.
+  }
+}
+
 async function load() {
   loading.value = true
   try {
     ticket.value = await pb.collection('tickets').getOne<Ticket>(id)
     await loadComments()
+    await loadVisits()
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -58,6 +73,12 @@ async function postComment() {
   } finally {
     posting.value = false
   }
+}
+
+const visitBadge: Record<string, string> = {
+  requested: 'badge-warning',
+  scheduled: 'badge-info',
+  completed: 'badge-success',
 }
 
 function authorLabel(c: TicketComment): string {
@@ -90,6 +111,26 @@ onMounted(load)
           <TicketBadges :status="ticket.status" />
         </div>
         <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
+      </div>
+    </div>
+
+    <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm">
+      <div class="card-body py-3 px-4 space-y-2">
+        <h2 class="font-semibold text-sm">Site Visits</h2>
+        <ul class="space-y-2">
+          <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
+            <div class="flex items-center gap-2">
+              <template v-if="v.status === 'requested'">
+                <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
+              </template>
+              <template v-else>
+                <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
+              </template>
+              <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
+            </div>
+            <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
+          </li>
+        </ul>
       </div>
     </div>
 

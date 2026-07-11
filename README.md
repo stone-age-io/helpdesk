@@ -21,12 +21,17 @@ authenticated webhook.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee,
   comment threads with staff-only internal notes, time entries, site
   visits.
+- **Lite dispatch**: promote a ticket to on-site work with a `requested`
+  visit (no tech/time yet), schedule it from the staff Dispatch view
+  (needs-scheduling bucket + day-grouped list), free-text visit location.
+  Requesters see their visits read-only in the portal.
 - **Customers directory**: platform-org mapping for NATS ingestion,
   per-customer webhook tokens (admin reveal/rotate).
 - **Outbound email**: DB-stored templates (Go `text/template`, editable in
   the SPA) fired from record hooks — created / assigned / commented /
-  status changed / visit scheduled — with per-event recipient specs, a send
-  log, and day-keyed dedupe. No SMTP configured = clean no-op.
+  status changed / visit scheduled / rescheduled / canceled — with
+  per-event recipient specs, a send log, and day-keyed dedupe. No SMTP
+  configured = clean no-op.
 - **Inbound machine tickets**: NATS durable consumer + authenticated
   webhook (`POST /api/helpdesk/inbound/{token}`), both idempotent via
   `dedupe_key`. See [docs/protocol.md](docs/protocol.md).

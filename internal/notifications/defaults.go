@@ -16,6 +16,8 @@ const (
 	EventTypeTicketCommented     = "ticket.commented"
 	EventTypeTicketStatusChanged = "ticket.status_changed"
 	EventTypeVisitScheduled      = "visit.scheduled"
+	EventTypeVisitRescheduled    = "visit.rescheduled"
+	EventTypeVisitCanceled       = "visit.canceled"
 )
 
 // Field references in the default templates must match
@@ -72,7 +74,32 @@ const DefaultVisitScheduledBody = `A site visit has been scheduled for ticket #{
 
 When:       {{formatTime .Visit.ScheduledAt}}
 Technician: {{.Visit.AssigneeName}}
-Ticket:     {{.Ticket.Title}}
+{{if .Visit.Location}}Where:      {{.Visit.Location}}
+{{end}}Ticket:     {{.Ticket.Title}}
+{{if .Visit.Notes}}
+Notes: {{.Visit.Notes}}
+{{end}}{{if .Ticket.URL}}
+View the ticket: {{.Ticket.URL}}
+{{end}}`
+
+const DefaultVisitRescheduledSubject = `[#{{.Ticket.Number}}] site visit rescheduled — {{formatTime .Visit.ScheduledAt}}`
+
+const DefaultVisitRescheduledBody = `The site visit for ticket #{{.Ticket.Number}} ({{.Customer}}) has been rescheduled.
+
+New time:   {{formatTime .Visit.ScheduledAt}}
+{{if .Visit.OldScheduledAt}}Was:        {{formatTime .Visit.OldScheduledAt}}
+{{end}}Technician: {{.Visit.AssigneeName}}
+{{if .Visit.Location}}Where:      {{.Visit.Location}}
+{{end}}Ticket:     {{.Ticket.Title}}
+{{if .Ticket.URL}}
+View the ticket: {{.Ticket.URL}}
+{{end}}`
+
+const DefaultVisitCanceledSubject = `[#{{.Ticket.Number}}] site visit canceled — was {{formatTime .Visit.ScheduledAt}}`
+
+const DefaultVisitCanceledBody = `The site visit for ticket #{{.Ticket.Number}} ({{.Customer}}) scheduled for {{formatTime .Visit.ScheduledAt}} has been canceled.
+
+Ticket: {{.Ticket.Title}}
 {{if .Visit.Notes}}
 Notes: {{.Visit.Notes}}
 {{end}}{{if .Ticket.URL}}
@@ -95,6 +122,10 @@ func Defaults(eventType string) (subject, body string, ok bool) {
 		return DefaultTicketStatusChangedSubject, DefaultTicketStatusChangedBody, true
 	case EventTypeVisitScheduled:
 		return DefaultVisitScheduledSubject, DefaultVisitScheduledBody, true
+	case EventTypeVisitRescheduled:
+		return DefaultVisitRescheduledSubject, DefaultVisitRescheduledBody, true
+	case EventTypeVisitCanceled:
+		return DefaultVisitCanceledSubject, DefaultVisitCanceledBody, true
 	}
 	return "", "", false
 }
@@ -112,6 +143,10 @@ func DefaultName(eventType string) string {
 		return "Status changed"
 	case EventTypeVisitScheduled:
 		return "Site visit scheduled"
+	case EventTypeVisitRescheduled:
+		return "Site visit rescheduled"
+	case EventTypeVisitCanceled:
+		return "Site visit canceled"
 	}
 	return eventType
 }
@@ -126,6 +161,8 @@ func SeededEventTypes() []string {
 		EventTypeTicketCommented,
 		EventTypeTicketStatusChanged,
 		EventTypeVisitScheduled,
+		EventTypeVisitRescheduled,
+		EventTypeVisitCanceled,
 	}
 }
 
@@ -167,7 +204,9 @@ func DefaultRecipients(eventType string) Recipients {
 		return Recipients{Requester: true, Assignee: true, Extras: []string{}}
 	case EventTypeTicketStatusChanged:
 		return Recipients{Requester: true, Extras: []string{}}
-	case EventTypeVisitScheduled:
+	case EventTypeVisitScheduled, EventTypeVisitRescheduled, EventTypeVisitCanceled:
+		// Visit lifecycle events address whoever is affected on both sides:
+		// the requester expecting the tech and the tech being dispatched.
 		return Recipients{Requester: true, Assignee: true, Extras: []string{}}
 	}
 	// Conservative default for unrecognized event types: address nobody.

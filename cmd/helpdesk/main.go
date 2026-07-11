@@ -26,6 +26,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
+	"github.com/stone-age-io/helpdesk/internal/visits"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
 	// Side-effect import: registers the schema migrations.
@@ -56,6 +57,7 @@ func main() {
 	})
 
 	tickets.Register(app)
+	visits.Register(app)
 	authfix.EnforceEmailVisibility(app)
 
 	// Outbound email: ticket lifecycle hooks → templated sends. The notifier

@@ -62,18 +62,22 @@ export interface TimeEntry extends BaseRecord {
   note?: string
 }
 
-export type VisitStatus = 'scheduled' | 'completed' | 'canceled'
+export type VisitStatus = 'requested' | 'scheduled' | 'completed' | 'canceled'
 
+// A `requested` visit has no assignee/time yet — an agent promoted the
+// ticket to on-site work; the dispatcher schedules it later.
 export interface Visit extends BaseRecord {
   ticket: string
-  assignee: string
-  scheduled_at: string
+  assignee?: string
+  scheduled_at?: string
   status: VisitStatus
+  location?: string
   notes?: string
 }
 
 export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
 export const TICKET_PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent']
+export const VISIT_STATUSES: VisitStatus[] = ['requested', 'scheduled', 'completed', 'canceled']
 
 // Shapes served by the /api/helpdesk/notifications routes (not raw records).
 

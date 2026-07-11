@@ -49,18 +49,43 @@ application URL live in PocketBase settings (dashboard), not the YAML.
   `customer` relation. `AuthRule: active = true && customer != ''`. A
   requester sees only their own company's tickets and only non-internal
   comments — enforced by collection rules in `migrations/1800000000_init.go`,
-  which is the single place all access rules live.
+  the home of all access rules (later migrations may amend specific rules,
+  e.g. `1803000000` opens visit reads to requesters).
 
 **Ticket lifecycle** (`internal/tickets`): a create hook assigns the next
 sequential `number` (unique index is the collision backstop) and defaults
 status/priority/source. Requesters interact via comments; ticket field
 updates are staff-only by rule.
 
+**Visits / lite dispatch** (`internal/visits`): promoting a ticket to
+on-site work = creating a visit; the ticket schema stays untouched
+("needs on-site" is derived, never stored). Lifecycle
+`requested → scheduled → completed | canceled` with no transition
+enforcement — the one invariant, enforced by a pre-save guard hook, is
+that a *scheduled* visit has both `scheduled_at` and `assignee` (both
+optional at the schema level so a `requested` visit can exist before the
+dispatcher picks a tech/time; empty status defaults from whether a time
+is set). Free-text `location` carries dispatch directions — deliberately
+no sites collection. Staff schedule from the ticket detail card or the
+Dispatch view (needs-scheduling bucket sorted client-side by ticket
+priority — a PB relation-hop sort on a select would be alphabetical —
+plus a day-grouped, filterable list). Requesters get read-only visit
+access via a `ticket.customer` relation-hop rule; the portal never shows
+the technician's name (expand on `assignee` is dropped by `staff`'s
+ViewRule, and relaxing it would leak the MSP roster).
+
 **Outbound email** (`internal/notifications`, lifted from kiosk's notifier):
 DB-stored templates (`notification_templates`) rendered with
 `text/template` + a small FuncMap (`formatTime`, `statusLabel`,
-`pluralize`). Five event types: `ticket.created`, `ticket.assigned`,
-`ticket.commented`, `ticket.status_changed`, `visit.scheduled`. Recipients
+`pluralize`). Seven event types: `ticket.created`, `ticket.assigned`,
+`ticket.commented`, `ticket.status_changed`, `visit.scheduled`,
+`visit.rescheduled`, `visit.canceled`. Visit events fire on *transitions*,
+not raw saves: scheduled = became scheduled (create or update),
+rescheduled = time moved while scheduled, canceled = was scheduled
+(canceling a bare `requested` visit is silent, as is completion and a
+tech swap without a time change). The visit's technician overrides the
+ticket assignee in the payload so the person dispatched gets the mail.
+Recipients
 are a per-template JSON spec `{requester, assignee, all_staff, extras}`;
 the payload (`TicketContext`) implements `RequesterEmail()` /
 `AssigneeEmail()` and *suppresses the author's side* on comment events so

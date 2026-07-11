@@ -13,9 +13,12 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/mailer"
 
+	"github.com/pocketbase/dbx"
+
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/testutil"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
+	"github.com/stone-age-io/helpdesk/internal/visits"
 )
 
 // mailCapture binds OnMailerSend and swallows sends so no SMTP/sendmail is
@@ -70,6 +73,7 @@ func setupHarness(t *testing.T) *harness {
 	t.Helper()
 	app := testutil.SetupApp(t)
 	tickets.Register(app)
+	visits.Register(app)
 	n := notifications.New(app)
 	t.Cleanup(func() { n.WaitInFlight(5 * time.Second) })
 	notifications.RegisterHooks(app, n)
@@ -132,6 +136,36 @@ func (h *harness) createTicket(t *testing.T, set map[string]any) *core.Record {
 		t.Fatalf("save ticket: %v", err)
 	}
 	return rec
+}
+
+func (h *harness) createVisit(t *testing.T, ticket *core.Record, set map[string]any) *core.Record {
+	t.Helper()
+	col, _ := h.app.FindCollectionByNameOrId("visits")
+	rec := core.NewRecord(col)
+	rec.Set("ticket", ticket.Id)
+	for k, v := range set {
+		rec.Set(k, v)
+	}
+	if err := h.app.Save(rec); err != nil {
+		t.Fatalf("save visit: %v", err)
+	}
+	return rec
+}
+
+// updateVisit re-fetches before mutating so Record.Original() reflects the
+// committed DB state (same pattern as the ticket update tests).
+func (h *harness) updateVisit(t *testing.T, id string, set map[string]any) {
+	t.Helper()
+	rec, err := h.app.FindRecordById("visits", id)
+	if err != nil {
+		t.Fatalf("find visit: %v", err)
+	}
+	for k, v := range set {
+		rec.Set(k, v)
+	}
+	if err := h.app.Save(rec); err != nil {
+		t.Fatalf("update visit: %v", err)
+	}
 }
 
 func (h *harness) createComment(t *testing.T, ticket *core.Record, set map[string]any) {
@@ -298,6 +332,114 @@ func TestVisitScheduledNotifiesRequesterAndTechnician(t *testing.T) {
 	}
 	if !slices.Contains(got, "sam@816tech.example") {
 		t.Errorf("visit did not mail technician: %v", got)
+	}
+}
+
+func TestRequestedVisitSendsNothing(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	h.drain(t)
+
+	h.createVisit(t, ticket, map[string]any{"status": "requested"})
+	if got := h.drain(t); len(got) != 0 {
+		t.Errorf("requested visit sent mail to %v", got)
+	}
+}
+
+func TestRequestedToScheduledSendsVisitScheduled(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{"status": "requested"})
+	h.drain(t)
+
+	h.updateVisit(t, visit.Id, map[string]any{
+		"status":       "scheduled",
+		"assignee":     h.agent.Id,
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	got := h.drain(t)
+	if !slices.Contains(got, "rita@acme.example") {
+		t.Errorf("scheduling did not mail requester: %v", got)
+	}
+	if !slices.Contains(got, "sam@816tech.example") {
+		t.Errorf("scheduling did not mail technician: %v", got)
+	}
+	assertSendLog(t, h, notifications.EventTypeVisitScheduled)
+}
+
+func TestRescheduleSendsVisitRescheduled(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{
+		"status": "scheduled", "assignee": h.agent.Id,
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	h.drain(t)
+
+	h.updateVisit(t, visit.Id, map[string]any{"scheduled_at": "2026-07-16 09:00:00.000Z"})
+	got := h.drain(t)
+	if !slices.Contains(got, "rita@acme.example") || !slices.Contains(got, "sam@816tech.example") {
+		t.Errorf("reschedule did not mail both sides: %v", got)
+	}
+	assertSendLog(t, h, notifications.EventTypeVisitRescheduled)
+}
+
+func TestScheduledToCanceledSendsVisitCanceled(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{
+		"status": "scheduled", "assignee": h.agent.Id,
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	h.drain(t)
+
+	h.updateVisit(t, visit.Id, map[string]any{"status": "canceled"})
+	got := h.drain(t)
+	if !slices.Contains(got, "rita@acme.example") {
+		t.Errorf("cancelation did not mail requester: %v", got)
+	}
+	assertSendLog(t, h, notifications.EventTypeVisitCanceled)
+}
+
+func TestRequestedToCanceledSendsNothing(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{"status": "requested"})
+	h.drain(t)
+
+	h.updateVisit(t, visit.Id, map[string]any{"status": "canceled"})
+	if got := h.drain(t); len(got) != 0 {
+		t.Errorf("canceling a never-scheduled request sent mail to %v", got)
+	}
+}
+
+func TestCompletedVisitSendsNothing(t *testing.T) {
+	h := setupHarness(t)
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{
+		"status": "scheduled", "assignee": h.agent.Id,
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	h.drain(t)
+
+	h.updateVisit(t, visit.Id, map[string]any{"status": "completed"})
+	if got := h.drain(t); len(got) != 0 {
+		t.Errorf("completing a visit sent mail to %v", got)
+	}
+}
+
+// assertSendLog verifies at least one send-log row exists for the event —
+// the notifier's audit trail, independent of the captured SMTP messages.
+func assertSendLog(t *testing.T, h *harness, eventType string) {
+	t.Helper()
+	rows, err := h.app.FindRecordsByFilter(
+		notifications.SendLogCollectionName,
+		"event_type = {:t}", "", 0, 0, dbx.Params{"t": eventType})
+	if err != nil {
+		t.Fatalf("query send log: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Errorf("no send-log rows for %s", eventType)
 	}
 }
 

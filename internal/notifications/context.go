@@ -32,13 +32,17 @@ type CommentInfo struct {
 	ByStaff bool
 }
 
-// VisitInfo rides visit.scheduled payloads. ScheduledAt is preformatted by
-// the hook (PocketBase datetimes are strings); templates print it via
-// formatTime, which passes strings through.
+// VisitInfo rides visit.scheduled / visit.rescheduled / visit.canceled
+// payloads. ScheduledAt is preformatted by the hook (PocketBase datetimes
+// are strings); templates print it via formatTime, which passes strings
+// through.
 type VisitInfo struct {
-	ScheduledAt  string
-	AssigneeName string
-	Notes        string
+	ScheduledAt string
+	// OldScheduledAt is set only for visit.rescheduled.
+	OldScheduledAt string
+	AssigneeName   string
+	Location       string
+	Notes          string
 }
 
 // TicketContext is the render payload every helpdesk event type shares.
@@ -103,6 +107,12 @@ func SampleContext() TicketContext {
 		Requester: PersonInfo{Name: "Rita Requester", Email: "rita@acme.example"},
 		Assignee:  PersonInfo{Name: "Sam Staff", Email: "sam@816tech.example"},
 		Comment:   &CommentInfo{AuthorName: "Sam Staff", Body: "Heading out tomorrow with a replacement motor.", ByStaff: true},
-		Visit:     &VisitInfo{ScheduledAt: "2026-07-14 14:00:00.000Z", AssigneeName: "Sam Staff", Notes: "Bring spare motor"},
+		Visit: &VisitInfo{
+			ScheduledAt:    "2026-07-14 14:00:00.000Z",
+			OldScheduledAt: "2026-07-12 09:00:00.000Z",
+			AssigneeName:   "Sam Staff",
+			Location:       "Main St branch, rear entrance",
+			Notes:          "Bring spare motor",
+		},
 	}
 }

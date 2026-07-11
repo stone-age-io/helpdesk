@@ -14,6 +14,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Dashboard', icon: '📊', path: '/staff/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
+      { label: 'Dispatch', icon: '🚚', path: '/staff/dispatch' },
     ],
   },
   {

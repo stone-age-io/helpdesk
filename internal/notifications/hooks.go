@@ -13,7 +13,11 @@ import (
 //   - tickets update        → ticket.status_changed (status diff),
 //     ticket.assigned (assignee diff, when newly set/changed)
 //   - ticket_comments create → ticket.commented (public comments only)
-//   - visits create          → visit.scheduled
+//   - visits create          → visit.scheduled (only when created scheduled;
+//     a `requested` visit has no time or tech to announce yet)
+//   - visits update          → visit.scheduled (became scheduled),
+//     visit.rescheduled (time moved while scheduled),
+//     visit.canceled (was scheduled — canceling a bare request is silent)
 //
 // All fire from After*Success hooks, so an email never precedes its commit.
 // The notifier itself is async + nil-safe; hooks never fail the write.
@@ -66,26 +70,67 @@ func RegisterHooks(app core.App, n *Notifier) {
 	})
 
 	app.OnRecordAfterCreateSuccess("visits").BindFunc(func(e *core.RecordEvent) error {
-		ticket, err := e.App.FindRecordById("tickets", e.Record.GetString("ticket"))
-		if err != nil {
+		// The guard hook (internal/visits) runs pre-save, so status is final
+		// here. A visit created directly as scheduled announces itself; a
+		// `requested` one waits for the dispatcher.
+		if e.Record.GetString("status") != "scheduled" {
 			return e.Next()
 		}
-		ctx := buildTicketContext(e.App, ticket)
-		visit := &VisitInfo{
-			ScheduledAt: e.Record.GetString("scheduled_at"),
-			Notes:       e.Record.GetString("notes"),
+		if ctx, ok := buildVisitContext(e.App, e.Record); ok {
+			n.Send(EventTypeVisitScheduled, ctx)
 		}
-		// The visit's technician is the assignee that matters for this event —
-		// override the ticket's assignee so both the {{.Visit.AssigneeName}}
-		// field and the assignee recipient class point at who shows up on site.
-		if tech, err := e.App.FindRecordById("staff", e.Record.GetString("assignee")); err == nil {
-			visit.AssigneeName = tech.GetString("name")
-			ctx.Assignee = PersonInfo{Name: tech.GetString("name"), Email: tech.GetString("email")}
-		}
-		ctx.Visit = visit
-		n.Send(EventTypeVisitScheduled, ctx)
 		return e.Next()
 	})
+
+	app.OnRecordAfterUpdateSuccess("visits").BindFunc(func(e *core.RecordEvent) error {
+		orig := e.Record.Original()
+		old, now := orig.GetString("status"), e.Record.GetString("status")
+		ctx, ok := buildVisitContext(e.App, e.Record)
+		if !ok {
+			return e.Next()
+		}
+		switch {
+		case now == "scheduled" && old != "scheduled":
+			// Covers requested→scheduled even when the time arrives in the
+			// same update — that's a scheduling, not a reschedule.
+			n.Send(EventTypeVisitScheduled, ctx)
+		case now == "scheduled" && orig.GetString("scheduled_at") != e.Record.GetString("scheduled_at"):
+			ctx.Visit.OldScheduledAt = orig.GetString("scheduled_at")
+			n.Send(EventTypeVisitRescheduled, ctx)
+		case now == "canceled" && old == "scheduled":
+			n.Send(EventTypeVisitCanceled, ctx)
+		}
+		// Everything else is silent: completion is communicated by the
+		// ticket's status/comments, and a tech swap without a time change is
+		// an accepted gap (nobody is emailed).
+		return e.Next()
+	})
+}
+
+// buildVisitContext assembles the render payload for one visit event. ok is
+// false when the parent ticket is gone (cascade races) — the caller skips
+// the send.
+func buildVisitContext(app core.App, visit *core.Record) (TicketContext, bool) {
+	ticket, err := app.FindRecordById("tickets", visit.GetString("ticket"))
+	if err != nil {
+		return TicketContext{}, false
+	}
+	ctx := buildTicketContext(app, ticket)
+	ctx.Visit = &VisitInfo{
+		ScheduledAt: visit.GetString("scheduled_at"),
+		Location:    visit.GetString("location"),
+		Notes:       visit.GetString("notes"),
+	}
+	// The visit's technician is the assignee that matters for these events —
+	// override the ticket's assignee so both the {{.Visit.AssigneeName}}
+	// field and the assignee recipient class point at who shows up on site.
+	// An unassigned (requested) visit leaves the ticket assignee in place;
+	// requested visits never send anyway.
+	if tech, err := app.FindRecordById("staff", visit.GetString("assignee")); err == nil {
+		ctx.Visit.AssigneeName = tech.GetString("name")
+		ctx.Assignee = PersonInfo{Name: tech.GetString("name"), Email: tech.GetString("email")}
+	}
+	return ctx, true
 }
 
 // buildTicketContext assembles the shared render payload for one ticket.
