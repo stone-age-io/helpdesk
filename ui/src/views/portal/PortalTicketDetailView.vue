@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Ticket, TicketComment, Visit } from '@/types'
+import type { Ticket, TicketComment, TicketEvent, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,15 +18,30 @@ const id = route.params.id as string
 const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
 const visits = ref<Visit[]>([])
+const statusEvents = ref<TicketEvent[]>([])
 const loading = ref(true)
 const error = ref('')
+
+// A requester-safe progress trail: the ticket's creation, then each status
+// transition. The read rule (migration 1808000000) scopes ticket_events to
+// field='status' for the requester's own tickets, and the actor is never
+// requested — so no technician identity leaks here.
+const humanizeStatus = (s?: string) => (s || '').replace(/_/g, ' ')
+const progress = computed(() => {
+  const steps: { label: string; at: string }[] = []
+  if (ticket.value) steps.push({ label: 'Opened', at: ticket.value.created })
+  for (const e of statusEvents.value) steps.push({ label: humanizeStatus(e.new_value), at: e.created })
+  return steps
+})
 
 const newComment = ref('')
 const commentFiles = ref<File[]>([])
 const posting = ref(false)
 
 async function loadTicket() {
-  ticket.value = await pb.collection('tickets').getOne<Ticket>(id)
+  // Expand category for the badge; the ticket_categories read rule (migration
+  // 1808000000) lets requesters resolve the label.
+  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category' })
 }
 
 async function loadComments() {
@@ -35,6 +51,18 @@ async function loadComments() {
     sort: 'created',
     expand: 'author_staff,author_user',
   })
+}
+
+async function loadStatusEvents() {
+  // No actor expand — the rule would drop it anyway, and we don't want it.
+  try {
+    statusEvents.value = await pb.collection('ticket_events').getFullList<TicketEvent>({
+      filter: `ticket = '${id}' && field = 'status'`,
+      sort: 'created',
+    })
+  } catch {
+    // Optional context; the thread still renders without the trail.
+  }
 }
 
 async function loadVisits() {
@@ -56,6 +84,7 @@ async function load() {
     await loadTicket()
     await loadComments()
     await loadVisits()
+    await loadStatusEvents()
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -94,6 +123,7 @@ function scheduleReload() {
     loadTicket().catch(() => {})
     loadComments().catch(() => {})
     loadVisits()
+    loadStatusEvents()
   }, 500)
 }
 let unsubTicket: (() => void) | null = null
@@ -146,11 +176,32 @@ onUnmounted(() => {
       <div class="card-body">
         <div class="flex items-center gap-2 flex-wrap">
           <h1 class="text-xl font-bold">#{{ ticket.number }} — {{ ticket.title }}</h1>
-          <TicketBadges :status="ticket.status" />
+          <TicketBadges :status="ticket.status" :priority="ticket.priority" />
+          <CategoryBadge v-if="ticket.expand?.category?.name" :name="ticket.expand?.category?.name" :color="ticket.expand?.category?.color" />
           <span v-if="ticket.assignee" class="badge badge-ghost badge-sm gap-1" title="An agent is working on this ticket">🧑‍🔧 Agent assigned</span>
         </div>
         <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
         <AttachmentList :record="ticket" :files="ticket.attachments" />
+        <div class="text-xs text-base-content/50 mt-2">
+          Opened {{ format(new Date(ticket.created), 'MMM d, yyyy') }}
+          <template v-if="ticket.updated"> · Updated {{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</template>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="progress.length > 1" class="card bg-base-100 shadow-sm">
+      <div class="card-body py-3 px-4">
+        <h2 class="font-semibold text-sm mb-1">Progress</h2>
+        <ol class="space-y-2">
+          <li v-for="(step, i) in progress" :key="i" class="flex items-center gap-3 text-sm">
+            <span
+              class="w-2 h-2 rounded-full shrink-0"
+              :class="i === progress.length - 1 ? 'bg-primary' : 'bg-base-content/30'"
+            ></span>
+            <span class="capitalize font-medium flex-1">{{ step.label }}</span>
+            <span class="text-xs text-base-content/50 whitespace-nowrap">{{ format(new Date(step.at), 'MMM d, HH:mm') }}</span>
+          </li>
+        </ol>
       </div>
     </div>
 
