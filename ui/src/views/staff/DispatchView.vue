@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Staff, Visit, VisitStatus } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
-import { format, formatDistanceToNow } from 'date-fns'
+import VisitWeekCalendar from '@/components/VisitWeekCalendar.vue'
+import VisitMonthCalendar from '@/components/VisitMonthCalendar.vue'
+import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, formatDistanceToNow, startOfMonth, startOfWeek } from 'date-fns'
 
 const route = useRoute()
+const router = useRouter()
 
 const requested = ref<Visit[]>([])
 const visits = ref<Visit[]>([])
@@ -27,8 +30,28 @@ const status = ref<VisitStatus | ''>((q('status') as any) || 'scheduled')
 const from = ref(q('from'))
 const to = ref(q('to'))
 
+// List | Week | Month. The calendar modes replace the date-range/status
+// filters with a week/month navigator driven by focusDate.
+type ViewMode = 'list' | 'week' | 'month'
+const view = ref<ViewMode>(['week', 'month'].includes(q('view')) ? (q('view') as ViewMode) : 'list')
+const focusDate = ref<Date>(new Date())
+
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+
+// Calendar navigation. One focusDate drives both modes; prev/next steps by the
+// unit in view. Opening a day from the month jumps to that day's week.
+const weekStart = computed(() => startOfWeek(focusDate.value, { weekStartsOn: 1 }))
+function shift(dir: -1 | 1) {
+  focusDate.value = view.value === 'month' ? addMonths(focusDate.value, dir) : addWeeks(focusDate.value, dir)
+}
+function goToday() {
+  focusDate.value = new Date()
+}
+function openDay(day: Date) {
+  focusDate.value = day
+  view.value = 'week'
+}
 
 // Ticket priority drives the dispatch order of the requested bucket.
 // Sorted client-side: a PocketBase relation-hop sort on a select field
@@ -110,6 +133,30 @@ function buildFilter(): string {
   return parts.join(' && ')
 }
 
+// Inclusive-start / exclusive-end window for the calendar modes: scheduled work
+// only (requested lives in the parking lot; canceled isn't happening), narrowed
+// by the technician/customer filters carried over from the list view.
+function buildCalendarFilter(): string {
+  const start = view.value === 'month' ? startOfWeek(startOfMonth(focusDate.value), { weekStartsOn: 1 }) : weekStart.value
+  const endExclusive =
+    view.value === 'month'
+      ? addDays(endOfWeek(endOfMonth(focusDate.value), { weekStartsOn: 1 }), 1)
+      : addDays(weekStart.value, 7)
+  const parts = [
+    `scheduled_at >= '${pbTime(format(start, 'yyyy-MM-dd'), false)}'`,
+    `scheduled_at < '${pbTime(format(endExclusive, 'yyyy-MM-dd'), false)}'`,
+    `status != 'requested'`,
+    `status != 'canceled'`,
+  ]
+  if (technician.value) parts.push(`assignee = '${technician.value}'`)
+  if (customer.value) parts.push(`ticket.customer = '${customer.value}'`)
+  return parts.join(' && ')
+}
+
+function currentFilter(): string {
+  return view.value === 'list' ? buildFilter() : buildCalendarFilter()
+}
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   error.value = ''
@@ -121,7 +168,7 @@ async function load(quiet = false) {
         expand: 'ticket,ticket.customer',
       }),
       pb.collection('visits').getFullList<Visit>({
-        filter: buildFilter(),
+        filter: currentFilter(),
         sort: 'scheduled_at',
         expand: 'ticket,ticket.customer,assignee',
       }),
@@ -185,7 +232,10 @@ function exportCsv() {
 // scheduled one rescheduled/completed, all without leaving the board.
 const openVisitId = ref<string | null>(null)
 
-watch([technician, customer, status, from, to], () => load())
+watch([technician, customer, status, from, to, view, focusDate], () => load())
+
+// Keep the mode in the URL so a reload or shared link lands on the same view.
+watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } }))
 
 // Live updates: visit changes anywhere (ticket card, this view, another
 // agent) refresh both lists after a short collapse window.
@@ -235,46 +285,80 @@ onUnmounted(() => {
         <p v-else class="text-sm text-base-content/50">Nothing waiting on a dispatcher.</p>
       </section>
 
-      <!-- Scheduled work, grouped by day. -->
+      <!-- Scheduled work: list (day-grouped) · week board · month overview. -->
       <section class="space-y-2">
         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center">
           <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60 sm:mr-auto">Visits</h2>
+          <div class="join">
+            <button class="btn btn-sm join-item" :class="view === 'list' ? 'btn-active' : ''" @click="view = 'list'">List</button>
+            <button class="btn btn-sm join-item" :class="view === 'week' ? 'btn-active' : ''" @click="view = 'week'">Week</button>
+            <button class="btn btn-sm join-item" :class="view === 'month' ? 'btn-active' : ''" @click="view = 'month'">Month</button>
+          </div>
           <div class="w-full sm:w-52">
             <SearchSelect v-model="technician" :options="staffOptions" size="sm" empty-label="All technicians" placeholder="Technician…" />
           </div>
           <div class="w-full sm:w-52">
             <SearchSelect v-model="customer" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
           </div>
-          <select v-model="status" class="select select-bordered select-sm w-full sm:w-auto">
-            <option value="scheduled">Scheduled</option>
-            <option value="completed">Completed</option>
-            <option value="canceled">Canceled</option>
-            <option value="">All</option>
-          </select>
-          <input v-model="from" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="From" />
-          <input v-model="to" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="To" />
+          <template v-if="view === 'list'">
+            <select v-model="status" class="select select-bordered select-sm w-full sm:w-auto">
+              <option value="scheduled">Scheduled</option>
+              <option value="completed">Completed</option>
+              <option value="canceled">Canceled</option>
+              <option value="">All</option>
+            </select>
+            <input v-model="from" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="From" />
+            <input v-model="to" type="date" class="input input-bordered input-sm w-full sm:w-auto" title="To" />
+          </template>
           <button class="btn btn-sm btn-ghost w-full sm:w-auto" :disabled="exporting || visits.length === 0" @click="exportCsv">
             <span v-if="exporting" class="loading loading-spinner loading-xs"></span>
             Export CSV
           </button>
         </div>
 
-        <p v-if="dayGroups.length === 0" class="text-sm text-base-content/50">No visits match.</p>
-        <div v-for="group in dayGroups" :key="group.label" class="space-y-1">
-          <h3 class="font-medium text-sm">{{ group.label }}</h3>
-          <ResponsiveList :items="group.items" :columns="visitColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
-            <template #card-scheduled_at="{ item }">
-              <div class="text-sm font-bold truncate">
-                {{ item.scheduled_at ? format(new Date(item.scheduled_at), 'HH:mm') : '' }}
-                <span class="font-mono text-base-content/60">#{{ item.expand?.ticket?.number }}</span>
-                {{ item.expand?.ticket?.title }}
-              </div>
-            </template>
-            <template #cell-status="{ value }">
-              <span class="badge badge-sm" :class="statusBadge[value]">{{ value }}</span>
-            </template>
-          </ResponsiveList>
-        </div>
+        <!-- List: day-grouped flat rows -->
+        <template v-if="view === 'list'">
+          <p v-if="dayGroups.length === 0" class="text-sm text-base-content/50">No visits match.</p>
+          <div v-for="group in dayGroups" :key="group.label" class="space-y-1">
+            <h3 class="font-medium text-sm">{{ group.label }}</h3>
+            <ResponsiveList :items="group.items" :columns="visitColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
+              <template #card-scheduled_at="{ item }">
+                <div class="text-sm font-bold truncate">
+                  {{ item.scheduled_at ? format(new Date(item.scheduled_at), 'HH:mm') : '' }}
+                  <span class="font-mono text-base-content/60">#{{ item.expand?.ticket?.number }}</span>
+                  {{ item.expand?.ticket?.title }}
+                </div>
+              </template>
+              <template #cell-status="{ value }">
+                <span class="badge badge-sm" :class="statusBadge[value]">{{ value }}</span>
+              </template>
+            </ResponsiveList>
+          </div>
+        </template>
+
+        <!-- Week board: day-columns + per-tech utilization -->
+        <VisitWeekCalendar
+          v-else-if="view === 'week'"
+          :visits="visits"
+          :week-start="weekStart"
+          :staff="staff"
+          @select="(id) => (openVisitId = id)"
+          @prev="shift(-1)"
+          @next="shift(1)"
+          @today="goToday"
+        />
+
+        <!-- Month overview -->
+        <VisitMonthCalendar
+          v-else
+          :visits="visits"
+          :focus-date="focusDate"
+          @select="(id) => (openVisitId = id)"
+          @open-day="openDay"
+          @prev="shift(-1)"
+          @next="shift(1)"
+          @today="goToday"
+        />
       </section>
     </template>
 
