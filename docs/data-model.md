@@ -130,7 +130,14 @@ forged through the API.
 ### `time_entries` — labor log
 
 `ticket` (cascade), `staff` (required), `minutes` (int ≥ 1), `work_date`,
-`note`.
+`note`, `visit` (→ visits, optional — added `1809000000`).
+
+The ticket is the **canonical labor ledger**: `ticket` is required, so the
+ticket total is always `sum(minutes)` filtered by ticket. `visit` is an
+optional *dimension* on an entry — presence marks it as on-site/field time and
+enables per-visit and field-vs-desk subtotals with no rollup machinery. No
+cascade on the visit FK: deleting a visit never deletes labor (the entry keeps
+its ticket; the dangling visit ref resolves to nothing).
 
 Rules: read `StaffRule` (staff-only, all ops). Create requires `staff` =
 self; update/delete is own-entry-or-admin. Requesters never see time entries.
@@ -140,7 +147,13 @@ self; update/delete is own-entry-or-admin. Requesters never see time entries.
 `ticket` (cascade), `assignee` (→ staff, optional), `scheduled_at`
 (optional), `status` (`requested` | `scheduled` | `completed` | `canceled`),
 `location` (free text — dispatch directions, no sites collection),
-`completed_at`, `notes`.
+`completed_at`, `notes`, `duration_minutes` (int, optional — added
+`1809000000`).
+
+`duration_minutes` is the **scheduled** block length (planned), paired with
+`scheduled_at` to make a visit a real calendar block rather than a point in
+time. It is deliberately distinct from **actual** labor, which lives in
+`time_entries` tagged with the visit.
 
 `assignee` and `scheduled_at` are optional at the schema level so a
 `requested` visit can exist before a tech or time is known. The one invariant

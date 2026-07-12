@@ -69,8 +69,16 @@ const requestedColumns: Column<Visit>[] = [
   { key: 'created', label: 'Waiting', class: 'whitespace-nowrap text-base-content/60', format: (v) => formatDistanceToNow(new Date(v)) },
 ]
 
+function fmtDuration(min?: number): string {
+  if (!min) return '—'
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return h > 0 ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`
+}
+
 const visitColumns: Column<Visit>[] = [
   { key: 'scheduled_at', label: 'Time', class: 'whitespace-nowrap font-medium', format: (v) => (v ? format(new Date(v), 'HH:mm') : '—') },
+  { key: 'duration_minutes', label: 'Duration', class: 'whitespace-nowrap text-base-content/60', format: (v) => fmtDuration(v as number) },
   { key: 'ticket', label: 'Ticket', format: (_, item) => ticketLabel(item) },
   { key: 'customer', label: 'Customer', format: (_, item) => customerName(item) },
   { key: 'assignee', label: 'Technician', format: (_, item) => item.expand?.assignee?.name || '—' },
@@ -143,7 +151,7 @@ function csvEscape(v: unknown): string {
 function exportCsv() {
   exporting.value = true
   try {
-    const header = ['ticket', 'customer', 'technician', 'scheduled_at', 'completed_at', 'status', 'location', 'notes']
+    const header = ['ticket', 'customer', 'technician', 'scheduled_at', 'duration_minutes', 'completed_at', 'status', 'location', 'notes']
     const lines = [header.join(',')]
     for (const v of visits.value) {
       lines.push(
@@ -152,6 +160,7 @@ function exportCsv() {
           customerName(v),
           v.expand?.assignee?.name || '',
           v.scheduled_at || '',
+          v.duration_minutes ?? '',
           v.completed_at || '',
           v.status,
           v.location || '',
@@ -177,7 +186,13 @@ function exportCsv() {
 const scheduling = ref<Visit | null>(null)
 const savingSched = ref(false)
 const schedError = ref('')
-const schedForm = ref({ scheduled_at: '', assignee: '', location: '', notes: '' })
+const schedForm = ref<{ scheduled_at: string; assignee: string; location: string; notes: string; duration: number | null }>({
+  scheduled_at: '',
+  assignee: '',
+  location: '',
+  notes: '',
+  duration: null,
+})
 
 function openSchedule(v: Visit) {
   scheduling.value = v
@@ -187,6 +202,7 @@ function openSchedule(v: Visit) {
     assignee: v.assignee || '',
     location: v.location || '',
     notes: v.notes || '',
+    duration: v.duration_minutes ?? null,
   }
 }
 function closeSchedule() {
@@ -203,6 +219,7 @@ async function submitSchedule() {
       status: 'scheduled',
       location: schedForm.value.location.trim(),
       notes: schedForm.value.notes.trim(),
+      duration_minutes: schedForm.value.duration || null,
     })
     closeSchedule()
     await load()
@@ -319,6 +336,10 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
         <div class="form-control">
           <label class="label py-1"><span class="label-text text-xs">Date &amp; time</span></label>
           <input v-model="schedForm.scheduled_at" type="datetime-local" class="input input-bordered input-sm w-full" :disabled="savingSched" />
+        </div>
+        <div class="form-control">
+          <label class="label py-1"><span class="label-text text-xs">Duration (minutes, optional)</span></label>
+          <input v-model.number="schedForm.duration" type="number" min="15" step="15" placeholder="e.g. 120" class="input input-bordered input-sm w-full" :disabled="savingSched" />
         </div>
         <div class="form-control">
           <label class="label py-1"><span class="label-text text-xs">Technician</span></label>

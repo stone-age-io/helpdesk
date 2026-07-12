@@ -88,6 +88,9 @@ export interface TimeEntry extends BaseRecord {
   minutes: number
   work_date: string
   note?: string
+  // Optional on-site session this labor belongs to. Empty = desk work. The
+  // ticket stays the canonical ledger; this is an added dimension.
+  visit?: string
 }
 
 export type VisitStatus = 'requested' | 'scheduled' | 'completed' | 'canceled'
@@ -102,6 +105,9 @@ export interface Visit extends BaseRecord {
   status: VisitStatus
   location?: string
   notes?: string
+  // Scheduled block length in minutes (planned), distinct from the actual
+  // labor logged against the visit in time_entries.
+  duration_minutes?: number
 }
 
 export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed']

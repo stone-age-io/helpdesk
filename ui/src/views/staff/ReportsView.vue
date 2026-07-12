@@ -67,16 +67,21 @@ async function load() {
 interface Row {
   label: string
   minutes: number
+  fieldMinutes: number // subset of minutes attributed to an on-site visit
   visits: number
 }
 function group(keyer: (fromEntry: boolean, rec: any) => string): Row[] {
   const map = new Map<string, Row>()
   const row = (label: string) => {
     const k = label || '—'
-    if (!map.has(k)) map.set(k, { label: k, minutes: 0, visits: 0 })
+    if (!map.has(k)) map.set(k, { label: k, minutes: 0, fieldMinutes: 0, visits: 0 })
     return map.get(k)!
   }
-  for (const e of entries.value) row(keyer(true, e)).minutes += e.minutes
+  for (const e of entries.value) {
+    const r = row(keyer(true, e))
+    r.minutes += e.minutes
+    if (e.visit) r.fieldMinutes += e.minutes
+  }
   for (const v of doneVisits.value) row(keyer(false, v)).visits += 1
   return [...map.values()].sort((a, b) => b.minutes - a.minutes || b.visits - a.visits)
 }
@@ -91,6 +96,9 @@ const byCustomer = computed(() =>
 )
 
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
+const totalFieldMinutes = computed(() =>
+  entries.value.filter((e) => e.visit).reduce((s, e) => s + e.minutes, 0),
+)
 const totalVisits = computed(() => doneVisits.value.length)
 const totalTickets = computed(() => tickets.value.length)
 
@@ -143,7 +151,7 @@ function download(name: string, lines: string[]) {
   URL.revokeObjectURL(a.href)
 }
 function exportTime() {
-  const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'note'].join(',')]
+  const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'on_site', 'note'].join(',')]
   for (const e of entries.value) {
     lines.push(
       [
@@ -152,6 +160,7 @@ function exportTime() {
         e.expand?.ticket?.expand?.customer?.name || '',
         e.expand?.ticket?.number ?? '',
         e.minutes,
+        e.visit ? 'yes' : '',
         e.note || '',
       ]
         .map(csvEscape)
@@ -202,6 +211,7 @@ onMounted(load)
         <div class="stat">
           <div class="stat-title">Time logged</div>
           <div class="stat-value text-2xl">{{ fmtHours(totalMinutes) }}</div>
+          <div v-if="totalFieldMinutes > 0" class="stat-desc">{{ fmtHours(totalFieldMinutes) }} on-site</div>
         </div>
         <div class="stat">
           <div class="stat-title">Visits completed</div>
@@ -225,14 +235,15 @@ onMounted(load)
               </div>
             </div>
             <table class="table table-sm">
-              <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Visits</th></tr></thead>
+              <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
               <tbody>
                 <tr v-for="r in byPerson" :key="r.label">
                   <td>{{ r.label }}</td>
                   <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
+                  <td class="text-right font-mono">{{ fmtHours(r.fieldMinutes) }}</td>
                   <td class="text-right font-mono">{{ r.visits || '—' }}</td>
                 </tr>
-                <tr v-if="byPerson.length === 0"><td colspan="3" class="text-base-content/50">No activity in range.</td></tr>
+                <tr v-if="byPerson.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
             </table>
           </div>
@@ -243,14 +254,15 @@ onMounted(load)
           <div class="card-body p-4 space-y-2">
             <h2 class="font-semibold text-sm">By customer</h2>
             <table class="table table-sm">
-              <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Visits</th></tr></thead>
+              <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
               <tbody>
                 <tr v-for="r in byCustomer" :key="r.label">
                   <td>{{ r.label }}</td>
                   <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
+                  <td class="text-right font-mono">{{ fmtHours(r.fieldMinutes) }}</td>
                   <td class="text-right font-mono">{{ r.visits || '—' }}</td>
                 </tr>
-                <tr v-if="byCustomer.length === 0"><td colspan="3" class="text-base-content/50">No activity in range.</td></tr>
+                <tr v-if="byCustomer.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
             </table>
           </div>

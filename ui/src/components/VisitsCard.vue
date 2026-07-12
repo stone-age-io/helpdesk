@@ -18,6 +18,7 @@ const scheduledAt = ref('')
 const assignee = ref('')
 const location = ref('')
 const notes = ref('')
+const duration = ref<number | null>(null) // scheduled block length, minutes
 const saving = ref(false)
 const error = ref('')
 
@@ -39,6 +40,7 @@ function closeForm() {
   scheduledAt.value = ''
   location.value = ''
   notes.value = ''
+  duration.value = null
 }
 
 function openRequest() {
@@ -53,6 +55,7 @@ function openSchedule(v?: Visit) {
     editing.value = v
     location.value = v.location || ''
     notes.value = v.notes || ''
+    duration.value = v.duration_minutes ?? null
   }
   assignee.value = auth.record?.id || ''
 }
@@ -86,6 +89,7 @@ async function submitSchedule() {
     status: 'scheduled',
     location: location.value.trim(),
     notes: notes.value.trim(),
+    duration_minutes: duration.value || null,
   }
   try {
     if (editing.value) {
@@ -112,6 +116,17 @@ async function setStatus(v: Visit, status: string) {
 }
 
 const staffOptions = computed(() => props.staff.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
+
+// "MMM d, HH:mm" for a bare start, "MMM d, HH:mm–HH:mm" when a scheduled
+// block length is set — the calendar block, not just the pin.
+function visitWindow(v: Visit): string {
+  if (!v.scheduled_at) return ''
+  const start = new Date(v.scheduled_at)
+  const base = format(start, 'MMM d, HH:mm')
+  if (!v.duration_minutes) return base
+  const end = new Date(start.getTime() + v.duration_minutes * 60000)
+  return `${base}–${format(end, 'HH:mm')}`
+}
 
 const statusClass: Record<string, string> = {
   requested: 'badge-warning',
@@ -152,6 +167,7 @@ onMounted(() => {
       <div v-if="mode === 'schedule'" class="space-y-1">
         <p v-if="editing" class="text-xs text-base-content/60">Scheduling the requested visit.</p>
         <input v-model="scheduledAt" type="datetime-local" class="input input-bordered input-sm w-full min-w-0" :disabled="saving" />
+        <input v-model.number="duration" type="number" min="15" step="15" placeholder="duration (min, optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
         <SearchSelect v-model="assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="saving" />
         <input v-model="location" type="text" placeholder="location" class="input input-bordered input-sm w-full" :disabled="saving" />
         <input v-model="notes" type="text" placeholder="notes" class="input input-bordered input-sm w-full" :disabled="saving" />
@@ -161,7 +177,7 @@ onMounted(() => {
       <ul class="space-y-2">
         <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
           <div class="flex items-center gap-2">
-            <span v-if="v.scheduled_at" class="font-medium whitespace-nowrap">{{ format(new Date(v.scheduled_at), 'MMM d, HH:mm') }}</span>
+            <span v-if="v.scheduled_at" class="font-medium whitespace-nowrap">{{ visitWindow(v) }}</span>
             <span v-else class="italic text-base-content/60">needs scheduling</span>
             <span class="badge badge-xs" :class="statusClass[v.status]">{{ v.status }}</span>
           </div>
