@@ -18,7 +18,7 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 
-const form = ref({ name: '', active: true, platform_org_id: '', notes: '' })
+const form = ref({ name: '', active: true, platform_org_id: '', notes: '', show_time_to_requester: false })
 const webhookToken = ref('')
 
 async function load() {
@@ -30,6 +30,7 @@ async function load() {
       active: customer.value.active,
       platform_org_id: customer.value.platform_org_id || '',
       notes: customer.value.notes || '',
+      show_time_to_requester: customer.value.show_time_to_requester || false,
     }
     tickets.value = (
       await pb.collection('tickets').getList<Ticket>(1, 10, {
@@ -125,6 +126,15 @@ onMounted(load)
             <label class="label cursor-pointer justify-start gap-3 py-1">
               <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!auth.isAdmin || saving" />
               <span class="label-text">Active</span>
+            </label>
+          </div>
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input v-model="form.show_time_to_requester" type="checkbox" class="toggle toggle-sm" :disabled="!auth.isAdmin || saving" />
+              <span class="label-text">Show logged time to requesters</span>
+            </label>
+            <label class="label py-0">
+              <span class="label-text-alt text-base-content/60">Portal shows the total hours on each ticket — the aggregate only, never entries or names.</span>
             </label>
           </div>
           <div v-if="auth.isAdmin" class="flex justify-between items-center pt-1">

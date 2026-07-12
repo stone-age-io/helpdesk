@@ -45,11 +45,19 @@ staff roster and pickers.
 
 `name` (unique), `active`, `platform_org_id` (unique when set — maps a
 customer to the NATS subject org token), `webhook_token` (hidden; the inbound
-webhook secret), `notes`.
+webhook secret), `notes`, `show_time_to_requester` (bool, default false —
+added `1810000000`).
 
 Rules: read `StaffRule`; create/update/delete `AdminRule`. `webhook_token` is
 a hidden field — it never leaves the server via the record API; staff reveal
 or rotate it through `POST /api/helpdesk/customers/{id}/webhook-token`.
+
+`show_time_to_requester` is a per-customer opt-in (default off) that lets the
+portal show the **aggregate** time logged on that customer's tickets — never
+the per-entry rows. It gates the `GET /api/helpdesk/tickets/{id}/time-total`
+route (`internal/timeentries`): staff always get the total, a requester only
+for their own customer's ticket and only when the flag is on. Off by default
+because exposing hours is an MSP billing-model choice and hard to walk back.
 
 ### `tickets` — the unit of work
 

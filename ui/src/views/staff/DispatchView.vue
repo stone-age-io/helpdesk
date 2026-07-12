@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Staff, Visit, VisitStatus } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
 import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
-const router = useRouter()
 
 const requested = ref<Visit[]>([])
 const visits = ref<Visit[]>([])
@@ -181,54 +181,9 @@ function exportCsv() {
   }
 }
 
-// --- inline scheduling: act on the "Needs scheduling" queue without
-// opening each ticket. Also reschedules an already-scheduled visit. ---
-const scheduling = ref<Visit | null>(null)
-const savingSched = ref(false)
-const schedError = ref('')
-const schedForm = ref<{ scheduled_at: string; assignee: string; location: string; notes: string; duration: number | null }>({
-  scheduled_at: '',
-  assignee: '',
-  location: '',
-  notes: '',
-  duration: null,
-})
-
-function openSchedule(v: Visit) {
-  scheduling.value = v
-  schedError.value = ''
-  schedForm.value = {
-    scheduled_at: v.scheduled_at ? format(new Date(v.scheduled_at), "yyyy-MM-dd'T'HH:mm") : '',
-    assignee: v.assignee || '',
-    location: v.location || '',
-    notes: v.notes || '',
-    duration: v.duration_minutes ?? null,
-  }
-}
-function closeSchedule() {
-  scheduling.value = null
-}
-async function submitSchedule() {
-  if (!scheduling.value || !schedForm.value.scheduled_at || !schedForm.value.assignee) return
-  savingSched.value = true
-  schedError.value = ''
-  try {
-    await pb.collection('visits').update(scheduling.value.id, {
-      assignee: schedForm.value.assignee,
-      scheduled_at: new Date(schedForm.value.scheduled_at).toISOString(),
-      status: 'scheduled',
-      location: schedForm.value.location.trim(),
-      notes: schedForm.value.notes.trim(),
-      duration_minutes: schedForm.value.duration || null,
-    })
-    closeSchedule()
-    await load()
-  } catch (err: any) {
-    schedError.value = err?.message || 'Failed to schedule visit'
-  } finally {
-    savingSched.value = false
-  }
-}
+// Rows open the visit drawer — a requested visit is scheduled there, a
+// scheduled one rescheduled/completed, all without leaving the board.
+const openVisitId = ref<string | null>(null)
 
 watch([technician, customer, status, from, to], () => load())
 
@@ -256,8 +211,6 @@ onUnmounted(() => {
   clearTimeout(reloadTimer)
   unsubscribe?.()
 })
-
-const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
 </script>
 
 <template>
@@ -276,7 +229,7 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
           Needs scheduling
           <span v-if="requestedSorted.length" class="badge badge-warning badge-sm align-middle">{{ requestedSorted.length }}</span>
         </h2>
-        <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="openSchedule">
+        <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
           <template #cell-priority="{ item }"><TicketBadges :priority="item.expand?.ticket?.priority" /></template>
         </ResponsiveList>
         <p v-else class="text-sm text-base-content/50">Nothing waiting on a dispatcher.</p>
@@ -309,7 +262,7 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
         <p v-if="dayGroups.length === 0" class="text-sm text-base-content/50">No visits match.</p>
         <div v-for="group in dayGroups" :key="group.label" class="space-y-1">
           <h3 class="font-medium text-sm">{{ group.label }}</h3>
-          <ResponsiveList :items="group.items" :columns="visitColumns" @row-click="open">
+          <ResponsiveList :items="group.items" :columns="visitColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
             <template #card-scheduled_at="{ item }">
               <div class="text-sm font-bold truncate">
                 {{ item.scheduled_at ? format(new Date(item.scheduled_at), 'HH:mm') : '' }}
@@ -325,37 +278,6 @@ const open = (v: Visit) => router.push(`/staff/tickets/${v.ticket}`)
       </section>
     </template>
 
-    <!-- Inline schedule/reschedule modal. -->
-    <div v-if="scheduling" class="modal modal-open" @click.self="closeSchedule">
-      <div class="modal-box space-y-3">
-        <h3 class="font-bold">
-          Schedule visit
-          <span class="font-normal text-base-content/60">#{{ scheduling.expand?.ticket?.number }}</span>
-        </h3>
-        <p v-if="schedError" class="text-error text-sm">{{ schedError }}</p>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">Date &amp; time</span></label>
-          <input v-model="schedForm.scheduled_at" type="datetime-local" class="input input-bordered input-sm w-full" :disabled="savingSched" />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">Duration (minutes, optional)</span></label>
-          <input v-model.number="schedForm.duration" type="number" min="15" step="15" placeholder="e.g. 120" class="input input-bordered input-sm w-full" :disabled="savingSched" />
-        </div>
-        <div class="form-control">
-          <label class="label py-1"><span class="label-text text-xs">Technician</span></label>
-          <SearchSelect v-model="schedForm.assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="savingSched" />
-        </div>
-        <input v-model="schedForm.location" type="text" placeholder="location" class="input input-bordered input-sm w-full" :disabled="savingSched" />
-        <input v-model="schedForm.notes" type="text" placeholder="notes" class="input input-bordered input-sm w-full" :disabled="savingSched" />
-        <div class="modal-action">
-          <button class="btn btn-sm btn-ghost" :disabled="savingSched" @click="closeSchedule">Cancel</button>
-          <button class="btn btn-sm" @click="open(scheduling)">Open ticket</button>
-          <button class="btn btn-sm btn-primary" :disabled="savingSched || !schedForm.scheduled_at || !schedForm.assignee" @click="submitSchedule">
-            <span v-if="savingSched" class="loading loading-spinner loading-xs"></span>
-            Schedule
-          </button>
-        </div>
-      </div>
-    </div>
+    <VisitDetailDrawer :visit-id="openVisitId" :staff="staff" @close="openVisitId = null" @changed="load" />
   </div>
 </template>

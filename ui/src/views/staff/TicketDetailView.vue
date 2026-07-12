@@ -293,12 +293,18 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Mobile: the whole meta group (properties + time + visits) sits
-             directly under the header, so nothing is stranded at the bottom.
-             Properties collapse behind a summary; time and visits read as part
-             of the same section. Rendered here OR in the desktop rail below —
-             never both, so the fetch-on-mount cards don't load twice. -->
-        <div v-if="!isDesktop" class="space-y-4">
+        <!-- Work: time + visits, side by side on wide screens, directly under
+             the header for both breakpoints — the operational work no longer
+             lives in the rail (or the bottom of it). Rendered once here. -->
+        <div class="grid gap-4 md:grid-cols-2 items-start">
+          <TimeEntriesCard :ticket-id="id" />
+          <VisitsCard :ticket-id="id" :staff="staff" />
+        </div>
+
+        <!-- Mobile: properties collapse behind a summary directly under the
+             header. Rendered here on mobile OR in the desktop rail — never
+             both. Time + visits are in the Work section above for both. -->
+        <div v-if="!isDesktop">
           <details class="group card bg-base-100 shadow-sm">
             <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-3 px-4 [&::-webkit-details-marker]:hidden">
               <span class="font-semibold text-sm">Properties</span>
@@ -319,8 +325,6 @@ onUnmounted(() => {
               />
             </div>
           </details>
-          <TimeEntriesCard :ticket-id="id" />
-          <VisitsCard :ticket-id="id" :staff="staff" />
         </div>
 
         <!-- Unified timeline: comments as cards, audit events as inline rows -->
@@ -405,9 +409,6 @@ onUnmounted(() => {
             />
           </div>
         </div>
-
-        <TimeEntriesCard :ticket-id="id" />
-        <VisitsCard :ticket-id="id" :staff="staff" />
       </div>
     </div>
   </div>

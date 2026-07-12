@@ -29,6 +29,9 @@ export interface Customer extends BaseRecord {
   active: boolean
   platform_org_id?: string
   notes?: string
+  // Opt-in: expose the aggregate time logged on this customer's tickets to
+  // their portal requesters (default false). Only the total, never entries.
+  show_time_to_requester?: boolean
 }
 
 export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { TimeEntry, Visit } from '@/types'
@@ -83,7 +83,25 @@ async function remove(entry: TimeEntry) {
   }
 }
 
-onMounted(load)
+// Realtime so time logged elsewhere (the visit drawer, another agent) shows
+// up here without a manual refresh. Progressive enhancement.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+let unsub: (() => void) | null = null
+onMounted(async () => {
+  await load()
+  try {
+    unsub = await pb.collection('time_entries').subscribe('*', () => {
+      clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(load, 300)
+    })
+  } catch {
+    // no realtime; fine.
+  }
+})
+onUnmounted(() => {
+  clearTimeout(reloadTimer)
+  unsub?.()
+})
 </script>
 
 <template>

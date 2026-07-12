@@ -1,26 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
-import { useAuthStore } from '@/stores/auth'
 import type { Staff, Visit } from '@/types'
-import SearchSelect from '@/components/SearchSelect.vue'
+import VisitScheduleForm from '@/components/VisitScheduleForm.vue'
+import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
 import { format } from 'date-fns'
 
 const props = defineProps<{ ticketId: string; staff: Staff[] }>()
-const auth = useAuthStore()
 
 const visits = ref<Visit[]>([])
-// '' = closed, 'request' = promote-to-on-site form, 'schedule' = time+tech
-// form (creating fresh, or scheduling the `editing` requested visit).
+// '' = closed, 'request' = promote-to-on-site, 'schedule' = time+tech form.
 const mode = ref<'' | 'request' | 'schedule'>('')
-const editing = ref<Visit | null>(null)
-const scheduledAt = ref('')
-const assignee = ref('')
 const location = ref('')
 const notes = ref('')
-const duration = ref<number | null>(null) // scheduled block length, minutes
 const saving = ref(false)
 const error = ref('')
+const openVisitId = ref<string | null>(null)
 
 async function load() {
   try {
@@ -34,32 +29,46 @@ async function load() {
   }
 }
 
+// Active = still needs a dispatcher or is on the calendar; history = done/gone.
+const active = computed(() =>
+  visits.value
+    .filter((v) => v.status === 'requested' || v.status === 'scheduled')
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'requested' ? -1 : 1
+      return (a.scheduled_at || '').localeCompare(b.scheduled_at || '')
+    }),
+)
+const history = computed(() =>
+  visits.value
+    .filter((v) => v.status === 'completed' || v.status === 'canceled')
+    .sort((a, b) => (b.completed_at || b.updated || '').localeCompare(a.completed_at || a.updated || '')),
+)
+const summary = computed(() => {
+  const c: Record<string, number> = {}
+  for (const v of visits.value) c[v.status] = (c[v.status] || 0) + 1
+  return ['requested', 'scheduled', 'completed', 'canceled']
+    .filter((s) => c[s])
+    .map((s) => `${c[s]} ${s}`)
+    .join(' · ')
+})
+
+const statusClass: Record<string, string> = {
+  requested: 'badge-warning',
+  scheduled: 'badge-info',
+  completed: 'badge-success',
+  canceled: 'badge-ghost',
+}
+function rowLabel(v: Visit): string {
+  if (v.status === 'requested') return 'needs scheduling'
+  if (v.scheduled_at) return format(new Date(v.scheduled_at), 'MMM d, HH:mm')
+  return v.status
+}
+
 function closeForm() {
   mode.value = ''
-  editing.value = null
-  scheduledAt.value = ''
   location.value = ''
   notes.value = ''
-  duration.value = null
 }
-
-function openRequest() {
-  closeForm()
-  mode.value = 'request'
-}
-
-function openSchedule(v?: Visit) {
-  closeForm()
-  mode.value = 'schedule'
-  if (v) {
-    editing.value = v
-    location.value = v.location || ''
-    notes.value = v.notes || ''
-    duration.value = v.duration_minutes ?? null
-  }
-  assignee.value = auth.record?.id || ''
-}
-
 async function submitRequest() {
   saving.value = true
   error.value = ''
@@ -78,25 +87,11 @@ async function submitRequest() {
     saving.value = false
   }
 }
-
-async function submitSchedule() {
-  if (!scheduledAt.value || !assignee.value) return
+async function submitSchedule(fields: Record<string, any>) {
   saving.value = true
   error.value = ''
-  const fields = {
-    assignee: assignee.value,
-    scheduled_at: new Date(scheduledAt.value).toISOString(),
-    status: 'scheduled',
-    location: location.value.trim(),
-    notes: notes.value.trim(),
-    duration_minutes: duration.value || null,
-  }
   try {
-    if (editing.value) {
-      await pb.collection('visits').update(editing.value.id, fields)
-    } else {
-      await pb.collection('visits').create({ ticket: props.ticketId, ...fields })
-    }
+    await pb.collection('visits').create({ ticket: props.ticketId, ...fields })
     closeForm()
     await load()
   } catch (err: any) {
@@ -106,38 +101,24 @@ async function submitSchedule() {
   }
 }
 
-async function setStatus(v: Visit, status: string) {
+// Realtime so the card reflects drawer edits (and other agents) without a
+// manual refresh. Progressive enhancement — the card works without it.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+let unsub: (() => void) | null = null
+onMounted(async () => {
+  await load()
   try {
-    await pb.collection('visits').update(v.id, { status })
-    await load()
-  } catch (err: any) {
-    error.value = err?.message || 'Failed to update visit'
+    unsub = await pb.collection('visits').subscribe('*', () => {
+      clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(load, 300)
+    })
+  } catch {
+    // no realtime; fine.
   }
-}
-
-const staffOptions = computed(() => props.staff.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
-
-// "MMM d, HH:mm" for a bare start, "MMM d, HH:mm–HH:mm" when a scheduled
-// block length is set — the calendar block, not just the pin.
-function visitWindow(v: Visit): string {
-  if (!v.scheduled_at) return ''
-  const start = new Date(v.scheduled_at)
-  const base = format(start, 'MMM d, HH:mm')
-  if (!v.duration_minutes) return base
-  const end = new Date(start.getTime() + v.duration_minutes * 60000)
-  return `${base}–${format(end, 'HH:mm')}`
-}
-
-const statusClass: Record<string, string> = {
-  requested: 'badge-warning',
-  scheduled: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost',
-}
-
-onMounted(() => {
-  assignee.value = auth.record?.id || ''
-  load()
+})
+onUnmounted(() => {
+  clearTimeout(reloadTimer)
+  unsub?.()
 })
 </script>
 
@@ -148,8 +129,8 @@ onMounted(() => {
         <h2 class="font-semibold text-sm">Site Visits</h2>
         <div class="flex gap-1">
           <template v-if="mode === ''">
-            <button class="btn btn-ghost btn-xs" @click="openRequest">+ Request</button>
-            <button class="btn btn-ghost btn-xs" @click="openSchedule()">+ Schedule</button>
+            <button class="btn btn-ghost btn-xs" @click="mode = 'request'">+ Request</button>
+            <button class="btn btn-ghost btn-xs" @click="mode = 'schedule'">+ Schedule</button>
           </template>
           <button v-else class="btn btn-ghost btn-xs" @click="closeForm">Cancel</button>
         </div>
@@ -157,45 +138,57 @@ onMounted(() => {
 
       <div v-if="error" class="text-error text-xs">{{ error }}</div>
 
+      <!-- Create: request (no tech/time yet) -->
       <div v-if="mode === 'request'" class="space-y-1">
         <p class="text-xs text-base-content/60">Flag this ticket for on-site work — a dispatcher assigns the tech and time later.</p>
         <input v-model="location" type="text" placeholder="location (optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
-        <input v-model="notes" type="text" placeholder="notes (optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
+        <textarea v-model="notes" rows="2" placeholder="notes (optional)" class="textarea textarea-bordered textarea-sm w-full" :disabled="saving"></textarea>
         <button class="btn btn-primary btn-sm w-full" :disabled="saving" @click="submitRequest">Request visit</button>
       </div>
 
-      <div v-if="mode === 'schedule'" class="space-y-1">
-        <p v-if="editing" class="text-xs text-base-content/60">Scheduling the requested visit.</p>
-        <input v-model="scheduledAt" type="datetime-local" class="input input-bordered input-sm w-full min-w-0" :disabled="saving" />
-        <input v-model.number="duration" type="number" min="15" step="15" placeholder="duration (min, optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
-        <SearchSelect v-model="assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="saving" />
-        <input v-model="location" type="text" placeholder="location" class="input input-bordered input-sm w-full" :disabled="saving" />
-        <input v-model="notes" type="text" placeholder="notes" class="input input-bordered input-sm w-full" :disabled="saving" />
-        <button class="btn btn-primary btn-sm w-full" :disabled="saving || !scheduledAt || !assignee" @click="submitSchedule">Schedule</button>
-      </div>
+      <!-- Create: scheduled directly -->
+      <VisitScheduleForm v-else-if="mode === 'schedule'" :staff="staff" :saving="saving" @submit="submitSchedule" @cancel="closeForm" />
 
-      <ul class="space-y-2">
-        <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
-          <div class="flex items-center gap-2">
-            <span v-if="v.scheduled_at" class="font-medium whitespace-nowrap">{{ visitWindow(v) }}</span>
-            <span v-else class="italic text-base-content/60">needs scheduling</span>
+      <!-- List -->
+      <template v-else>
+        <p v-if="summary" class="text-xs text-base-content/50">{{ summary }}</p>
+
+        <ul class="space-y-1">
+          <li
+            v-for="v in active"
+            :key="v.id"
+            class="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-base-200 cursor-pointer"
+            @click="openVisitId = v.id"
+          >
             <span class="badge badge-xs" :class="statusClass[v.status]">{{ v.status }}</span>
-          </div>
-          <div v-if="v.location" class="text-xs text-base-content/60 truncate">📍 {{ v.location }}</div>
-          <div class="flex items-center gap-2 text-base-content/70">
-            <span class="flex-1 truncate">{{ v.expand?.assignee?.name }}<template v-if="v.notes"><template v-if="v.expand?.assignee?.name"> — </template>{{ v.notes }}</template></span>
-            <template v-if="v.status === 'requested'">
-              <button class="btn btn-ghost btn-xs" @click="openSchedule(v)">Schedule</button>
-              <button class="btn btn-ghost btn-xs text-error" @click="setStatus(v, 'canceled')">Cancel</button>
-            </template>
-            <template v-else-if="v.status === 'scheduled'">
-              <button class="btn btn-ghost btn-xs" @click="setStatus(v, 'completed')">Done</button>
-              <button class="btn btn-ghost btn-xs text-error" @click="setStatus(v, 'canceled')">Cancel</button>
-            </template>
-          </div>
-        </li>
-      </ul>
-      <p v-if="visits.length === 0 && mode === ''" class="text-xs text-base-content/50">No visits scheduled.</p>
+            <span :class="v.status === 'requested' ? 'italic text-base-content/60' : 'font-medium'">{{ rowLabel(v) }}</span>
+            <span class="flex-1 truncate text-base-content/70">{{ v.expand?.assignee?.name }}</span>
+            <span v-if="v.notes" title="has notes">📝</span>
+          </li>
+        </ul>
+        <p v-if="visits.length === 0" class="text-xs text-base-content/50">No visits yet.</p>
+
+        <details v-if="history.length" class="group">
+          <summary class="list-none cursor-pointer text-xs text-base-content/60 flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+            <span class="transition-transform group-open:rotate-90">▸</span> History ({{ history.length }})
+          </summary>
+          <ul class="space-y-1 pt-1">
+            <li
+              v-for="v in history"
+              :key="v.id"
+              class="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-base-200 cursor-pointer"
+              @click="openVisitId = v.id"
+            >
+              <span class="badge badge-xs" :class="statusClass[v.status]">{{ v.status }}</span>
+              <span class="text-base-content/70">{{ v.completed_at ? format(new Date(v.completed_at), 'MMM d') : rowLabel(v) }}</span>
+              <span class="flex-1 truncate text-base-content/70">{{ v.expand?.assignee?.name }}</span>
+              <span v-if="v.notes" title="has notes">📝</span>
+            </li>
+          </ul>
+        </details>
+      </template>
     </div>
   </div>
+
+  <VisitDetailDrawer :visit-id="openVisitId" :staff="staff" @close="openVisitId = null" @changed="load" />
 </template>

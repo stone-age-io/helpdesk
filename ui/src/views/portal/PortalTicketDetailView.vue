@@ -21,8 +21,16 @@ const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
 const visits = ref<Visit[]>([])
 const statusEvents = ref<TicketEvent[]>([])
+// Aggregate time logged, only when this customer has opted in — the route
+// returns 403 otherwise and we simply show nothing. Never per-entry detail.
+const timeMinutes = ref<number | null>(null)
 const loading = ref(true)
 const error = ref('')
+
+function fmtHours(m: number): string {
+  const h = Math.floor(m / 60)
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`
+}
 
 // The status stepper lives in <TicketProgress>; statusEvents feeds it. The
 // read rule (migration 1808000000) scopes ticket_events to field='status' on
@@ -72,6 +80,16 @@ async function loadVisits() {
   }
 }
 
+async function loadTimeTotal() {
+  try {
+    const res = await pb.send(`/api/helpdesk/tickets/${id}/time-total`, {})
+    timeMinutes.value = typeof res?.minutes === 'number' ? res.minutes : null
+  } catch {
+    // 403 (customer opted out) or any error → show nothing.
+    timeMinutes.value = null
+  }
+}
+
 async function load() {
   loading.value = true
   try {
@@ -79,6 +97,7 @@ async function load() {
     await loadComments()
     await loadVisits()
     await loadStatusEvents()
+    await loadTimeTotal()
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -118,6 +137,7 @@ function scheduleReload() {
     loadComments().catch(() => {})
     loadVisits()
     loadStatusEvents()
+    loadTimeTotal()
   }, 500)
 }
 let unsubTicket: (() => void) | null = null
@@ -219,6 +239,10 @@ onUnmounted(() => {
               <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
                 <span class="text-base-content/60">Updated</span>
                 <span>{{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</span>
+              </div>
+              <div v-if="timeMinutes !== null" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Time logged</span>
+                <span>{{ fmtHours(timeMinutes) }}</span>
               </div>
             </div>
             <div class="divider my-0"></div>
@@ -326,6 +350,10 @@ onUnmounted(() => {
             <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Updated</span>
               <span>{{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</span>
+            </div>
+            <div v-if="timeMinutes !== null" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Time logged</span>
+              <span>{{ fmtHours(timeMinutes) }}</span>
             </div>
           </div>
         </div>

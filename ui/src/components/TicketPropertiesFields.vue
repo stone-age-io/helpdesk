@@ -73,6 +73,14 @@ const emit = defineEmits<{
 
   <div class="divider my-0"></div>
 
+  <!-- Cold fields: classification + provenance, changed rarely. Collapsed so
+       the rail stays short and the hot controls above stay in reach. -->
+  <details class="group" open>
+    <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-1 text-xs font-semibold text-base-content/70 [&::-webkit-details-marker]:hidden">
+      Classification &amp; source
+      <span class="ml-auto transition-transform group-open:rotate-90">▸</span>
+    </summary>
+    <div class="space-y-2 pt-2">
   <div class="form-control">
     <label class="label py-1">
       <span class="label-text text-xs">Customer</span>
@@ -135,4 +143,6 @@ const emit = defineEmits<{
     <span class="text-xs text-base-content/60">Source</span>
     <span class="text-sm">{{ ticket.source }}</span>
   </div>
+    </div>
+  </details>
 </template>
