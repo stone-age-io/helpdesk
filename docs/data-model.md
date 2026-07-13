@@ -150,6 +150,28 @@ its ticket; the dangling visit ref resolves to nothing).
 Rules: read `StaffRule` (staff-only, all ops). Create requires `staff` =
 self; update/delete is own-entry-or-admin. Requesters never see time entries.
 
+### `time_sessions` — running timer (added `1811000000`)
+
+`staff` (required), `ticket` (cascade), `visit` (→ visits, optional, no
+cascade), `started_at`, `note`. A row's existence means "this agent has a
+timer running" — at most **one per agent**, enforced by a unique index on
+`staff`. Stopping or canceling **deletes** the row; the durable record is the
+`time_entries` row that `internal/timers` mints from it on stop. So this is the
+ergonomic front-end to the labor log, *not* a second ledger — it holds only the
+open interval's start and never accumulates history.
+
+`started_at` is server-stamped by the `internal/timers` create hook (any client
+value is ignored), so elapsed time is trustworthy. The stop route `POST
+/api/helpdesk/timers/{id}/stop` resolves the timer into a `time_entries` row —
+rounding elapsed to the nearest 5 min, or taking a caller-supplied `minutes`
+override — and deletes the session atomically; with `complete_visit` it also
+flips the attached visit to `completed` in the same transaction (the
+`internal/visits` guard then stamps `completed_at`). Minute precision is
+deliberately loose — the feature is about ergonomics, not the clock.
+
+Rules: mirror `time_entries` — read `StaffRule`, create requires `staff` =
+self, update/delete own-or-admin. Requesters never see it.
+
 ### `visits` — lite dispatch (relaxed `1803000000`, extended `1804000000`)
 
 `ticket` (cascade), `assignee` (→ staff, optional), `scheduled_at`

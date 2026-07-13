@@ -104,6 +104,20 @@ access via a `ticket.customer` relation-hop rule; the portal never shows
 the technician's name (expand on `assignee` is dropped by `staff`'s
 ViewRule, and relaxing it would leak the MSP roster).
 
+**Time tracking** (`internal/timeentries`, `internal/timers`): labor is a
+`time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket
+is the canonical ledger, and `GET /tickets/{id}/time-total` exposes only the
+sum, gated per-customer by `show_time_to_requester`. Agents either log minutes
+by hand or run a **start/stop timer**: one open `time_sessions` row per agent
+(unique index on `staff`; `started_at` server-stamped by the create hook),
+resolved into a normal `time_entries` row by `POST
+/api/helpdesk/timers/{id}/stop` (rounds elapsed to 5 min unless given a
+`minutes` override; `complete_visit` also flips the attached visit to
+`completed`, atomically). The timer is UX only — *not* a second ledger, and
+minute precision is deliberately loose. Staff drive it from the ticket Time
+card, the visit drawer, or the mobile-first visit **work view**
+(`/staff/visits/:id/work`: Arrive → live timer → Complete).
+
 **Outbound email** (`internal/notifications`, lifted from kiosk's notifier):
 DB-stored templates (`notification_templates`) rendered with
 `text/template` + a small FuncMap (`formatTime`, `statusLabel`,

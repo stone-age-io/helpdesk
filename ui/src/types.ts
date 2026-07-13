@@ -96,6 +96,18 @@ export interface TimeEntry extends BaseRecord {
   visit?: string
 }
 
+// A running timer: at most one open row per agent (unique index on staff, see
+// the time_sessions migration). Deleted on stop/cancel — the durable record is
+// the TimeEntry the stop route mints from it. `expand.ticket` / `expand.visit`
+// are loaded for the timer bar's label.
+export interface TimeSession extends BaseRecord {
+  staff: string
+  ticket: string
+  visit?: string
+  started_at: string
+  note?: string
+}
+
 export type VisitStatus = 'requested' | 'scheduled' | 'completed' | 'canceled'
 
 // A `requested` visit has no assignee/time yet — an agent promoted the

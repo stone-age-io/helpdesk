@@ -2,11 +2,13 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
+import { useTimerStore } from '@/stores/timer'
 import type { TimeEntry, Visit } from '@/types'
 import { format } from 'date-fns'
 
 const props = defineProps<{ ticketId: string }>()
 const auth = useAuthStore()
+const timer = useTimerStore()
 
 const entries = ref<TimeEntry[]>([])
 const visits = ref<Visit[]>([])
@@ -83,6 +85,19 @@ async function remove(entry: TimeEntry) {
   }
 }
 
+// Start a timer on this ticket, honouring the desk/visit selector. Stopping is
+// done from the persistent timer bar, which drops the resulting entry here (the
+// realtime subscription refreshes the list).
+async function startTimer() {
+  error.value = ''
+  try {
+    await timer.start(props.ticketId, { visit: visitId.value || undefined })
+  } catch (err: any) {
+    error.value = err?.message || 'A timer is already running — stop it first'
+    await timer.load()
+  }
+}
+
 // Realtime so time logged elsewhere (the visit drawer, another agent) shows
 // up here without a manual refresh. Progressive enhancement.
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
@@ -137,10 +152,25 @@ onUnmounted(() => {
           <option value="">Desk work</option>
           <option v-for="v in visits" :key="v.id" :value="v.id">On-site — {{ visitLabel(v) }}</option>
         </select>
+
+        <!-- Timer: the ergonomic path. Stopping happens in the bar above; the
+             manual row below stays for retroactive entry. -->
+        <button
+          v-if="!timer.isTimingTicket(ticketId)"
+          class="btn btn-sm btn-primary w-full"
+          :disabled="!!timer.active"
+          :title="timer.active ? 'Stop your running timer first' : 'Start timing this ticket'"
+          @click="startTimer"
+        >▶ Start timer</button>
+        <div v-else class="inline-flex items-center gap-1 py-1 text-sm text-success">
+          <span class="inline-flex h-2 w-2 rounded-full bg-success animate-pulse"></span>
+          Timing — stop in the bar above
+        </div>
+
         <div class="flex gap-1 min-w-0">
           <input v-model.number="minutes" type="number" min="1" placeholder="min" class="input input-bordered input-sm w-16 shrink-0" :disabled="saving" />
           <input v-model="note" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-0" :disabled="saving" />
-          <button class="btn btn-sm btn-primary shrink-0" :disabled="saving || !minutes" @click="add">Log</button>
+          <button class="btn btn-sm shrink-0" :disabled="saving || !minutes" @click="add">Log</button>
         </div>
       </div>
     </div>
