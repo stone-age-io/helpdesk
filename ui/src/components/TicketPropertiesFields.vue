@@ -21,6 +21,7 @@ const props = defineProps<{
   categoryOptions: Option[]
   requesterOptions: Option[]
   locationOptions: Option[]
+  projectOptions: Option[]
   notify: boolean
 }>()
 
@@ -123,6 +124,17 @@ const emit = defineEmits<{
     <select class="select select-bordered select-sm" :value="ticket.type || 'issue'" @change="emit('patch', { type: ($event.target as HTMLSelectElement).value })">
       <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
     </select>
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Project</span></label>
+    <SearchSelect
+      :model-value="ticket.project || ''"
+      :options="projectOptions"
+      size="sm"
+      empty-label="None"
+      placeholder="Attach to a project…"
+      @update:model-value="emit('patch', { project: $event })"
+    />
   </div>
 
   <div class="form-control">

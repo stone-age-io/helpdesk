@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Customer, Location, Requester, Staff, TicketCategory } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, TicketCategory } from '@/types'
 import { TICKET_PRIORITIES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import FileInput from '@/components/FileInput.vue'
@@ -14,6 +14,7 @@ const staff = ref<Staff[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
 const locations = ref<Location[]>([])
+const projects = ref<Project[]>([])
 const files = ref<File[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -27,6 +28,7 @@ const form = ref({
   assignee: '',
   requester: '',
   category: '',
+  project: '',
   asset: '',
   location: '',
   location_note: '',
@@ -70,10 +72,25 @@ async function loadLocations() {
   }
 }
 
-// The customer bounds both the requester and location pickers.
+async function loadProjects() {
+  form.value.project = ''
+  projects.value = []
+  if (!form.value.customer) return
+  try {
+    projects.value = await pb.collection('projects').getFullList<Project>({
+      filter: `customer = '${form.value.customer}'`,
+      sort: '-created',
+    })
+  } catch {
+    // Project linking is optional.
+  }
+}
+
+// The customer bounds the requester, location, and project pickers.
 function onCustomerChange() {
   loadRequesters()
   loadLocations()
+  loadProjects()
 }
 
 async function createLocation(label: string) {
@@ -95,6 +112,9 @@ const requesterOptions = computed(() =>
 )
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
+)
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
 )
 
 async function submit() {
@@ -193,6 +213,10 @@ onMounted(loadOptions)
               <select v-model="form.type" class="select select-bordered select-sm" :disabled="loading">
                 <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
               </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Project</span></label>
+              <SearchSelect v-model="form.project" :options="projectOptions" size="sm" empty-label="None" placeholder="Attach to a project…" :disabled="loading || !form.customer" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Asset</span></label>

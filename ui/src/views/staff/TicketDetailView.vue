@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
@@ -27,6 +27,7 @@ const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
 const locations = ref<Location[]>([])
+const projects = ref<Project[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -59,6 +60,9 @@ const requesterOptions = computed(() =>
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
 )
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
+)
 
 // One chronological stream: comments (full cards) interleaved with the audit
 // events (compact rows), oldest first, composer pinned at the bottom. This is
@@ -76,7 +80,7 @@ const timeline = computed<TimelineItem[]>(() => {
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
-    expand: 'customer,assignee,requester,category,location',
+    expand: 'customer,assignee,requester,category,location,project',
   })
 }
 
@@ -89,6 +93,12 @@ async function loadRequesters(customerId: string) {
 async function loadLocations(customerId: string) {
   locations.value = customerId
     ? await pb.collection('locations').getFullList<Location>({ filter: `customer = '${customerId}'`, sort: 'name' })
+    : []
+}
+
+async function loadProjects(customerId: string) {
+  projects.value = customerId
+    ? await pb.collection('projects').getFullList<Project>({ filter: `customer = '${customerId}'`, sort: '-created' })
     : []
 }
 
@@ -122,6 +132,7 @@ async function load() {
     categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
     await loadRequesters(ticket.value?.customer || '')
     await loadLocations(ticket.value?.customer || '')
+    await loadProjects(ticket.value?.customer || '')
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -137,7 +148,7 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
       id,
       { [field]: value },
       {
-        expand: 'customer,assignee,requester,category,location',
+        expand: 'customer,assignee,requester,category,location,project',
         // The backend hook reads this header and skips the outbound email.
         headers: notify.value ? {} : { 'X-Helpdesk-Quiet': '1' },
       },
@@ -153,7 +164,7 @@ async function patchPlain(fields: Record<string, string>) {
   if (!ticket.value) return
   try {
     ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
-      expand: 'customer,assignee,requester,category,location',
+      expand: 'customer,assignee,requester,category,location,project',
     })
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
@@ -176,9 +187,10 @@ async function saveHeader() {
 // then reloads the requester picker for the new company.
 async function changeCustomer(value: string) {
   if (!value || value === ticket.value?.customer) return
-  await patchPlain({ customer: value, requester: '', location: '' })
+  await patchPlain({ customer: value, requester: '', location: '', project: '' })
   await loadRequesters(value)
   await loadLocations(value)
+  await loadProjects(value)
 }
 
 // Inline-create a location for this ticket's customer from the picker, then
@@ -346,6 +358,7 @@ onUnmounted(() => {
                 :category-options="categoryOptions"
                 :requester-options="requesterOptions"
                 :location-options="locationOptions"
+                :project-options="projectOptions"
                 @update-field="updateField"
                 @patch="patchPlain"
                 @change-customer="changeCustomer"
@@ -432,6 +445,7 @@ onUnmounted(() => {
               :category-options="categoryOptions"
               :requester-options="requesterOptions"
               :location-options="locationOptions"
+              :project-options="projectOptions"
               @update-field="updateField"
               @patch="patchPlain"
               @change-customer="changeCustomer"

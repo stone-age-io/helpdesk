@@ -22,6 +22,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Dashboard', icon: '📊', path: '/staff/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
+      { label: 'Projects', icon: '📁', path: '/staff/projects' },
       { label: 'Dispatch', icon: '🚚', path: '/staff/dispatch' },
       { label: 'Reports', icon: '📈', path: '/staff/reports' },
     ],
