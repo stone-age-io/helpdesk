@@ -45,6 +45,8 @@ const router = createRouter({
         { path: 'tickets', name: 'portal-tickets', component: () => import('@/views/portal/PortalTicketsView.vue') },
         { path: 'tickets/new', name: 'portal-ticket-new', component: () => import('@/views/portal/NewTicketView.vue') },
         { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
+        { path: 'projects', name: 'portal-projects', component: () => import('@/views/portal/PortalProjectsView.vue') },
+        { path: 'projects/:id', name: 'portal-project-detail', component: () => import('@/views/portal/PortalProjectDetailView.vue') },
       ],
     },
 
