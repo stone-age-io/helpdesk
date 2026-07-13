@@ -71,8 +71,8 @@ func TestCreateTicketClassification(t *testing.T) {
 	if got := rec.GetString("asset"); got != "printer-3f" {
 		t.Errorf("asset: got %q", got)
 	}
-	if got := rec.GetString("location"); got != "copy room" {
-		t.Errorf("location: got %q", got)
+	if got := rec.GetString("location_note"); got != "copy room" {
+		t.Errorf("location_note: got %q", got)
 	}
 
 	// Unknown key → created, unclassified.

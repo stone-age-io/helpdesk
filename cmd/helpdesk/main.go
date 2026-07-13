@@ -25,6 +25,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/ingest"
 	"github.com/stone-age-io/helpdesk/internal/natsx"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
+	"github.com/stone-age-io/helpdesk/internal/projects"
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/timeentries"
@@ -60,6 +61,7 @@ func main() {
 	})
 
 	tickets.Register(app)
+	projects.Register(app)
 	visits.Register(app)
 	timers.Register(app)
 	activity.Register(app)

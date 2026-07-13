@@ -30,6 +30,10 @@ func Register(app *pocketbase.PocketBase) {
 		if e.Record.GetString("source") == "" {
 			e.Record.Set("source", "agent")
 		}
+		// Reactive issue unless a caller (staff UI, project setup) says install.
+		if e.Record.GetString("type") == "" {
+			e.Record.Set("type", "issue")
+		}
 		return e.Next()
 	})
 

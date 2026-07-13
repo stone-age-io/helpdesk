@@ -74,8 +74,8 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("asset"); got != "pump-7" {
 		t.Errorf("asset: got %q, want pump-7", got)
 	}
-	if got := rec.GetString("location"); got != "line-3" {
-		t.Errorf("location: got %q, want line-3", got)
+	if got := rec.GetString("location_note"); got != "line-3" {
+		t.Errorf("location_note: got %q, want line-3", got)
 	}
 }
 

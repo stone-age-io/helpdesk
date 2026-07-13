@@ -129,7 +129,8 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 	rec.Set("priority", priority)
 	rec.Set("source", "webhook")
 	rec.Set("asset", strings.TrimSpace(p.Asset))
-	rec.Set("location", strings.TrimSpace(p.Location))
+	// Free-text fallback; Phase 2 resolves a location code to the relation.
+	rec.Set("location_note", strings.TrimSpace(p.Location))
 	if key := strings.TrimSpace(p.Category); key != "" {
 		if cat, err := app.FindFirstRecordByFilter(
 			"ticket_categories", "key = {:k} && active = true",

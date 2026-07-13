@@ -199,7 +199,8 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	// Provenance hints as structured, filterable/reportable fields (they used
 	// to be folded into the body as a trailing [thing · location] line).
 	rec.Set("asset", strings.TrimSpace(payload.Thing))
-	rec.Set("location", strings.TrimSpace(payload.Location))
+	// Free-text fallback; Phase 2 resolves a location code to the relation.
+	rec.Set("location_note", strings.TrimSpace(payload.Location))
 	if catID := c.resolveCategory(payload.Category); catID != "" {
 		rec.Set("category", catID)
 	}
