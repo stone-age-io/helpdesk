@@ -74,8 +74,8 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("asset"); got != "pump-7" {
 		t.Errorf("asset: got %q, want pump-7", got)
 	}
-	if got := rec.GetString("location"); got != "line-3" {
-		t.Errorf("location: got %q, want line-3", got)
+	if got := rec.GetString("location_note"); got != "line-3" {
+		t.Errorf("location_note: got %q, want line-3", got)
 	}
 }
 
@@ -168,5 +168,57 @@ func TestProjectRejectsGarbage(t *testing.T) {
 	}
 	if n := countTickets(t, app); n != 1 {
 		t.Errorf("garbage created tickets: %d total", n)
+	}
+}
+
+func TestProjectResolvesLocationByCode(t *testing.T) {
+	app, c, customer := setup(t)
+
+	locCol, _ := app.FindCollectionByNameOrId("locations")
+	loc := core.NewRecord(locCol)
+	loc.Set("customer", customer.Id)
+	loc.Set("code", "BLDG-C")
+	loc.Set("name", "Acme HQ - Bldg C")
+	if err := app.Save(loc); err != nil {
+		t.Fatalf("seed location: %v", err)
+	}
+
+	// Matching code → the structured relation is set.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"a","location_code":"BLDG-C"}`)); out != Ack {
+		t.Fatalf("matching code: %v", out)
+	}
+	recA, err := app.FindFirstRecordByFilter("tickets", "title = 'a'")
+	if err != nil {
+		t.Fatalf("ticket a: %v", err)
+	}
+	if got := recA.GetString("location"); got != loc.Id {
+		t.Errorf("location relation: got %q, want %q", got, loc.Id)
+	}
+
+	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"b","location_code":"NOPE"}`)); out != Ack {
+		t.Fatalf("unknown code: %v", out)
+	}
+	recB, err := app.FindFirstRecordByFilter("tickets", "title = 'b'")
+	if err != nil {
+		t.Fatalf("ticket b: %v", err)
+	}
+	if got := recB.GetString("location"); got != "" {
+		t.Errorf("unknown code should leave location empty, got %q", got)
+	}
+	if got := recB.GetString("location_note"); got != "NOPE" {
+		t.Errorf("unknown-code breadcrumb: got %q, want NOPE", got)
+	}
+
+	// Free-text location wins the note even alongside an unresolved code.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"cc","location":"rear dock","location_code":"NOPE"}`)); out != Ack {
+		t.Fatalf("freetext+code: %v", out)
+	}
+	recC, _ := app.FindFirstRecordByFilter("tickets", "title = 'cc'")
+	if got := recC.GetString("location_note"); got != "rear dock" {
+		t.Errorf("free-text should win location_note: got %q, want 'rear dock'", got)
 	}
 }

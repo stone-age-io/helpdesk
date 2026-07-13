@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Customer, Requester, Staff, TicketCategory } from '@/types'
-import { TICKET_PRIORITIES } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, TicketCategory } from '@/types'
+import { TICKET_PRIORITIES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import FileInput from '@/components/FileInput.vue'
 
@@ -13,6 +13,8 @@ const customers = ref<Customer[]>([])
 const staff = ref<Staff[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
+const locations = ref<Location[]>([])
+const projects = ref<Project[]>([])
 const files = ref<File[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -22,11 +24,14 @@ const form = ref({
   title: '',
   body: '',
   priority: 'normal',
+  type: 'issue',
   assignee: '',
   requester: '',
   category: '',
+  project: '',
   asset: '',
   location: '',
+  location_note: '',
 })
 
 async function loadOptions() {
@@ -53,11 +58,63 @@ async function loadRequesters() {
   }
 }
 
+async function loadLocations() {
+  form.value.location = ''
+  locations.value = []
+  if (!form.value.customer) return
+  try {
+    locations.value = await pb.collection('locations').getFullList<Location>({
+      filter: `customer = '${form.value.customer}'`,
+      sort: 'name',
+    })
+  } catch {
+    // Location linking is optional.
+  }
+}
+
+async function loadProjects() {
+  form.value.project = ''
+  projects.value = []
+  if (!form.value.customer) return
+  try {
+    projects.value = await pb.collection('projects').getFullList<Project>({
+      filter: `customer = '${form.value.customer}'`,
+      sort: '-created',
+    })
+  } catch {
+    // Project linking is optional.
+  }
+}
+
+// The customer bounds the requester, location, and project pickers.
+function onCustomerChange() {
+  loadRequesters()
+  loadLocations()
+  loadProjects()
+}
+
+async function createLocation(label: string) {
+  if (!form.value.customer || !label.trim()) return
+  try {
+    const rec = await pb.collection('locations').create({ customer: form.value.customer, name: label.trim() })
+    await loadLocations()
+    form.value.location = rec.id
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to create location'
+  }
+}
+
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, label: c.name })))
 const requesterOptions = computed(() =>
   requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
+)
+const locationOptions = computed(() =>
+  locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
+)
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
 )
 
 async function submit() {
@@ -106,7 +163,7 @@ onMounted(loadOptions)
                 :options="customerOptions"
                 placeholder="Type to find a customer…"
                 :disabled="loading"
-                @update:model-value="loadRequesters"
+                @update:model-value="onCustomerChange"
               />
             </div>
 
@@ -152,12 +209,26 @@ onMounted(loadOptions)
               <SearchSelect v-model="form.category" :options="categoryOptions" size="sm" empty-label="None" placeholder="Classify…" :disabled="loading" />
             </div>
             <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Type</span></label>
+              <select v-model="form.type" class="select select-bordered select-sm" :disabled="loading">
+                <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Project</span></label>
+              <SearchSelect v-model="form.project" :options="projectOptions" size="sm" empty-label="None" placeholder="Attach to a project…" :disabled="loading || !form.customer" />
+            </div>
+            <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
               <input v-model="form.asset" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Device / system" :disabled="loading" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-              <input v-model="form.location" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Where" :disabled="loading" />
+              <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Pick a site…" create-label="New location" :disabled="loading || !form.customer" @create="createLocation" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
+              <input v-model="form.location_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Access hints / where" :disabled="loading" />
             </div>
           </div>
         </div>

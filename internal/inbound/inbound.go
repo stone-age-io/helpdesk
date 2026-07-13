@@ -45,7 +45,10 @@ type Payload struct {
 	// free-text provenance fields.
 	Category string `json:"category,omitempty"`
 	Asset    string `json:"asset,omitempty"`
-	Location string `json:"location,omitempty"`
+	// Location is free-text (location_note); LocationCode resolves to a
+	// locations row for this customer, falling back to location_note on a miss.
+	Location     string `json:"location,omitempty"`
+	LocationCode string `json:"location_code,omitempty"`
 }
 
 // Register binds both routes.
@@ -129,7 +132,17 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 	rec.Set("priority", priority)
 	rec.Set("source", "webhook")
 	rec.Set("asset", strings.TrimSpace(p.Asset))
-	rec.Set("location", strings.TrimSpace(p.Location))
+	// A location code resolves to the structured relation; free-text Location is
+	// the note. An unresolved code is kept as a breadcrumb in the note.
+	locNote := strings.TrimSpace(p.Location)
+	if code := strings.TrimSpace(p.LocationCode); code != "" {
+		if locID, ok := resolveLocation(app, customer.Id, code); ok {
+			rec.Set("location", locID)
+		} else if locNote == "" {
+			locNote = code
+		}
+	}
+	rec.Set("location_note", locNote)
 	if key := strings.TrimSpace(p.Category); key != "" {
 		if cat, err := app.FindFirstRecordByFilter(
 			"ticket_categories", "key = {:k} && active = true",
@@ -182,6 +195,23 @@ func handleTokenReveal(re *core.RequestEvent) error {
 		}
 	}
 	return re.JSON(http.StatusOK, map[string]any{"token": token})
+}
+
+// resolveLocation maps a location code to a locations id within the customer
+// (empty/unknown → ("", false)); no auto-stub, matching the ingest path.
+// Customer-scoped so a code can never resolve across tenants.
+func resolveLocation(app core.App, customerID, code string) (string, bool) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", false
+	}
+	loc, err := app.FindFirstRecordByFilter(
+		"locations", "customer = {:c} && code = {:code}",
+		dbx.Params{"c": customerID, "code": code})
+	if err != nil || loc == nil {
+		return "", false
+	}
+	return loc.Id, true
 }
 
 func mintToken() (string, error) {

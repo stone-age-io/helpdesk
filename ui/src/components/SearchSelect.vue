@@ -21,11 +21,18 @@ const props = withDefaults(
     emptyLabel?: string
     disabled?: boolean
     size?: 'sm' | 'md'
+    // When set, and the typed query matches no existing option, a
+    // "＋ {createLabel} “query”" row is offered; picking it emits `create`
+    // with the trimmed query so the parent can mint the record and select it.
+    createLabel?: string
   }>(),
-  { placeholder: 'Type to search…', emptyLabel: '', disabled: false, size: 'md' },
+  { placeholder: 'Type to search…', emptyLabel: '', disabled: false, size: 'md', createLabel: '' },
 )
 
-const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', v: string): void
+  (e: 'create', label: string): void
+}>()
 
 const open = ref(false)
 const query = ref('')
@@ -52,6 +59,19 @@ const filtered = computed(() => {
 watch(filtered, () => {
   if (highlighted.value >= filtered.value.length) highlighted.value = 0
 })
+
+// Offer to create when a non-empty query matches no existing option's label.
+const canCreate = computed(() => {
+  const q = query.value.trim()
+  if (!props.createLabel || !q) return false
+  return !props.options.some((o) => o.label.toLowerCase() === q.toLowerCase())
+})
+
+function doCreate() {
+  emit('create', query.value.trim())
+  close()
+  inputEl.value?.blur()
+}
 
 function openList() {
   if (props.disabled) return
@@ -90,6 +110,7 @@ function onKeydown(e: KeyboardEvent) {
     case 'Enter':
       e.preventDefault()
       if (filtered.value[highlighted.value]) choose(filtered.value[highlighted.value].id)
+      else if (canCreate.value) doCreate()
       break
     case 'Escape':
       close()
@@ -148,7 +169,12 @@ function onKeydown(e: KeyboardEvent) {
           <span v-if="o.sublabel" class="text-xs text-base-content/50 truncate">{{ o.sublabel }}</span>
         </a>
       </li>
-      <li v-if="filtered.length === 0" class="p-2 text-sm text-base-content/50">No matches.</li>
+      <li v-if="filtered.length === 0 && !canCreate" class="p-2 text-sm text-base-content/50">No matches.</li>
+      <li v-if="canCreate">
+        <a class="text-primary" @mousedown.prevent="doCreate">
+          <span class="truncate">＋ {{ createLabel }} “{{ query.trim() }}”</span>
+        </a>
+      </li>
       <li v-if="options.length > MAX_SHOWN && filtered.length === MAX_SHOWN" class="p-2 text-xs text-base-content/40">
         Keep typing to narrow…
       </li>

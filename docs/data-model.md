@@ -34,6 +34,8 @@ rules by `@request.auth.collectionName`.
   `avatar` (single image, optional). `AuthRule: active = true && customer != ''`.
   A requester sees only themselves in the collection; only admins
   create/delete; self-update cannot reassign `customer` or toggle `active`.
+  Also carries `phone` (added `1812000000`) — the requester's direct line,
+  self-editable in the profile modal; the number a dispatcher/tech calls.
 
 Both collections stamp `emailVisibility = true` on create
 (`internal/authfix`) — PB hides emails by default, which would break the
@@ -68,17 +70,22 @@ because exposing hours is an MSP billing-model choice and hard to walk back.
 `source` (`portal` | `agent` | `nats` | `webhook`), `origin_subject` (the
 full hub-side NATS subject, provenance for machine tickets), `dedupe_key`
 (unique when set — ingestion idempotency), `attachments` (≤6 files),
-`category` (→ ticket_categories, optional — see below), `asset` / `location`
-(free text — "what/where" provenance, also set by machine intakes).
+`category` (→ ticket_categories, optional — see below), `type` (`issue` |
+`install`, default `issue` via the create hook — reactive vs. planned work),
+`project` (→ projects, optional — groups install/reactive work), `asset`
+(free text), `location` (→ locations, optional — the structured place, and
+the reporting axis), `location_note` (free text — dispatch hints, or the
+unmatched-code fallback from machine intake). All added/changed `1812000000`.
 
 Rules:
 
 - **read** — `StaffRule || (RequesterRule && customer = @request.auth.customer)`.
   A requester sees only their own company's tickets.
 - **create** — staff freely; a requester only for their own customer, with
-  `requester` = themselves, no `assignee`, `source = 'portal'`, and no
-  `category` (all pinned in the create rule so the portal can't forge them —
-  classification is a staff action).
+  `requester` = themselves, no `assignee`, `source = 'portal'`, and none of
+  `category` / `type` / `project` / `location` (all pinned in the create rule
+  so the portal can't forge them — classification and the service-delivery
+  fields are staff actions).
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
 - **delete** — `AdminRule`.
@@ -93,9 +100,10 @@ history), `sort_order`, `color` (hex, rendered as a soft badge).
 A managed collection + relation rather than a `select` field because it is
 staff/admin-managed from the SPA: admins add/retire categories with no code
 deploy, renames touch one row (a select denormalizes the value onto every
-ticket), and it matches the app's grain. `asset`/`location` are deliberately
-free text, **not** a CMDB — the helpdesk keeps no asset catalog or sites
-collection.
+ticket), and it matches the app's grain. `asset` stays free text
+(**not** a CMDB — no device catalog); `location` was promoted to a relation
+(see `locations` below) once projects made physical places recur, but it stays
+a light place registry, not an asset catalog.
 
 Rules: read `StaffRule || RequesterRule` (staff use it for the picker;
 requesters read it so a ticket's category **badge** resolves portal-side —
@@ -176,9 +184,9 @@ self, update/delete own-or-admin. Requesters never see it.
 
 `ticket` (cascade), `assignee` (→ staff, optional), `scheduled_at`
 (optional), `status` (`requested` | `scheduled` | `completed` | `canceled`),
-`location` (free text — dispatch directions, no sites collection),
-`completed_at`, `notes`, `duration_minutes` (int, optional — added
-`1809000000`).
+`location` (free text — dispatch directions; the structured site comes from
+the ticket's `location` relation), `completed_at`, `notes`, `duration_minutes`
+(int, optional — added `1809000000`).
 
 `duration_minutes` is the **scheduled** block length (planned), paired with
 `scheduled_at` to make a visit a real calendar block rather than a point in
@@ -194,6 +202,46 @@ Rules: read `StaffRule || (RequesterRule && ticket.customer =
 @request.auth.customer)` — a requester sees visits on their own tickets
 (someone unlocks the door for the tech), but the portal never expands
 `assignee`, so the MSP roster stays hidden. All writes are `StaffRule`.
+
+### `locations` — customer places (added `1812000000`)
+
+`customer` (required), `code` (the platform Location join key, optional —
+unique per customer when set), `name` (required), `address`, `notes` (gate
+codes / access directions), `contact`, `contact_phone`. Machine intakes
+resolve a payload `location_code` per `(customer, code)` and set the ticket's
+`location` relation; an unmatched code falls back to `location_note`, no
+auto-stub (`docs/protocol.md`).
+
+A location earns a relation where a one-off ticket visit's free-text location
+did not: a project revisits the same site over weeks, so the place recurs. It
+is still deliberately **not** a CMDB — a place with an address and access
+notes, not an asset catalog.
+
+Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
+(a requester sees their own company's sites); **create** `StaffRule` (any agent
+can quick-create one inline from the ticket/project form); update/delete
+`AdminRule` (the curated roster is the admin-only Locations view).
+
+### `projects` — installation / field-work container (added `1812000000`)
+
+`number` (unique int, assigned by the `internal/projects` create hook),
+`customer` (required), `location` (→ locations, optional), `title` (required),
+`description`, `status` (`planned` | `active` | `completed` | `canceled`,
+default `planned`), `start_date` / `target_date` (the target window), `lead`
+(→ staff, optional — whole-rollout accountability, distinct from the
+per-ticket assignees).
+
+A project is a planning-and-grouping layer **above** the ticket → visit → time
+ledger: it groups 1..N tickets (often one `install` ticket per trade, plus any
+reactive tickets) and stores none of their execution data. Crew (lead ∪
+ticket/visit assignees) and total time are **derived** at read time via
+relation-hop queries on `ticket.project`, never stored — so the project
+collection could be dropped and the helpdesk would still work.
+
+Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
+— a requester sees their own company's projects (the portal shows the tickets
+and visits but never the `lead`/crew). create/update `StaffRule`; delete
+`AdminRule`.
 
 ### Notification collections
 
@@ -211,4 +259,8 @@ These unique indexes are load-bearing, not just performance:
 - `customers.webhook_token` (partial) — token uniquely selects a customer.
 - `ticket_categories.name` / `.key` — categories are distinct; `key` is the
   stable filter/payload handle.
+- `locations` (customer, code) partial (`code != ''`) — a location code is
+  unique within a customer (the machine-intake join key); different customers
+  may reuse a code.
+- `projects.number` — the collision backstop for the project-number hook.
 - `notification_dedupe` (event, ref, UTC-day) — one send per event/ref/day.

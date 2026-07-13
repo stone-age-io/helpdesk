@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
@@ -26,6 +26,8 @@ const staff = ref<Staff[]>([])
 const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
+const locations = ref<Location[]>([])
+const projects = ref<Project[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -55,6 +57,12 @@ const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, 
 const requesterOptions = computed(() =>
   requesters.value.map((r) => ({ id: r.id, label: r.name || r.email, sublabel: r.name ? r.email : undefined })),
 )
+const locationOptions = computed(() =>
+  locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
+)
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
+)
 
 // One chronological stream: comments (full cards) interleaved with the audit
 // events (compact rows), oldest first, composer pinned at the bottom. This is
@@ -72,13 +80,25 @@ const timeline = computed<TimelineItem[]>(() => {
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
-    expand: 'customer,assignee,requester,category',
+    expand: 'customer,assignee,requester,category,location,project',
   })
 }
 
 async function loadRequesters(customerId: string) {
   requesters.value = customerId
     ? await pb.collection('users').getFullList<Requester>({ filter: `customer = '${customerId}'`, sort: 'name' })
+    : []
+}
+
+async function loadLocations(customerId: string) {
+  locations.value = customerId
+    ? await pb.collection('locations').getFullList<Location>({ filter: `customer = '${customerId}'`, sort: 'name' })
+    : []
+}
+
+async function loadProjects(customerId: string) {
+  projects.value = customerId
+    ? await pb.collection('projects').getFullList<Project>({ filter: `customer = '${customerId}'`, sort: '-created' })
     : []
 }
 
@@ -111,6 +131,8 @@ async function load() {
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
     await loadRequesters(ticket.value?.customer || '')
+    await loadLocations(ticket.value?.customer || '')
+    await loadProjects(ticket.value?.customer || '')
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -126,7 +148,7 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
       id,
       { [field]: value },
       {
-        expand: 'customer,assignee,requester,category',
+        expand: 'customer,assignee,requester,category,location,project',
         // The backend hook reads this header and skips the outbound email.
         headers: notify.value ? {} : { 'X-Helpdesk-Quiet': '1' },
       },
@@ -142,7 +164,7 @@ async function patchPlain(fields: Record<string, string>) {
   if (!ticket.value) return
   try {
     ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
-      expand: 'customer,assignee,requester,category',
+      expand: 'customer,assignee,requester,category,location,project',
     })
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
@@ -165,8 +187,24 @@ async function saveHeader() {
 // then reloads the requester picker for the new company.
 async function changeCustomer(value: string) {
   if (!value || value === ticket.value?.customer) return
-  await patchPlain({ customer: value, requester: '' })
+  await patchPlain({ customer: value, requester: '', location: '', project: '' })
   await loadRequesters(value)
+  await loadLocations(value)
+  await loadProjects(value)
+}
+
+// Inline-create a location for this ticket's customer from the picker, then
+// select it. Any staff may create; admins curate them in the roster.
+async function createLocation(label: string) {
+  const customerId = ticket.value?.customer
+  if (!customerId || !label.trim()) return
+  try {
+    const rec = await pb.collection('locations').create({ customer: customerId, name: label.trim() })
+    await loadLocations(customerId)
+    await patchPlain({ location: rec.id })
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to create location'
+  }
 }
 
 async function postComment() {
@@ -319,9 +357,12 @@ onUnmounted(() => {
                 :customer-options="customerOptions"
                 :category-options="categoryOptions"
                 :requester-options="requesterOptions"
+                :location-options="locationOptions"
+                :project-options="projectOptions"
                 @update-field="updateField"
                 @patch="patchPlain"
                 @change-customer="changeCustomer"
+                @create-location="createLocation"
               />
             </div>
           </details>
@@ -403,9 +444,12 @@ onUnmounted(() => {
               :customer-options="customerOptions"
               :category-options="categoryOptions"
               :requester-options="requesterOptions"
+              :location-options="locationOptions"
+              :project-options="projectOptions"
               @update-field="updateField"
               @patch="patchPlain"
               @change-customer="changeCustomer"
+              @create-location="createLocation"
             />
           </div>
         </div>

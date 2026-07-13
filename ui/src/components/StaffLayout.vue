@@ -22,6 +22,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Dashboard', icon: '📊', path: '/staff/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
+      { label: 'Projects', icon: '📁', path: '/staff/projects' },
       { label: 'Dispatch', icon: '🚚', path: '/staff/dispatch' },
       { label: 'Reports', icon: '📈', path: '/staff/reports' },
     ],
@@ -38,6 +39,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Staff', icon: '👥', path: '/staff/staff', adminOnly: true },
       { label: 'Categories', icon: '🏷️', path: '/staff/categories', adminOnly: true },
+      { label: 'Locations', icon: '📍', path: '/staff/locations', adminOnly: true },
       { label: 'Notifications', icon: '✉️', path: '/staff/notifications', adminOnly: true },
     ],
   },
@@ -105,7 +107,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </svg>
             </label>
           </div>
-          <span class="justify-self-center font-bold text-lg">Helpdesk</span>
+          <span class="justify-self-center font-bold text-lg">Service Desk</span>
           <div class="justify-self-end">
             <ThemeToggle />
           </div>
@@ -125,7 +127,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
+      <AppSidebar :sections="sections" brand="Service Desk" icon="🛠️" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />

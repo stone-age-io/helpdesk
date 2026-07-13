@@ -11,6 +11,10 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const auth = useAuthStore()
 
 const name = ref(auth.record?.name || '')
+// Requesters (users collection) carry a phone; staff don't. Shown + saved only
+// for requesters, whose self-update rule permits it.
+const isRequester = computed(() => auth.record?.collectionName === 'users')
+const phone = ref((auth.record as any)?.phone || '')
 const saving = ref(false)
 const error = ref('')
 const done = ref(false)
@@ -47,6 +51,7 @@ async function submit() {
   const collection = auth.record?.collectionName
   try {
     const data: Record<string, any> = { name: name.value.trim() }
+    if (isRequester.value) data.phone = phone.value.trim()
     if (avatarFile.value) data.avatar = avatarFile.value
     else if (clearAvatar.value) data.avatar = null
     await pb.collection(collection).update(auth.record.id, data)
@@ -99,6 +104,10 @@ async function submit() {
         <div class="form-control">
           <label class="label py-1"><span class="label-text">Name</span></label>
           <input v-model="name" type="text" class="input input-bordered input-sm" maxlength="150" :disabled="saving" />
+        </div>
+        <div v-if="isRequester" class="form-control">
+          <label class="label py-1"><span class="label-text">Phone</span></label>
+          <input v-model="phone" type="tel" class="input input-bordered input-sm" maxlength="50" placeholder="Direct line for the technician" :disabled="saving" />
         </div>
         <div class="text-xs text-base-content/50">{{ auth.record?.email }}</div>
         <div class="modal-action mt-2">

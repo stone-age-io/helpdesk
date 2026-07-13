@@ -43,17 +43,17 @@ async function load() {
       pb.collection('time_entries').getFullList<TimeEntry>({
         filter: rangeFilter('work_date'),
         sort: '-work_date',
-        expand: 'staff,ticket,ticket.customer',
+        expand: 'staff,ticket,ticket.customer,ticket.location',
       }),
       pb.collection('visits').getFullList<Visit>({
         filter: `status = 'completed' && ${rangeFilter('completed_at')}`,
         sort: '-completed_at',
-        expand: 'assignee,ticket,ticket.customer',
+        expand: 'assignee,ticket,ticket.customer,ticket.location',
       }),
       pb.collection('tickets').getFullList<Ticket>({
         filter: rangeFilter('created'),
         sort: '-created',
-        expand: 'category',
+        expand: 'category,location',
       }),
     ])
   } catch (err: any) {
@@ -94,6 +94,33 @@ const byPerson = computed(() =>
 const byCustomer = computed(() =>
   group((_isEntry, rec) => rec.expand?.ticket?.expand?.customer?.name || ''),
 )
+
+// By location — the axis the ticket→location relation unlocks. Time and visits
+// come from work in range; tickets/installs count tickets created in range.
+// The "—" bucket is work with no location set (most reactive tickets).
+interface LocRow {
+  label: string
+  minutes: number
+  visits: number
+  tickets: number
+  installs: number
+}
+const byLocation = computed<LocRow[]>(() => {
+  const map = new Map<string, LocRow>()
+  const row = (label: string) => {
+    const k = label || '—'
+    if (!map.has(k)) map.set(k, { label: k, minutes: 0, visits: 0, tickets: 0, installs: 0 })
+    return map.get(k)!
+  }
+  for (const e of entries.value) row(e.expand?.ticket?.expand?.location?.name || '').minutes += e.minutes
+  for (const v of doneVisits.value) row(v.expand?.ticket?.expand?.location?.name || '').visits += 1
+  for (const t of tickets.value) {
+    const r = row(t.expand?.location?.name || '')
+    r.tickets += 1
+    if (t.type === 'install') r.installs += 1
+  }
+  return [...map.values()].sort((a, b) => b.tickets - a.tickets || b.minutes - a.minutes)
+})
 
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
 const totalFieldMinutes = computed(() =>
@@ -170,7 +197,7 @@ function exportTime() {
   download(`time-${from.value}_${to.value}.csv`, lines)
 }
 function exportVisits() {
-  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'location'].join(',')]
+  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'site', 'directions'].join(',')]
   for (const v of doneVisits.value) {
     lines.push(
       [
@@ -178,6 +205,7 @@ function exportVisits() {
         v.expand?.assignee?.name || '',
         v.expand?.ticket?.expand?.customer?.name || '',
         v.expand?.ticket?.number ?? '',
+        v.expand?.ticket?.expand?.location?.name || '',
         v.location || '',
       ]
         .map(csvEscape)
@@ -263,6 +291,28 @@ onMounted(load)
                   <td class="text-right font-mono">{{ r.visits || '—' }}</td>
                 </tr>
                 <tr v-if="byCustomer.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- By location: the reporting axis the ticket→location relation adds. -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4 space-y-2">
+          <h2 class="font-semibold text-sm">By location</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead><tr><th>Location</th><th class="text-right">Tickets</th><th class="text-right">Installs</th><th class="text-right">Time</th><th class="text-right">Visits</th></tr></thead>
+              <tbody>
+                <tr v-for="r in byLocation" :key="r.label">
+                  <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No location' : r.label }}</td>
+                  <td class="text-right font-mono">{{ r.tickets || '—' }}</td>
+                  <td class="text-right font-mono">{{ r.installs || '—' }}</td>
+                  <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
+                  <td class="text-right font-mono">{{ r.visits || '—' }}</td>
+                </tr>
+                <tr v-if="byLocation.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
             </table>
           </div>

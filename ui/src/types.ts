@@ -34,9 +34,37 @@ export interface Customer extends BaseRecord {
   show_time_to_requester?: boolean
 }
 
+// Service delivery (migrations/1812000000). A location is a customer's physical
+// place; `code` is the platform Location join key. A project groups 1..N tickets
+// (installs + reactive work) at a location over a target window.
+export interface Location extends BaseRecord {
+  customer: string
+  code?: string
+  name: string
+  address?: string
+  notes?: string
+  contact?: string
+  contact_phone?: string
+}
+
+export type ProjectStatus = 'planned' | 'active' | 'completed' | 'canceled'
+
+export interface Project extends BaseRecord {
+  number: number
+  customer: string
+  location?: string
+  title: string
+  description?: string
+  status: ProjectStatus
+  start_date?: string
+  target_date?: string
+  lead?: string
+}
+
 export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
 export type TicketSource = 'portal' | 'agent' | 'nats' | 'webhook'
+export type TicketType = 'issue' | 'install'
 
 // Admin-managed classification (migrations/1806000000). `key` is the stable
 // slug used in filters and machine payloads; `name` is display-only.
@@ -60,11 +88,17 @@ export interface Ticket extends BaseRecord {
   source: TicketSource
   origin_subject?: string
   attachments?: string[]
-  // Classification: what the ticket is about (staff-set) + free-text asset /
-  // location provenance (also populated by machine intakes).
+  // Reactive issue vs. planned install (staff-set; defaults to issue).
+  type?: TicketType
+  // Optional grouping into a project (installation / field work).
+  project?: string
+  // Classification: what the ticket is about (staff-set) + provenance.
   category?: string
   asset?: string
+  // Structured place (relation to locations) — the reporting axis. location_note
+  // is free text: dispatch hints, or the unmatched-code fallback from intake.
   location?: string
+  location_note?: string
 }
 
 export interface TicketComment extends BaseRecord {
@@ -127,7 +161,9 @@ export interface Visit extends BaseRecord {
 
 export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
 export const TICKET_PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent']
+export const TICKET_TYPES: TicketType[] = ['issue', 'install']
 export const VISIT_STATUSES: VisitStatus[] = ['requested', 'scheduled', 'completed', 'canceled']
+export const PROJECT_STATUSES: ProjectStatus[] = ['planned', 'active', 'completed', 'canceled']
 
 // Shapes served by the /api/helpdesk/notifications routes (not raw records).
 

@@ -35,10 +35,13 @@ type CreatePayload struct {
 	// that retries (or a flapping sensor stamping a stable key) creates one
 	// ticket, not many.
 	DedupeKey string `json:"dedupe_key,omitempty"`
-	// Thing and Location are optional provenance hints from things/rule-router,
-	// stored on the ticket as the structured asset/location fields.
-	Thing    string `json:"thing,omitempty"`
-	Location string `json:"location,omitempty"`
+	// Thing is an optional provenance hint stored as the ticket's asset.
+	// Location is free text stored as location_note. LocationCode is the
+	// platform Location join key: it resolves to a locations row for this
+	// customer and only falls back to location_note when it can't be matched.
+	Thing        string `json:"thing,omitempty"`
+	Location     string `json:"location,omitempty"`
+	LocationCode string `json:"location_code,omitempty"`
 	// Category is an optional ticket_categories key. An unknown or inactive
 	// key is ignored (the ticket is still created, unclassified) — same
 	// graceful-degradation stance as an unmapped org.
@@ -199,7 +202,22 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	// Provenance hints as structured, filterable/reportable fields (they used
 	// to be folded into the body as a trailing [thing · location] line).
 	rec.Set("asset", strings.TrimSpace(payload.Thing))
-	rec.Set("location", strings.TrimSpace(payload.Location))
+	// A location code resolves to the structured relation (the reporting axis);
+	// free-text Location is the note. An unresolved code is logged and kept as a
+	// breadcrumb in the note so the operator can create the missing locations row.
+	locNote := strings.TrimSpace(payload.Location)
+	if code := strings.TrimSpace(payload.LocationCode); code != "" {
+		if locID, ok := resolveLocation(c.app, customer.Id, code); ok {
+			rec.Set("location", locID)
+		} else {
+			slog.Warn("ingest: unresolved location code — create a locations row with this code",
+				"code", code, "customer", customer.GetString("name"), "subject", subject)
+			if locNote == "" {
+				locNote = code
+			}
+		}
+	}
+	rec.Set("location_note", locNote)
 	if catID := c.resolveCategory(payload.Category); catID != "" {
 		rec.Set("category", catID)
 	}
@@ -233,6 +251,24 @@ func (c *Consumer) resolveCategory(key string) string {
 		return ""
 	}
 	return cat.Id
+}
+
+// resolveLocation maps a location code to a locations id within the customer.
+// Empty/unknown → ("", false); callers keep a free-text fallback rather than
+// auto-creating an addressless stub (worse than nothing for a dispatched tech).
+// Scoped by customer so a code can never resolve across tenants.
+func resolveLocation(app core.App, customerID, code string) (string, bool) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", false
+	}
+	loc, err := app.FindFirstRecordByFilter(
+		"locations", "customer = {:c} && code = {:code}",
+		dbx.Params{"c": customerID, "code": code})
+	if err != nil || loc == nil {
+		return "", false
+	}
+	return loc.Id, true
 }
 
 func isNotFound(err error) bool {

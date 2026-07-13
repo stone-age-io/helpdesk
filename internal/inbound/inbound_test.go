@@ -71,8 +71,8 @@ func TestCreateTicketClassification(t *testing.T) {
 	if got := rec.GetString("asset"); got != "printer-3f" {
 		t.Errorf("asset: got %q", got)
 	}
-	if got := rec.GetString("location"); got != "copy room" {
-		t.Errorf("location: got %q", got)
+	if got := rec.GetString("location_note"); got != "copy room" {
+		t.Errorf("location_note: got %q", got)
 	}
 
 	// Unknown key → created, unclassified.
@@ -157,5 +157,55 @@ func TestRequesterMatchIsCustomerScoped(t *testing.T) {
 	}
 	if got := rec2.GetString("requester"); got != local.Id {
 		t.Errorf("same-customer requester not linked: got %q, want %q", got, local.Id)
+	}
+}
+
+func TestCreateTicketResolvesLocationByCode(t *testing.T) {
+	app, customer := setup(t)
+
+	locCol, _ := app.FindCollectionByNameOrId("locations")
+	loc := core.NewRecord(locCol)
+	loc.Set("customer", customer.Id)
+	loc.Set("code", "HQ")
+	loc.Set("name", "Acme HQ")
+	if err := app.Save(loc); err != nil {
+		t.Fatalf("seed location: %v", err)
+	}
+
+	// A location with the SAME code at another customer must not match — the
+	// resolver is customer-scoped.
+	custCol, _ := app.FindCollectionByNameOrId("customers")
+	other := core.NewRecord(custCol)
+	other.Set("name", "Globex")
+	other.Set("active", true)
+	if err := app.Save(other); err != nil {
+		t.Fatalf("save other customer: %v", err)
+	}
+	otherLoc := core.NewRecord(locCol)
+	otherLoc.Set("customer", other.Id)
+	otherLoc.Set("code", "HQ")
+	otherLoc.Set("name", "Globex HQ")
+	if err := app.Save(otherLoc); err != nil {
+		t.Fatalf("seed other location: %v", err)
+	}
+
+	rec, _, err := CreateTicket(app, customer, Payload{Title: "x", LocationCode: "HQ"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec.GetString("location"); got != loc.Id {
+		t.Errorf("location: got %q, want %q (this customer's HQ, not Globex's)", got, loc.Id)
+	}
+
+	// Unknown code → breadcrumb in location_note, no relation.
+	rec2, _, err := CreateTicket(app, customer, Payload{Title: "y", LocationCode: "ZZZ"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec2.GetString("location"); got != "" {
+		t.Errorf("unknown code linked a location: %q", got)
+	}
+	if got := rec2.GetString("location_note"); got != "ZZZ" {
+		t.Errorf("breadcrumb: got %q, want ZZZ", got)
 	}
 }
