@@ -28,6 +28,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/timeentries"
+	"github.com/stone-age-io/helpdesk/internal/timers"
 	"github.com/stone-age-io/helpdesk/internal/visits"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
@@ -60,6 +61,7 @@ func main() {
 
 	tickets.Register(app)
 	visits.Register(app)
+	timers.Register(app)
 	activity.Register(app)
 	authfix.EnforceEmailVisibility(app)
 
@@ -104,6 +106,7 @@ func main() {
 		notifications.RegisterRoutes(e)
 		inbound.Register(e)
 		timeentries.RegisterRoutes(e)
+		timers.RegisterRoutes(e)
 
 		// NATS ingestion is best-effort: the helpdesk boots and serves
 		// portal/agent/webhook traffic without a broker; machine tickets

@@ -8,6 +8,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
+import { useTimerStore } from '@/stores/timer'
 import type { Staff, TimeEntry, Visit } from '@/types'
 import VisitScheduleForm from '@/components/VisitScheduleForm.vue'
 import { format } from 'date-fns'
@@ -16,6 +17,7 @@ const props = defineProps<{ visitId: string | null; staff: Staff[] }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 const auth = useAuthStore()
 const router = useRouter()
+const timer = useTimerStore()
 
 const visit = ref<Visit | null>(null)
 const entries = ref<TimeEntry[]>([])
@@ -175,6 +177,27 @@ function openTicket() {
   router.push(`/staff/tickets/${t}`)
 }
 
+// The full-screen field flow (Arrive → Complete). The drawer is the desktop
+// entry point; the work view is where a tech on-site actually lives.
+function openWorkView() {
+  if (!visit.value) return
+  emit('close')
+  router.push(`/staff/visits/${visit.value.id}/work`)
+}
+
+// Time this visit right from the drawer (desktop convenience). Stopping is done
+// from the persistent bar; the entry lands back in this drawer's list.
+async function startTimer() {
+  if (!visit.value) return
+  error.value = ''
+  try {
+    await timer.start(visit.value.ticket, { visit: visit.value.id })
+  } catch (err: any) {
+    error.value = err?.message || 'A timer is already running — stop it first'
+    await timer.load()
+  }
+}
+
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.visitId) emit('close')
 }
@@ -248,6 +271,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <button class="btn btn-sm btn-primary" :disabled="saving" @click="mode = 'reschedule'">
               {{ visit.status === 'requested' ? 'Schedule' : 'Reschedule' }}
             </button>
+            <button v-if="visit.status !== 'canceled'" class="btn btn-sm" :disabled="saving" @click="openWorkView">🛠 Work view</button>
+            <button
+              v-if="visit.status !== 'canceled' && !timer.isTimingVisit(visit.id)"
+              class="btn btn-sm btn-ghost"
+              :disabled="saving || !!timer.active"
+              :title="timer.active ? 'Stop your running timer first' : 'Start timing this visit'"
+              @click="startTimer"
+            >▶ Start timer</button>
+            <span v-else-if="timer.isTimingVisit(visit.id)" class="inline-flex items-center gap-1 self-center text-xs text-success">
+              <span class="inline-flex h-2 w-2 rounded-full bg-success animate-pulse"></span> timing
+            </span>
             <button v-if="visit.status === 'scheduled'" class="btn btn-sm" :disabled="saving" @click="mode = 'complete'">Complete</button>
             <button v-if="visit.status !== 'canceled'" class="btn btn-sm btn-ghost text-error" :disabled="saving" @click="setStatus('canceled')">Cancel visit</button>
           </div>

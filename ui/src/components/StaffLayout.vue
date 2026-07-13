@@ -5,11 +5,17 @@ import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ProfileModal from '@/components/ProfileModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import TimerBar from '@/components/TimerBar.vue'
+import { useTimerStore } from '@/stores/timer'
 
 const route = useRoute()
 const router = useRouter()
 const showPassword = ref(false)
 const showProfile = ref(false)
+
+// One running timer follows the agent across the whole staff app; load it once
+// here so the bar reflects a timer started on any device / a prior session.
+const timer = useTimerStore()
 
 const sections: NavSection[] = [
   {
@@ -73,7 +79,10 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  timer.load()
+})
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
@@ -102,6 +111,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </div>
         </div>
       </header>
+
+      <!-- Running-timer strip: outside <main> so it stays put while content
+           scrolls, full-width above the queue on both mobile and desktop. -->
+      <TimerBar />
 
       <main class="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-base-200">
         <div class="mx-auto w-full max-w-7xl p-4 lg:p-6 pad-safe-bottom">
