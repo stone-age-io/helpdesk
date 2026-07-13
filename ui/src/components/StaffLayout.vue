@@ -38,6 +38,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Staff', icon: '👥', path: '/staff/staff', adminOnly: true },
       { label: 'Categories', icon: '🏷️', path: '/staff/categories', adminOnly: true },
+      { label: 'Locations', icon: '📍', path: '/staff/locations', adminOnly: true },
       { label: 'Notifications', icon: '✉️', path: '/staff/notifications', adminOnly: true },
     ],
   },

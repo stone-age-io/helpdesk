@@ -4,7 +4,7 @@
 // desktop rail and the mobile panel without duplicating markup. Purely
 // presentational: it emits intent, the parent owns the saves.
 import type { Ticket } from '@/types'
-import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
+import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import Avatar from '@/components/Avatar.vue'
 
@@ -20,6 +20,7 @@ const props = defineProps<{
   customerOptions: Option[]
   categoryOptions: Option[]
   requesterOptions: Option[]
+  locationOptions: Option[]
   notify: boolean
 }>()
 
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   'update-field': [field: 'status' | 'priority' | 'assignee', value: string]
   patch: [fields: Record<string, string>]
   'change-customer': [value: string]
+  'create-location': [label: string]
   'update:notify': [value: boolean]
 }>()
 </script>
@@ -116,6 +118,12 @@ const emit = defineEmits<{
       @update:model-value="emit('patch', { category: $event })"
     />
   </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Type</span></label>
+    <select class="select select-bordered select-sm" :value="ticket.type || 'issue'" @change="emit('patch', { type: ($event.target as HTMLSelectElement).value })">
+      <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
+    </select>
+  </div>
 
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
@@ -130,13 +138,26 @@ const emit = defineEmits<{
   </div>
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+    <SearchSelect
+      :model-value="ticket.location || ''"
+      :options="locationOptions"
+      size="sm"
+      empty-label="None"
+      placeholder="Pick a site…"
+      create-label="New location"
+      @update:model-value="emit('patch', { location: $event })"
+      @create="emit('create-location', $event)"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
     <input
-      :value="ticket.location || ''"
+      :value="ticket.location_note || ''"
       type="text"
       maxlength="200"
       class="input input-bordered input-sm"
-      placeholder="Where"
-      @change="emit('patch', { location: ($event.target as HTMLInputElement).value })"
+      placeholder="Access hints / where"
+      @change="emit('patch', { location_note: ($event.target as HTMLInputElement).value })"
     />
   </div>
   <div class="flex items-center justify-between gap-2">

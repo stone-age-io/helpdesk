@@ -27,6 +27,7 @@ const router = createRouter({
         { path: 'requesters', name: 'requesters', component: () => import('@/views/staff/RequesterListView.vue') },
         { path: 'staff', name: 'staff-list', component: () => import('@/views/staff/StaffListView.vue'), meta: { adminOnly: true } },
         { path: 'categories', name: 'categories', component: () => import('@/views/staff/CategoriesView.vue'), meta: { adminOnly: true } },
+        { path: 'locations', name: 'locations', component: () => import('@/views/staff/LocationsView.vue'), meta: { adminOnly: true } },
         { path: 'notifications', name: 'notifications', component: () => import('@/views/staff/NotificationTemplatesView.vue'), meta: { adminOnly: true } },
       ],
     },
