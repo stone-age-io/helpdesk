@@ -39,7 +39,8 @@ leaves room for `comment` / `resolve` later without a subject migration.
   "priority": "high",                       // optional: low|normal|high|urgent (else normal)
   "dedupe_key": "pump-7-overcurrent",       // optional: idempotency key, unique per ticket
   "thing": "pump-7",                        // optional: stored as the ticket's asset
-  "location": "line-3",                     // optional: stored as the ticket's location
+  "location": "line-3",                     // optional: free-text, stored as location_note
+  "location_code": "BLDG-C",                // optional: resolves to a locations row (this customer)
   "category": "iot-device"                  // optional: a ticket_categories key
 }
 ```
@@ -53,9 +54,12 @@ Behavior:
 - **`dedupe_key`**: if a ticket with the same key exists, the event is
   acked without creating a second ticket. Publishers should stamp a stable
   key for retry loops and flapping sources.
-- **`thing` / `location`** are stored as the ticket's structured `asset` /
-  `location` fields (so they're filterable and reportable, not just buried in
-  the body).
+- **`thing`** is stored as the ticket's structured `asset`; **`location`** is
+  free text stored as `location_note`. **`location_code`** resolves against
+  this customer's `locations` rows (matched on `code`) and sets the ticket's
+  `location` relation — the queryable reporting axis. An unresolved code is
+  logged and kept as a breadcrumb in `location_note` (no row is auto-created),
+  so the operator can add the missing `locations` row and later events resolve.
 - **`category`** is matched against a `ticket_categories` `key`; an unknown
   or inactive key is ignored (the ticket is still created, unclassified) —
   the same graceful-degradation stance as an unmapped org.
@@ -102,7 +106,8 @@ selects the customer. This route is the future email-provider
   "dedupe_key": "alarm-1234",            // optional: idempotency key
   "category": "hardware",                // optional: a ticket_categories key (unknown ignored)
   "asset": "printer-3f",                 // optional: free-text device/system
-  "location": "3rd floor copy room"      // optional: free-text location
+  "location": "3rd floor copy room",     // optional: free-text (location_note)
+  "location_code": "BLDG-C"              // optional: resolves to a locations row (this customer)
 }
 ```
 
@@ -120,3 +125,8 @@ selects the customer. This route is the future email-provider
 token's customer — a stray email can never link a ticket across tenants.
 Non-matching emails are silently ignored (the ticket is still created,
 unlinked).
+
+`location_code` resolves to one of the token customer's `locations` rows (by
+`code`) and sets the ticket's `location` relation; an unresolved code stays as
+free text in `location_note` (same behavior, and same customer scoping, as the
+NATS intake).
