@@ -38,7 +38,7 @@ async function submit() {
     <div class="card bg-base-100 shadow-xl w-full max-w-sm">
       <div class="card-body">
         <div class="flex justify-between items-start">
-          <h1 class="card-title text-2xl mb-2">Helpdesk</h1>
+          <h1 class="card-title text-2xl mb-2">Service Desk</h1>
           <ThemeToggle />
         </div>
         <form class="space-y-4" @submit.prevent="submit">

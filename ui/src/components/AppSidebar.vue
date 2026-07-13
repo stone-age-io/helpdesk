@@ -20,8 +20,8 @@ export interface NavSection {
 }
 
 const props = withDefaults(
-  defineProps<{ sections: NavSection[]; brand?: string; home?: string }>(),
-  { brand: 'Helpdesk', home: '/' },
+  defineProps<{ sections: NavSection[]; brand?: string; home?: string; icon?: string }>(),
+  { brand: 'Helpdesk', home: '/', icon: '🛟' },
 )
 
 const route = useRoute()
@@ -95,7 +95,7 @@ function logout() {
         class="flex items-center gap-2 px-2 py-2 hover:opacity-80 transition-opacity"
         @click="closeDrawer"
       >
-        <span class="text-2xl">🛟</span>
+        <span class="text-2xl">{{ icon }}</span>
         <span class="font-bold text-lg tracking-tight">{{ brand }}</span>
       </router-link>
       <div class="divider my-0"></div>

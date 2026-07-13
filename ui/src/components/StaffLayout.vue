@@ -107,7 +107,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </svg>
             </label>
           </div>
-          <span class="justify-self-center font-bold text-lg">Helpdesk</span>
+          <span class="justify-self-center font-bold text-lg">Service Desk</span>
           <div class="justify-self-end">
             <ThemeToggle />
           </div>
@@ -127,7 +127,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
+      <AppSidebar :sections="sections" brand="Service Desk" icon="🛠️" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />
