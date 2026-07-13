@@ -5,12 +5,18 @@ code in this repository.
 
 ## What this is
 
-`helpdesk` is 816tech's (MSP / platform operator) service-ticket app for the
-Stone-Age.io ecosystem. One Go binary (`cmd/helpdesk`) embedding PocketBase
-plus a Vue 3 SPA with two shells: the staff app (`/staff/...`) and the
-requester portal (`/portal/...`). The signature feature is machine-generated
+`helpdesk` is 816tech's (MSP / platform operator) service-desk app for the
+Stone-Age.io ecosystem: reactive support tickets **and** proactive
+project / installation / field work. One Go binary (`cmd/helpdesk`) embedding
+PocketBase plus a Vue 3 SPA with two shells: the staff app (`/staff/...`) and
+the requester portal (`/portal/...`). The signature feature is machine-generated
 tickets ingested from NATS with subject-based provenance; humans use the
-portal, the staff app, or an authenticated webhook.
+portal, the staff app, or an authenticated webhook. Projects and locations
+(migration `1812000000`) add a planning-and-grouping layer *above* the
+ticket → visit → time ledger without changing it (see **Projects / locations**
+below and `docs/service-delivery-plan.md`). The `helpdesk` name is retained as
+the technical identifier — notably the operator-signed `helpdesk.>` NATS
+contract — even as the product's scope has grown past a help desk.
 
 It is a **standalone sibling app** to kiosk and access-control — NOT a
 platform feature. Helpdesk agents must never hold control-plane credentials,
@@ -67,11 +73,13 @@ itself already emailed staff. Tickets and comments carry **attachments**
 (≤6 files, 10 MB each); PB serves files only to callers who can view the
 owning record, so attachments on internal comments stay staff-only.
 Classification (migration `1806000000`): an optional `category` (admin-managed
-`ticket_categories` **relation**, not a select — staff-classified, the portal
-create rule blocks requesters via `category:isset = false`) plus free-text
-`asset`/`location` (the pragmatic "item" tier — provenance, deliberately not a
-CMDB; machine intakes populate them from the payload). `docs/data-model.md`
-covers it.
+`ticket_categories` **relation**, not a select — staff-classified). A ticket
+also carries a `type` (`issue` | `install`) and an optional `project`, free-text
+`asset`, a structured `location` (→ `locations`) and a free-text `location_note`
+fallback (all migration `1812000000`). The portal create rule blocks requesters
+from setting `category` / `type` / `project` / `location` (via `:isset = false`);
+machine intakes set `asset` and resolve a payload `location_code` to the
+`location` relation (unmatched → `location_note`). `docs/data-model.md` covers it.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee) writes a `ticket_events` row rendered as a staff-only
@@ -92,8 +100,10 @@ enforcement — the one invariant, enforced by a pre-save guard hook, is
 that a *scheduled* visit has both `scheduled_at` and `assignee` (both
 optional at the schema level so a `requested` visit can exist before the
 dispatcher picks a tech/time; empty status defaults from whether a time
-is set). Free-text `location` carries dispatch directions — deliberately
-no sites collection. A visit entering `completed` stamps `completed_at`
+is set). Free-text `location` carries dispatch directions; the structured
+site (address, access notes) now comes from the ticket's `location` relation
+(the `locations` collection, migration `1812000000`). A visit entering
+`completed` stamps `completed_at`
 (guard hook — back-datable, cleared if it leaves `completed`), giving the
 Dispatch history a trustworthy "who went, when" that `updated` (bumps on any
 edit) couldn't. Staff schedule from the ticket detail card or the
@@ -103,6 +113,26 @@ plus a day-grouped, filterable list). Requesters get read-only visit
 access via a `ticket.customer` relation-hop rule; the portal never shows
 the technician's name (expand on `assignee` is dropped by `staff`'s
 ViewRule, and relaxing it would leak the MSP roster).
+
+**Projects / locations** (`internal/projects`, migration `1812000000`): the
+service-delivery layer. A **location** is a customer's physical place with an
+optional `code` — the join key to the platform's Location concept: machine
+intakes resolve a payload `location_code` per `(customer, code)` and set the
+ticket's `location` relation (unmatched → free-text `location_note`, no
+auto-stub), making location a queryable dimension (tickets/installs/visits/time
+by location). Still not a CMDB — a place, not an asset catalog. A **project**
+groups 1..N tickets (often one `install`-type ticket per trade, plus reactive
+tickets) at a location over a target window; sequential `number` (hook, like
+tickets) and a single `lead` for whole-rollout accountability. Crucially it is
+a *grouping layer above the ledger* — visits and time stay parented to tickets,
+and a project's **crew** (lead ∪ ticket/visit assignees) and **total time** are
+derived at read time via relation-hop queries on `ticket.project`, never stored
+(the collection could be dropped and the app would still work). Requesters get
+a read-only portal project view scoped by `ticket.customer` that never shows the
+lead/crew (same roster-hiding as visits). The tripwire for splitting this into
+its own sibling app: the project side needing its own portal/tenancy/ingestion —
+not merely re-parenting a visit. `docs/service-delivery-plan.md` has the full
+rationale.
 
 **Time tracking** (`internal/timeentries`, `internal/timers`): labor is a
 `time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket
