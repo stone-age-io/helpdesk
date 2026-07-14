@@ -6,8 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
-import TimeEntriesCard from '@/components/TimeEntriesCard.vue'
-import VisitsCard from '@/components/VisitsCard.vue'
+import WorkCard from '@/components/WorkCard.vue'
 import TicketPropertiesFields from '@/components/TicketPropertiesFields.vue'
 import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
@@ -331,13 +330,10 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Work: time + visits, side by side on wide screens, directly under
-             the header for both breakpoints — the operational work no longer
-             lives in the rail (or the bottom of it). Rendered once here. -->
-        <div class="grid gap-4 md:grid-cols-2 items-start">
-          <TimeEntriesCard :ticket-id="id" />
-          <VisitsCard :ticket-id="id" :staff="staff" />
-        </div>
+        <!-- Work: field visits and labor unified in one card, organized by
+             visit, directly under the header for both breakpoints — the
+             operational work no longer lives in the rail. Rendered once here. -->
+        <WorkCard :ticket-id="id" :staff="staff" />
 
         <!-- Mobile: properties collapse behind a summary directly under the
              header. Rendered here on mobile OR in the desktop rail — never

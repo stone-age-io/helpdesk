@@ -9,9 +9,19 @@ import { pb } from '@/pb'
 import type { Customer, Project, ProjectStatus } from '@/types'
 import { PROJECT_STATUSES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import { format } from 'date-fns'
 
 const router = useRouter()
+
+const columns: Column<Project>[] = [
+  { key: 'title', label: 'Title' },
+  { key: 'expand.customer.name', label: 'Customer' },
+  { key: 'expand.location.name', label: 'Location' },
+  { key: 'status', label: 'Status' },
+  { key: 'target_date', label: 'Target', format: (v) => fmtDate(v) },
+  { key: 'expand.lead.name', label: 'Lead' },
+]
 
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
@@ -133,39 +143,27 @@ onMounted(load)
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <div v-else class="overflow-x-auto bg-base-100 rounded-lg shadow-sm">
-      <table class="table table-sm">
-        <thead>
-          <tr>
-            <th class="w-16">#</th>
-            <th>Title</th>
-            <th>Customer</th>
-            <th>Location</th>
-            <th>Status</th>
-            <th>Target</th>
-            <th>Lead</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="p in filtered"
-            :key="p.id"
-            class="hover cursor-pointer"
-            @click="router.push(`/staff/projects/${p.id}`)"
-          >
-            <td class="font-mono text-base-content/60">{{ p.number }}</td>
-            <td class="font-medium">{{ p.title }}</td>
-            <td class="text-base-content/70">{{ p.expand?.customer?.name || '—' }}</td>
-            <td class="text-base-content/70">{{ p.expand?.location?.name || '—' }}</td>
-            <td><span class="badge badge-sm" :class="statusClass[p.status]">{{ p.status }}</span></td>
-            <td class="text-base-content/70 whitespace-nowrap">{{ fmtDate(p.target_date) }}</td>
-            <td class="text-base-content/70">{{ p.expand?.lead?.name || '—' }}</td>
-          </tr>
-          <tr v-if="filtered.length === 0">
-            <td colspan="7" class="text-base-content/50">No projects{{ statusFilter || customerFilter ? ' match the filters' : ' yet' }}.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <ResponsiveList
+      v-else
+      :items="filtered"
+      :columns="columns"
+      @row-click="(p: Project) => router.push(`/staff/projects/${p.id}`)"
+    >
+      <template #cell-title="{ item }">
+        <span class="font-mono text-xs text-base-content/50 mr-1.5">#{{ item.number }}</span>
+        <span class="font-medium text-sm">{{ item.title }}</span>
+      </template>
+      <template #card-title="{ item }">
+        <div class="text-sm font-bold text-primary truncate">
+          <span class="font-mono text-xs opacity-60 mr-1">#{{ item.number }}</span>{{ item.title }}
+        </div>
+      </template>
+      <template #cell-status="{ item }">
+        <span class="badge badge-sm" :class="statusClass[item.status]">{{ item.status }}</span>
+      </template>
+      <template #empty>
+        <span class="text-base-content/60">No projects{{ statusFilter || customerFilter ? ' match the filters' : ' yet' }}.</span>
+      </template>
+    </ResponsiveList>
   </div>
 </template>

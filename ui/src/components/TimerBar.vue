@@ -85,9 +85,9 @@ function openTicket() {
     <div v-if="confirming" class="mx-auto w-full max-w-7xl mt-2 flex flex-wrap items-center gap-2">
       <div v-if="error" class="w-full text-xs bg-error text-error-content rounded px-2 py-1">{{ error }}</div>
       <span class="text-xs opacity-90">Log</span>
-      <input v-model.number="editMinutes" type="number" min="1" class="input input-bordered input-sm w-20" :disabled="timer.busy" />
+      <input v-model.number="editMinutes" type="number" min="1" class="input input-bordered input-sm w-20 text-base-content" :disabled="timer.busy" />
       <span class="text-xs opacity-90">min</span>
-      <input v-model="editNote" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-[8rem]" :disabled="timer.busy" />
+      <input v-model="editNote" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-[8rem] text-base-content" :disabled="timer.busy" />
       <label v-if="onVisit" class="flex items-center gap-1 text-xs cursor-pointer">
         <input v-model="completeVisit" type="checkbox" class="checkbox checkbox-xs" :disabled="timer.busy" />
         complete visit

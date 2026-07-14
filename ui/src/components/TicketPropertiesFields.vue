@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// The staff ticket controls (status / priority / assignee / customer /
-// requester / category / provenance). Extracted so it can render in both the
-// desktop rail and the mobile panel without duplicating markup. Purely
+// The staff ticket controls, in three tiers: Identity (who it's for — always
+// visible), Workflow (how we're handling it — always visible), and a collapsed
+// Classification/source section (changed rarely). Extracted so it can render in
+// both the desktop rail and the mobile panel without duplicating markup. Purely
 // presentational: it emits intent, the parent owns the saves.
+import { computed } from 'vue'
 import type { Ticket } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
@@ -32,10 +34,60 @@ const emit = defineEmits<{
   'create-location': [label: string]
   'update:notify': [value: boolean]
 }>()
+
+// Requesters (users collection) may carry a direct line; staff don't. Shown
+// read-only in the identity tier when present — primary for a callback.
+const requesterPhone = computed(() => (props.ticket.expand?.requester as any)?.phone || '')
 </script>
 
 <template>
-  <!-- Hot controls first -->
+  <!-- Identity: who the ticket is for. Always visible — primary context. -->
+  <div class="form-control">
+    <label class="label py-1">
+      <span class="label-text text-xs">Customer</span>
+      <router-link v-if="ticket.expand?.customer" :to="`/staff/customers/${ticket.customer}`" class="label-text-alt link link-hover">view →</router-link>
+    </label>
+    <SearchSelect
+      :model-value="ticket.customer || ''"
+      :options="customerOptions"
+      size="sm"
+      placeholder="Type a customer…"
+      @update:model-value="emit('change-customer', $event)"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1">
+      <span class="label-text text-xs">Requester</span>
+      <a v-if="requesterPhone" :href="`tel:${requesterPhone}`" class="label-text-alt link link-hover">{{ requesterPhone }}</a>
+    </label>
+    <SearchSelect
+      :model-value="ticket.requester || ''"
+      :options="requesterOptions"
+      size="sm"
+      empty-label="None"
+      placeholder="Type a name or email…"
+      @update:model-value="emit('patch', { requester: $event })"
+    />
+  </div>
+  <!-- Location + project surface here as read chips only when set (the pickers
+       to change them live in Classification below) — glanceable for field work
+       without cluttering a plain desk ticket. -->
+  <div v-if="ticket.expand?.location" class="flex items-center justify-between gap-2 px-1">
+    <span class="text-xs text-base-content/60 shrink-0">Location</span>
+    <span class="text-sm text-right truncate">📍 {{ ticket.expand.location.name }}</span>
+  </div>
+  <router-link
+    v-if="ticket.expand?.project"
+    :to="`/staff/projects/${ticket.project}`"
+    class="flex items-center justify-between gap-2 px-1 link link-hover"
+  >
+    <span class="text-xs text-base-content/60 shrink-0">Project</span>
+    <span class="text-sm text-right truncate">#{{ ticket.expand.project.number }} {{ ticket.expand.project.title }}</span>
+  </router-link>
+
+  <div class="divider my-0"></div>
+
+  <!-- Workflow: how we're handling it. Always visible — the hot controls. -->
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Status</span></label>
     <select class="select select-bordered select-sm" :value="ticket.status" @change="emit('update-field', 'status', ($event.target as HTMLSelectElement).value)">
@@ -76,38 +128,14 @@ const emit = defineEmits<{
 
   <div class="divider my-0"></div>
 
-  <!-- Cold fields: classification + provenance, changed rarely. Collapsed so
-       the rail stays short and the hot controls above stay in reach. -->
-  <details class="group" open>
+  <!-- Classification + provenance: changed rarely, collapsed by default so the
+       rail stays short and the identity/workflow tiers above stay in reach. -->
+  <details class="group">
     <summary class="list-none cursor-pointer select-none flex items-center gap-2 py-1 text-xs font-semibold text-base-content/70 [&::-webkit-details-marker]:hidden">
       Classification &amp; source
       <span class="ml-auto transition-transform group-open:rotate-90">▸</span>
     </summary>
     <div class="space-y-2 pt-2">
-  <div class="form-control">
-    <label class="label py-1">
-      <span class="label-text text-xs">Customer</span>
-      <router-link v-if="ticket.expand?.customer" :to="`/staff/customers/${ticket.customer}`" class="label-text-alt link link-hover">view →</router-link>
-    </label>
-    <SearchSelect
-      :model-value="ticket.customer || ''"
-      :options="customerOptions"
-      size="sm"
-      placeholder="Type a customer…"
-      @update:model-value="emit('change-customer', $event)"
-    />
-  </div>
-  <div class="form-control">
-    <label class="label py-1"><span class="label-text text-xs">Requester</span></label>
-    <SearchSelect
-      :model-value="ticket.requester || ''"
-      :options="requesterOptions"
-      size="sm"
-      empty-label="None"
-      placeholder="Type a name or email…"
-      @update:model-value="emit('patch', { requester: $event })"
-    />
-  </div>
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Category</span></label>
     <SearchSelect
@@ -136,7 +164,6 @@ const emit = defineEmits<{
       @update:model-value="emit('patch', { project: $event })"
     />
   </div>
-
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
     <input
