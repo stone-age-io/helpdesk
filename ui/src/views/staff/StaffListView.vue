@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Staff } from '@/types'
@@ -9,6 +10,7 @@ import Avatar from '@/components/Avatar.vue'
 import Pager from '@/components/Pager.vue'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const columns: Column<Staff>[] = [
   { key: 'name', label: 'Name' },
@@ -77,37 +79,8 @@ async function create() {
   }
 }
 
-async function resetPassword(s: Staff) {
-  if (!confirm(`Reset the password for ${s.email}? Their current password stops working immediately.`)) return
-  error.value = ''
-  try {
-    const password = generatePassword()
-    await pb.collection('staff').update(s.id, { password, passwordConfirm: password })
-    issued.value = { email: s.email, password }
-  } catch (err: any) {
-    error.value = err?.data?.message || err?.message || 'Failed to reset password'
-  }
-}
-
-async function setRole(s: Staff, role: string) {
-  error.value = ''
-  try {
-    await pb.collection('staff').update(s.id, { role })
-    await load()
-  } catch (err: any) {
-    error.value = err?.message || 'Failed to change role'
-    await load() // revert the select
-  }
-}
-
-async function toggleActive(s: Staff) {
-  error.value = ''
-  try {
-    await pb.collection('staff').update(s.id, { active: !s.active })
-    await load()
-  } catch (err: any) {
-    error.value = err?.message || 'Failed to update'
-  }
+function openDetail(s: Staff) {
+  router.push(`/staff/staff/${s.id}`)
 }
 
 const isSelf = (s: Staff) => s.id === auth.record?.id
@@ -146,7 +119,7 @@ onMounted(load)
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <ResponsiveList v-else :items="staff" :columns="columns" :clickable="false">
+    <ResponsiveList v-else :items="staff" :columns="columns" clickable @row-click="openDetail">
       <template #cell-name="{ item }">
         <div class="flex items-center gap-2">
           <Avatar :record="item" :name="item.name || item.email" size="xs" />
@@ -162,26 +135,8 @@ onMounted(load)
           </div>
         </div>
       </template>
-      <!-- Guard against locking yourself out: your own role is read-only here. -->
-      <template #cell-role="{ item }">
-        <select
-          v-if="!isSelf(item)"
-          class="select select-bordered select-xs"
-          :value="item.role"
-          @change="setRole(item, ($event.target as HTMLSelectElement).value)"
-        >
-          <option value="agent">agent</option>
-          <option value="admin">admin</option>
-        </select>
-        <span v-else class="badge-soft badge-soft-neutral">{{ item.role }}</span>
-      </template>
+      <template #cell-role="{ value }"><span class="badge-soft badge-soft-neutral">{{ value }}</span></template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
-      <template #actions="{ item }">
-        <button class="btn btn-ghost btn-xs" @click="resetPassword(item)">Reset password</button>
-        <button v-if="!isSelf(item)" class="btn btn-ghost btn-xs" @click="toggleActive(item)">
-          {{ item.active ? 'Deactivate' : 'Activate' }}
-        </button>
-      </template>
       <template #empty>
         <span class="text-base-content/60">No staff accounts.</span>
       </template>

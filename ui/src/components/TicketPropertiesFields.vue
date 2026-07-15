@@ -38,6 +38,16 @@ const emit = defineEmits<{
 // Requesters (users collection) may carry a direct line; staff don't. Shown
 // read-only in the identity tier when present — primary for a callback.
 const requesterPhone = computed(() => (props.ticket.expand?.requester as any)?.phone || '')
+
+// Maps deep link for the ticket's site: coordinates preferred, the location's
+// free-text address as fallback. Empty (link hidden) when the site has neither.
+const navigateUrl = computed(() => {
+  const loc = props.ticket.expand?.location as any
+  if (!loc) return ''
+  if (loc.lat || loc.lng) return `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`
+  if (loc.address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.address)}`
+  return ''
+})
 </script>
 
 <template>
@@ -74,7 +84,10 @@ const requesterPhone = computed(() => (props.ticket.expand?.requester as any)?.p
        without cluttering a plain desk ticket. -->
   <div v-if="ticket.expand?.location" class="flex items-center justify-between gap-2 px-1">
     <span class="text-xs text-base-content/60 shrink-0">Location</span>
-    <span class="text-sm text-right truncate">📍 {{ ticket.expand.location.name }}</span>
+    <span class="text-sm text-right flex items-center gap-2 min-w-0">
+      <span class="truncate">📍 {{ ticket.expand.location.name }}</span>
+      <a v-if="navigateUrl" :href="navigateUrl" target="_blank" rel="noopener" class="link link-hover shrink-0 text-xs">Navigate</a>
+    </span>
   </div>
   <router-link
     v-if="ticket.expand?.project"
