@@ -17,6 +17,10 @@ import { theme } from '@/theme'
 
 const lat = defineModel<number>('lat', { required: true })
 const lng = defineModel<number>('lng', { required: true })
+// The address doubles as the geocoder input: type + Enter to search, pick a
+// result to set the coordinates AND canonicalize this same text. Left as-is
+// (free text) when the user doesn't search — so unresolvable sites still work.
+const address = defineModel<string>('address', { required: true })
 
 // Read-only mode (parent's view/edit toggle): the map still pans/zooms so it
 // works as a location display, but the pin can't be moved and search is off.
@@ -40,7 +44,6 @@ interface NominatimResult {
   lon: string
 }
 
-const searchQuery = ref('')
 const searching = ref(false)
 const searchError = ref('')
 const results = ref<NominatimResult[]>([])
@@ -113,7 +116,7 @@ function syncMarkerFromModel() {
 }
 
 async function search() {
-  const q = searchQuery.value.trim()
+  const q = (address.value || '').trim()
   if (!q || searching.value || props.disabled) return
   searching.value = true
   searchError.value = ''
@@ -142,7 +145,8 @@ function selectResult(r: NominatimResult) {
   map?.setView([la, ln], 17)
   centered = true
   results.value = []
-  searchQuery.value = r.display_name
+  // Write the canonical address back into the shared field.
+  address.value = r.display_name
 }
 
 function clearPin() {
@@ -184,13 +188,16 @@ watch(() => props.disabled, (d) => {
 
 <template>
   <div class="space-y-2">
-    <!-- Address search (explicit: Enter or the button) -->
-    <div class="relative">
+    <!-- Address = the geocoder input. Explicit search (Enter or the button) per
+         Nominatim's usage policy; picking a result sets the coordinates and
+         canonicalizes this text. Free text is kept when not searched. -->
+    <div class="form-control relative">
+      <label class="label py-1"><span class="label-text">Address</span></label>
       <div class="flex gap-2">
         <input
-          v-model="searchQuery"
+          v-model="address"
           type="text"
-          placeholder="Search an address or place…"
+          placeholder="Search or type an address…"
           class="input input-bordered input-sm flex-1"
           :disabled="disabled"
           @keydown.enter.prevent="search"

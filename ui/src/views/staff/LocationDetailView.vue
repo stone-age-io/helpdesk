@@ -222,10 +222,6 @@ watch(() => route.params.id, load)
               <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="!editing || saving" />
             </div>
           </div>
-          <div class="form-control">
-            <label class="label py-1"><span class="label-text">Address</span></label>
-            <input v-model="form.address" type="text" placeholder="123 Main St, City" class="input input-bordered input-sm" :disabled="!editing || saving" />
-          </div>
           <div class="flex gap-2">
             <div class="form-control flex-1">
               <label class="label py-1"><span class="label-text">Contact</span></label>
@@ -250,8 +246,8 @@ watch(() => route.params.id, load)
       <div class="space-y-4">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body space-y-2">
-            <h2 class="card-title text-base">Location on map</h2>
-            <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" :disabled="!editing || saving" />
+            <h2 class="card-title text-base">Location &amp; map</h2>
+            <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" v-model:address="form.address" :disabled="!editing || saving" />
             <div class="flex gap-2">
               <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
               <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
