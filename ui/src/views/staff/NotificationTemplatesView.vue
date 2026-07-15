@@ -176,9 +176,22 @@ onMounted(load)
           <ul class="menu p-0">
             <li v-for="t in templates" :key="t.event_type">
               <a :class="{ active: t.event_type === selectedType }" @click="select(t.event_type)">
-                <span class="flex-1">{{ t.name }}</span>
-                <span class="badge-soft" :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'">
-                  {{ t.enabled ? 'on' : 'off' }}
+                <span class="flex-1 truncate">{{ t.name }}</span>
+                <span class="flex items-center gap-1">
+                  <span
+                    class="badge-soft"
+                    :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'"
+                    :title="`Email ${t.enabled ? 'enabled' : 'disabled'}`"
+                  >
+                    <span class="badge-dot"></span>email
+                  </span>
+                  <span
+                    class="badge-soft"
+                    :class="t.publish_nats ? 'badge-soft-success' : 'badge-soft-neutral'"
+                    :title="`NATS ${t.publish_nats ? 'enabled' : 'disabled'}`"
+                  >
+                    <span class="badge-dot"></span>nats
+                  </span>
                 </span>
               </a>
             </li>
@@ -203,7 +216,7 @@ onMounted(load)
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
               <input v-model="form.publish_nats" type="checkbox" class="toggle toggle-sm" :disabled="saving" />
-              <span class="label-text">Also publish to NATS</span>
+              <span class="label-text">Publish to NATS</span>
             </label>
             <label v-if="form.publish_nats" class="label py-0">
               <span class="label-text-alt text-base-content/60">
