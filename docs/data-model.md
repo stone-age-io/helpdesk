@@ -250,7 +250,11 @@ and visits but never the `lead`/crew). create/update `StaffRule`; delete
 ### Notification collections
 
 `notification_templates`, `notification_dedupe`, `notification_send_log` —
-lifted from the kiosk notifier. See `docs/notifications.md`.
+lifted from the kiosk notifier. See `docs/notifications.md`. Two channels per
+template: `enabled` (email) and `publish_nats` (publish a JSON envelope to
+`helpdesk.{customerId}.events.{event_type}`, migration `1814000000`);
+`notification_send_log.channel` (`email` | `nats`) records which path each row
+is for.
 
 ## Idempotency & uniqueness indexes
 

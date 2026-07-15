@@ -94,6 +94,7 @@ func RegisterHooks(app core.App, n *Notifier) {
 			return e.Next()
 		}
 		ctx := buildTicketContext(e.App, ticket)
+		ctx.occurrenceKey = "comment:" + e.Record.Id // one event per (create-only) comment
 		comment := &CommentInfo{Body: e.Record.GetString("body")}
 		if staffID := e.Record.GetString("author_staff"); staffID != "" {
 			comment.ByStaff = true
@@ -166,6 +167,10 @@ func buildVisitContext(app core.App, visit *core.Record) (TicketContext, bool) {
 		Location:    visit.GetString("location"),
 		Notes:       visit.GetString("notes"),
 	}
+	// The visit is the source record for visit events — key the dedupe on it,
+	// not the (unchanged) ticket, so back-to-back visit events on one ticket
+	// don't collide.
+	ctx.occurrenceKey = "visit:" + visit.Id + ":" + visit.GetString("updated")
 	// The visit's technician is the assignee that matters for these events —
 	// override the ticket's assignee so both the {{.Visit.AssigneeName}}
 	// field and the assignee recipient class point at who shows up on site.
@@ -191,11 +196,17 @@ func buildTicketContext(app core.App, ticket *core.Record) TicketContext {
 			Status:   ticket.GetString("status"),
 			Priority: ticket.GetString("priority"),
 			Source:   ticket.GetString("source"),
+			Type:     ticket.GetString("type"),
 			URL:      ticketURL(app, ticket.Id),
 		},
+		// Read the customer id straight off the ticket (required relation) so
+		// the subject tenant token survives even a dangling customer record.
+		CustomerID:    ticket.GetString("customer"),
+		occurrenceKey: ticket.Id + ":" + ticket.GetString("updated"),
 	}
 	if customer, err := app.FindRecordById("customers", ticket.GetString("customer")); err == nil {
 		ctx.Customer = customer.GetString("name")
+		ctx.CustomerOrgID = customer.GetString("platform_org_id")
 	}
 	if id := ticket.GetString("requester"); id != "" {
 		if requester, err := app.FindRecordById("users", id); err == nil {

@@ -39,6 +39,20 @@ const DefaultApp = "helpdesk"
 // VerbCreate is the only ticket verb v1 consumes.
 const VerbCreate = "create"
 
+// EventsToken is the third subject token for the outbound notification stream:
+//
+//	helpdesk.{customerId}.events.{event_type}
+//
+// It MUST differ from the ingest stream's third token ("tickets") — that
+// difference is the whole disjointness guarantee. Two JetStream streams may
+// not share a subject, and the ingest filter helpdesk.*.tickets.> matches any
+// customer/org at token 2, so the only place an outbound subject can be proven
+// distinct is token 3. "events" (things that happened, going out) vs "tickets"
+// (create-a-ticket commands, coming in) is the split, and it doubles as a
+// loop guard: an outbound event can never be re-ingested as a ticket. See the
+// TestStreamsDisjoint tripwire.
+const EventsToken = "events"
+
 // Subjects builds and parses subjects for one app namespace. The zero value
 // is usable and behaves as the default app.
 type Subjects struct {
@@ -70,6 +84,29 @@ func (s Subjects) TicketCreate() string {
 // durable consumer's filter: every ticket verb from every org, hub-side.
 func (s Subjects) StreamWildcards() []string {
 	return []string{fmt.Sprintf("%s.*.tickets.>", s.App())}
+}
+
+// EventSubject builds the hub-side outbound subject for one notification
+// event:
+//
+//	helpdesk.{customerId}.events.{event_type}
+//
+// customerId is the tickets.customer relation id — always present (required
+// field) and token-safe (PocketBase ids are alphanumeric). eventType is the
+// notification event type ("ticket.created", "visit.scheduled"); its embedded
+// dot supplies the trailing domain.verb tokens, so no separate mapping is
+// needed. platform_org_id is deliberately NOT in the subject — it is optional
+// on customers, so it would leave a hole for every unmapped customer; it rides
+// the payload instead.
+func (s Subjects) EventSubject(customerID, eventType string) string {
+	return fmt.Sprintf("%s.%s.%s.%s", s.App(), customerID, EventsToken, eventType)
+}
+
+// EventStreamWildcards is the HELPDESK_NOTIFICATIONS stream's subject set: every
+// outbound event for every customer, hub-side. Disjoint from StreamWildcards()
+// at token 3 (events vs tickets).
+func (s Subjects) EventStreamWildcards() []string {
+	return []string{fmt.Sprintf("%s.*.%s.>", s.App(), EventsToken)}
 }
 
 // ParseTicketEvent splits a hub-side subject into its org id and verb:

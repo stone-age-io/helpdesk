@@ -26,6 +26,7 @@ nats:
   creds_file: ""                 # required when urls is set
   stream: HELPDESK_EVENTS        # helpdesk-owned inbox stream (hub account)
   durable: helpdesk-ingest       # durable consumer name; stable across restarts
+  notify_stream: HELPDESK_NOTIFICATIONS  # helpdesk-owned OUTBOUND event stream
 ```
 
 ### NATS credentials
@@ -34,10 +35,15 @@ The helpdesk authenticates to the hub account with a **platform-minted
 `nats_user`** scoped to `sub helpdesk.>`, exported as a `.creds` file:
 
 1. In the platform, create a hub-account `nats_user` with subscribe
-   permission on `helpdesk.>`.
+   permission on `helpdesk.>`. To also emit outbound notification events, grant
+   `pub helpdesk.>` (and stream-management for `HELPDESK_NOTIFICATIONS`); the
+   helpdesk is otherwise blind to the grant.
 2. Export its creds file; point `nats.creds_file` at it.
 3. Start the helpdesk — it creates `HELPDESK_EVENTS` (subjects
-   `helpdesk.*.tickets.>`) on first serve and begins consuming.
+   `helpdesk.*.tickets.>`) on first serve and begins consuming. If publish is
+   granted, it also creates `HELPDESK_NOTIFICATIONS` (subjects
+   `helpdesk.*.events.>`) for the outbound channel; if not, that setup fails
+   softly and email still sends.
 
 Setting `nats.urls` without `nats.creds_file` is a startup error. A broker
 that is down at boot is **not** an error: the app logs, serves, and the

@@ -186,6 +186,7 @@ export interface NotificationTemplate {
   event_type: string
   name: string
   enabled: boolean
+  publish_nats: boolean
   subject: string
   body: string
   updated: string
@@ -199,5 +200,6 @@ export interface NotificationSendLog extends BaseRecord {
   recipient: string
   status: 'sent' | 'failed' | 'skipped'
   error?: string
+  channel?: 'email' | 'nats'
   payload_summary?: string
 }

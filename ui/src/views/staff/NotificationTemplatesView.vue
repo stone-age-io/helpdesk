@@ -5,12 +5,14 @@ import type { NotificationSendLog, NotificationTemplate } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import Pager from '@/components/Pager.vue'
 import TemplateReferenceDrawer from '@/components/TemplateReferenceDrawer.vue'
+import NatsReferenceDrawer from '@/components/NatsReferenceDrawer.vue'
 
 // Event first: ResponsiveList promotes the first column to the mobile card
 // header, and a card headlined by a raw timestamp identifies nothing.
 const sendColumns: Column<NotificationSendLog>[] = [
   { key: 'event_type', label: 'Event' },
   { key: 'created', label: 'When', class: 'whitespace-nowrap', format: (v) => new Date(v).toLocaleString() },
+  { key: 'channel', label: 'Channel', format: (v) => v || 'email' },
   { key: 'recipient', label: 'Recipient', mobileLabel: 'To' },
   { key: 'status', label: 'Status' },
   { key: 'payload_summary', label: 'Context' },
@@ -27,16 +29,18 @@ const sends = ref<NotificationSendLog[]>([])
 const sendPage = ref(1)
 const sendTotalPages = ref(1)
 const helpOpen = ref(false)
+const natsHelpOpen = ref(false)
 
 // Editable working copy of the selected template; extras edited as one
 // address per line.
-const form = ref({ enabled: true, subject: '', body: '', requester: false, assignee: false, all_staff: false, extras: '' })
+const form = ref({ enabled: true, publish_nats: false, subject: '', body: '', requester: false, assignee: false, all_staff: false, extras: '' })
 
 const selected = computed(() => templates.value.find((t) => t.event_type === selectedType.value) || null)
 
 function fillForm(t: NotificationTemplate) {
   form.value = {
     enabled: t.enabled,
+    publish_nats: t.publish_nats,
     subject: t.subject,
     body: t.body,
     requester: t.recipients.requester,
@@ -87,6 +91,7 @@ async function save() {
       method: 'PATCH',
       body: {
         enabled: form.value.enabled,
+        publish_nats: form.value.publish_nats,
         subject: form.value.subject,
         body: form.value.body,
         recipients: {
@@ -156,13 +161,14 @@ onMounted(load)
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-2">
-      <h1 class="text-2xl font-bold">Email Notifications</h1>
+      <h1 class="text-2xl font-bold">Notifications</h1>
       <button class="btn btn-ghost btn-sm gap-1" @click="helpOpen = true">
         <span aria-hidden="true">❔</span> Template reference
       </button>
     </div>
 
     <TemplateReferenceDrawer :open="helpOpen" @close="helpOpen = false" />
+    <NatsReferenceDrawer :open="natsHelpOpen" :event-type="selected?.event_type || ''" @close="natsHelpOpen = false" />
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
@@ -173,9 +179,22 @@ onMounted(load)
           <ul class="menu p-0">
             <li v-for="t in templates" :key="t.event_type">
               <a :class="{ active: t.event_type === selectedType }" @click="select(t.event_type)">
-                <span class="flex-1">{{ t.name }}</span>
-                <span class="badge-soft" :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'">
-                  {{ t.enabled ? 'on' : 'off' }}
+                <span class="flex-1 truncate">{{ t.name }}</span>
+                <span class="flex items-center gap-1">
+                  <span
+                    class="badge-soft"
+                    :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'"
+                    :title="`Email ${t.enabled ? 'enabled' : 'disabled'}`"
+                  >
+                    <span class="badge-dot"></span>email
+                  </span>
+                  <span
+                    class="badge-soft"
+                    :class="t.publish_nats ? 'badge-soft-success' : 'badge-soft-neutral'"
+                    :title="`NATS ${t.publish_nats ? 'enabled' : 'disabled'}`"
+                  >
+                    <span class="badge-dot"></span>nats
+                  </span>
                 </span>
               </a>
             </li>
@@ -193,7 +212,21 @@ onMounted(load)
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
               <input v-model="form.enabled" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="saving" />
-              <span class="label-text">Enabled</span>
+              <span class="label-text">Send email</span>
+            </label>
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input v-model="form.publish_nats" type="checkbox" class="toggle toggle-sm" :disabled="saving" />
+              <span class="label-text">Publish to NATS</span>
+            </label>
+            <label v-if="form.publish_nats" class="label py-0">
+              <span class="label-text-alt text-base-content/60">
+                Publishes a JSON event to
+                <code class="text-xs">helpdesk.&lt;customer&gt;.events.{{ selected.event_type }}</code>
+                — <button type="button" class="link" @click="natsHelpOpen = true">see event format</button>
+              </span>
             </label>
           </div>
 

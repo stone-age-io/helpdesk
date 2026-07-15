@@ -153,7 +153,8 @@ minute precision is deliberately loose. Staff drive it from the ticket Time
 card, the visit drawer, or the mobile-first visit **work view**
 (`/staff/visits/:id/work`: Arrive → live timer → Complete).
 
-**Outbound email** (`internal/notifications`, lifted from kiosk's notifier):
+**Outbound email + events** (`internal/notifications`, lifted from kiosk's
+notifier):
 DB-stored templates (`notification_templates`) rendered with
 `text/template` + a small FuncMap (`formatTime`, `statusLabel`,
 `pluralize`). Seven event types: `ticket.created`, `ticket.assigned`,
@@ -184,8 +185,16 @@ A daily cron in `cmd/helpdesk/main.go` prunes both tables at 90 days.
 Editor API under `/api/helpdesk/notifications` (admin staff only; PATCH
 parse-validates templates before save; compiled-in defaults back the
 "Reset to defaults" affordance). Email deep links use the role-neutral SPA
-route `/t/{id}`. `docs/notifications.md` has the full event / recipient /
-suppression matrix.
+route `/t/{id}`. **Second channel:** each template also carries a
+`publish_nats` toggle (migration `1814000000`); when on, the same event
+`dispatch` also publishes a fixed, versioned JSON envelope (`envelope.go`,
+`schema: helpdesk.event`) to `helpdesk.{customerId}.events.{event_type}` via
+an injected `Publisher` (nil until NATS connects → clean no-op, independent
+of email). The channel is for MSP-internal consumers so the envelope is rich
+(no portal redaction); the human suppression rules gate email only. `channel`
+(`email`|`nats`) on the send log distinguishes rows. `docs/notifications.md`
+has the full event / recipient / suppression matrix; `docs/protocol.md` has
+the outbound envelope + subject contract.
 
 **NATS ingestion** (`internal/subjects`, `internal/natsx`,
 `internal/ingest`): customer apps publish `helpdesk.tickets.create` in
@@ -200,7 +209,14 @@ Projection semantics: unknown org → warn + ack (operator sets
 partial index absorb redelivery/publisher retries; bad payloads ack
 (terminal). NATS is **best-effort**: connect failure logs and the app
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
-`sub helpdesk.>`, via creds file.
+`sub helpdesk.>` (widened to `pub helpdesk.>` for outbound notifications),
+via creds file. The helpdesk also **owns a second, outbound** stream
+`HELPDESK_NOTIFICATIONS` (subjects `helpdesk.*.events.>`, config
+`nats.notify_stream`) for the notification publish channel — deliberately
+disjoint from the ingest stream at token 3 (`events` vs `tickets`), so
+JetStream accepts both and an emitted event can't loop back through ingest.
+The MSP's automation owns that stream's consumer; the helpdesk only
+publishes.
 
 **Webhook inbound** (`internal/inbound`):
 `POST /api/helpdesk/inbound/{token}` resolves the customer by
