@@ -132,6 +132,17 @@ func main() {
 						consumer = nil
 					}
 				}
+
+				// Outbound notification channel: helpdesk owns its egress stream
+				// (helpdesk.*.events.>), symmetric with the inbox. Best-effort —
+				// if the creds lack publish/stream-management or the stream can't
+				// be ensured, we log once and leave the publisher unset, so email
+				// keeps working and NATS publishes are silent no-ops.
+				if _, err := nc.EnsureNotifyStream(ctx, cfg.NATS.NotifyStream, subj.EventStreamWildcards()); err != nil {
+					log.Printf("nats notify stream setup failed (email still sends): %v", err)
+				} else {
+					notifier.SetPublisher(natsx.NewPublisher(nc.JS))
+				}
 			}
 		}
 

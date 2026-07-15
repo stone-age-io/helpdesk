@@ -1,7 +1,8 @@
 # Helpdesk wire contract
 
-How tickets reach the helpdesk from outside the SPA: NATS machine events
-and the authenticated HTTP webhook.
+How tickets reach the helpdesk from outside the SPA (NATS machine events and
+the authenticated HTTP webhook), and how the helpdesk emits its own events
+back onto NATS (outbound notifications).
 
 ## NATS ticket events
 
@@ -78,8 +79,74 @@ The helpdesk creates and owns its inbox stream in the hub account:
   explicit ack — restarts resume from the last-acked sequence.
 
 The helpdesk's NATS identity is a hub-account `nats_user` minted by the
-platform, scoped to `sub helpdesk.>`, delivered as a `.creds` file
+platform, scoped to `sub helpdesk.>` (plus `pub helpdesk.>` once outbound
+notifications are enabled — see below), delivered as a `.creds` file
 (`nats.creds_file`).
+
+## NATS notification events (outbound)
+
+The mirror of ingestion: when a notification template has `publish_nats`
+enabled, the helpdesk publishes a fixed JSON envelope for that event onto the
+hub account — for MSP-internal consumers (Slack/Teams bridges, on-call/paging,
+metrics), **never** customers. This is a second delivery channel alongside
+email; the two are configured and gated independently per template.
+
+### Subjects
+
+```
+helpdesk.{customerId}.events.{event_type}
+```
+
+- `{customerId}` is the ticket's `customer` relation id — always present
+  (required field) and token-safe. It is **not** the platform org id
+  (`platform_org_id` is optional, so it would leave a hole); the org id rides
+  the payload instead when known.
+- `{event_type}` is the notification event (`ticket.created`,
+  `ticket.status_changed`, `visit.scheduled`, …); its embedded dot supplies the
+  trailing `domain.verb` tokens.
+
+Token 3 is the literal `events`, which is what keeps this stream disjoint from
+the ingest stream (`helpdesk.*.tickets.>`): `events` ≠ `tickets`, so JetStream
+accepts both, and an outbound event can never be re-ingested as a ticket.
+
+### Envelope (`schema: helpdesk.event`, `version: 1`)
+
+```json
+{
+  "schema": "helpdesk.event",
+  "version": 1,
+  "event_type": "ticket.status_changed",
+  "occurred_at": "2026-07-15T14:02:11Z",
+  "customer": { "id": "cust123", "name": "Acme Corp", "platform_org_id": "org_..." },
+  "ticket": {
+    "id": "rec123", "number": 42, "title": "Pump fault on line 3",
+    "status": "in_progress", "priority": "high", "type": "issue",
+    "source": "nats", "url": "https://helpdesk.example.com/t/rec123",
+    "assignee": { "name": "Sam Staff", "email": "sam@816tech.example" }
+  },
+  "change": { "field": "status", "from": "open", "to": "in_progress" },
+  "comment": null,
+  "visit": null
+}
+```
+
+- `customer.platform_org_id` is omitted when the customer isn't mapped.
+- `change` is present only for `ticket.status_changed`; `comment` only for
+  `ticket.commented`; `visit` only for the `visit.*` events.
+- The consumer is MSP-internal, so staff identity (assignee) is included — the
+  portal's roster-hiding does not apply here.
+
+### Stream (helpdesk-owned)
+
+- Stream `HELPDESK_NOTIFICATIONS` (configurable: `nats.notify_stream`), subjects
+  `helpdesk.*.events.>`, file storage, 7-day age limit, 2-minute `Duplicates`
+  window. Each publish carries a `Nats-Msg-Id` header
+  (`{event_type}:{occurrenceKey}`) so a republished event collapses inside that
+  window. The MSP's automation owns the **consumer**; the helpdesk only
+  publishes.
+- Best-effort: if the creds lack publish/stream-management or the stream can't
+  be ensured at boot, the helpdesk logs once and email keeps working — NATS
+  publishes become silent no-ops.
 
 ## HTTP webhook
 

@@ -1,20 +1,39 @@
-# Outbound email
+# Outbound notifications
 
-Helpdesk sends transactional email from ticket, comment, and visit activity.
-Templates live in the `notification_templates` collection and are edited from
-the staff SPA (**Notifications**, admin-only); the compiled-in defaults in
+Helpdesk emits notifications from ticket, comment, and visit activity over two
+independent channels: **email** and a **NATS publish**. Templates live in the
+`notification_templates` collection and are edited from the staff SPA
+(**Notifications**, admin-only); the compiled-in defaults in
 `internal/notifications/defaults.go` back the "Reset to defaults" button and
 seed the rows on first run.
 
 Everything here is **best-effort and never blocks a write**:
 
-- No SMTP configured (PocketBase → Settings → Mail) → the notifier is a clean
-  no-op. The app runs fine without email.
-- Sends are async goroutines fired from `OnRecordAfter*Success` hooks, so an
-  email can never precede its own DB commit, and a mail failure never fails
-  the ticket/comment/visit save.
-- Every attempt (success or failure) is written to `notification_send_log`
-  (visible in the SPA) so you can answer "did the customer get that mail?".
+- No SMTP configured (PocketBase → Settings → Mail) → the email channel is a
+  clean no-op. No NATS connection (or the platform hasn't granted publish) →
+  the NATS channel is a clean no-op. The app runs fine with neither.
+- Sends are async goroutines fired from `OnRecordAfter*Success` hooks, so a
+  notification can never precede its own DB commit, and a delivery failure
+  never fails the ticket/comment/visit save.
+- Every attempt (success or failure), on either channel, is written to
+  `notification_send_log` (visible in the SPA, `channel` = `email` | `nats`)
+  so you can answer "did that go out?".
+
+## Channels
+
+The same seven events drive both channels; each template gates them
+**independently**:
+
+- **`enabled`** — send email to the resolved recipient classes.
+- **`publish_nats`** — publish a fixed JSON envelope to
+  `helpdesk.{customerId}.events.{event_type}` (see `docs/protocol.md` →
+  *NATS notification events*). No template text is involved — the envelope is a
+  versioned, code-defined contract for machine consumers, so a template edit
+  can't produce malformed JSON. Off by default; opt in per event.
+
+A failure on one channel never suppresses the other. The human-oriented
+suppression rules below apply to **email**; the NATS channel publishes the
+event regardless (an audit/metrics consumer generally wants every event).
 
 ## Events
 
@@ -98,8 +117,9 @@ Admin staff only, under `/api/helpdesk/notifications`:
 
 - `GET  /api/helpdesk/notifications` — list templates.
 - `PATCH /api/helpdesk/notifications/{event_type}` — edit subject, body,
-  recipients, enabled. Parse-validates the templates before saving, so a bad
-  `{{...}}` is rejected at edit time rather than at send time.
+  recipients, `enabled` (email), `publish_nats` (NATS channel). Parse-validates
+  the templates before saving, so a bad `{{...}}` is rejected at edit time
+  rather than at send time.
 - `GET  /api/helpdesk/notifications/{event_type}/defaults` — the compiled-in
   copy (backs "Reset to defaults").
 - `POST /api/helpdesk/notifications/{event_type}/test` — render the current

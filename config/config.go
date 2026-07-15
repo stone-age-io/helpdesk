@@ -31,6 +31,11 @@ type NATSConfig struct {
 	Stream string
 	// Durable is the consumer name; stable so restarts resume where they left off.
 	Durable string
+	// NotifyStream is the JetStream stream the helpdesk creates and owns for
+	// OUTBOUND notification events (helpdesk.*.events.>). Separate from Stream
+	// because its subjects must not overlap the ingest stream's and it carries
+	// a dedupe window for Nats-Msg-Id.
+	NotifyStream string
 }
 
 // Enabled reports whether a NATS connection should be attempted.
@@ -43,6 +48,7 @@ func Load() (*Config, error) {
 	v.SetDefault("nats.creds_file", "")
 	v.SetDefault("nats.stream", "HELPDESK_EVENTS")
 	v.SetDefault("nats.durable", "helpdesk-ingest")
+	v.SetDefault("nats.notify_stream", "HELPDESK_NOTIFICATIONS")
 
 	v.SetEnvPrefix("HELPDESK")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -67,10 +73,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		DataDir: v.GetString("data_dir"),
 		NATS: NATSConfig{
-			URLs:      v.GetStringSlice("nats.urls"),
-			CredsFile: v.GetString("nats.creds_file"),
-			Stream:    v.GetString("nats.stream"),
-			Durable:   v.GetString("nats.durable"),
+			URLs:         v.GetStringSlice("nats.urls"),
+			CredsFile:    v.GetString("nats.creds_file"),
+			Stream:       v.GetString("nats.stream"),
+			Durable:      v.GetString("nats.durable"),
+			NotifyStream: v.GetString("nats.notify_stream"),
 		},
 	}
 

@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	pbmailer "github.com/pocketbase/pocketbase/tools/mailer"
+
+	"github.com/stone-age-io/helpdesk/internal/subjects"
 )
 
 // CollectionName is the PocketBase collection that stores editable
@@ -37,6 +40,23 @@ const (
 	SendStatusSkipped = "skipped"
 )
 
+// Delivery channels recorded on each send log row. "email" and "nats" are
+// independent per-template channels; a single event can produce rows for both.
+const (
+	ChannelEmail = "email"
+	ChannelNATS  = "nats"
+)
+
+// Publisher publishes a JSON event envelope to a subject, keyed by a
+// Nats-Msg-Id for stream-side dedupe. It is implemented by natsx.Publisher;
+// declaring it here (rather than importing natsx) keeps this package free of
+// any NATS dependency and trivially testable with a fake. A nil Publisher on
+// the Notifier disables the NATS channel — a clean no-op, mirroring how a nil
+// Notifier disables everything.
+type Publisher interface {
+	Publish(ctx context.Context, subject string, data []byte, msgID string) error
+}
+
 // PayloadSummarizer is an optional interface payloads can implement to
 // provide a one-line context snippet for the send log. TicketContext uses
 // it to surface "#42 · Acme"; unimplemented payloads log an empty string.
@@ -53,14 +73,32 @@ type PayloadSummarizer interface {
 // A nil Notifier is a valid no-op — Send returns immediately. This lets
 // the helpdesk run without configuring SMTP at all.
 type Notifier struct {
-	app core.App
-	wg  sync.WaitGroup
+	app  core.App
+	subj subjects.Subjects
+	wg   sync.WaitGroup
+
+	// pub is the outbound NATS channel, wired via SetPublisher once the broker
+	// connects (main.go's OnServe). nil until then, and nil forever when NATS
+	// is disabled or the connection/stream setup failed — either way the NATS
+	// channel is a silent no-op.
+	pub Publisher
 }
 
 // New constructs a Notifier bound to the helpdesk's PocketBase app. The app
 // supplies both the DB (to load template rows + write logs) and the mailer.
 func New(app core.App) *Notifier {
-	return &Notifier{app: app}
+	return &Notifier{app: app, subj: subjects.Default()}
+}
+
+// SetPublisher wires the outbound NATS channel. Called from main.go after the
+// broker connects and the notification stream is ensured; before that (and
+// whenever NATS is unavailable) pub stays nil and the channel no-ops. Safe on
+// a nil Notifier.
+func (n *Notifier) SetPublisher(p Publisher) {
+	if n == nil {
+		return
+	}
+	n.pub = p
 }
 
 // Send dispatches the named event asynchronously. Errors during template
@@ -73,9 +111,7 @@ func (n *Notifier) Send(eventType string, data any) {
 	n.wg.Add(1)
 	go func() {
 		defer n.wg.Done()
-		if err := n.deliver(eventType, data); err != nil {
-			slog.Error("notifications send failed", "event_type", eventType, "err", err)
-		}
+		n.dispatch(eventType, data)
 	}()
 }
 
@@ -102,9 +138,7 @@ func (n *Notifier) SendIfFirst(eventType, refKey string, data any) {
 		if !first {
 			return
 		}
-		if err := n.deliver(eventType, data); err != nil {
-			slog.Error("notifications send failed", "event_type", eventType, "err", err)
-		}
+		n.dispatch(eventType, data)
 	}()
 }
 
@@ -161,21 +195,36 @@ func todayUTC() string {
 // boundary deterministically. Defaults to time.Now().UTC() in production.
 var timeNowUTC = func() time.Time { return time.Now().UTC() }
 
-// deliver is the synchronous body of Send. It loads the template, resolves
-// recipients from the template's recipients column, renders, sends, and
-// logs.
-func (n *Notifier) deliver(eventType string, data any) error {
+// dispatch is the synchronous body of Send/SendIfFirst. It loads the template
+// row once, then drives every enabled channel for the event independently — an
+// email failure never suppresses the NATS publish or vice versa. Per-channel
+// errors are logged (and recorded in the send log); nothing propagates, since
+// notifications must not affect the originating action.
+func (n *Notifier) dispatch(eventType string, data any) {
 	rec, err := n.app.FindFirstRecordByFilter(CollectionName, "event_type = {:t}", dbx.Params{"t": eventType})
 	if err != nil {
-		return fmt.Errorf("find template %q: %w", eventType, err)
+		slog.Error("notifications: load template failed", "event_type", eventType, "err", err)
+		return
 	}
-	if !rec.GetBool("enabled") {
-		return nil
+	if rec.GetBool("enabled") {
+		if err := n.deliverEmail(eventType, rec, data); err != nil {
+			slog.Error("notifications email send failed", "event_type", eventType, "err", err)
+		}
 	}
+	if rec.GetBool("publish_nats") {
+		if err := n.publish(eventType, rec, data); err != nil {
+			slog.Error("notifications publish failed", "event_type", eventType, "err", err)
+		}
+	}
+}
 
+// deliverEmail renders the template, resolves recipients, sends, and writes one
+// send-log row per recipient. rec is the already-loaded template row; dispatch
+// owns the load and the `enabled` gate.
+func (n *Notifier) deliverEmail(eventType string, rec *core.Record, data any) error {
 	recipients := n.resolveRecipients(eventType, rec, data)
 	if len(recipients) == 0 {
-		n.writeLog(eventType, rec.Id, "", SendStatusSkipped, "", summaryOf(data))
+		n.writeLog(eventType, rec.Id, "", SendStatusSkipped, "", ChannelEmail, summaryOf(data))
 		return nil
 	}
 
@@ -184,7 +233,7 @@ func (n *Notifier) deliver(eventType string, data any) error {
 		// Render failures apply to the whole batch — log one failure row
 		// per recipient so the SPA can show "3 recipients · all failed".
 		for _, r := range recipients {
-			n.writeLog(eventType, rec.Id, r.Address, SendStatusFailed, truncErr(err.Error()), summaryOf(data))
+			n.writeLog(eventType, rec.Id, r.Address, SendStatusFailed, truncErr(err.Error()), ChannelEmail, summaryOf(data))
 		}
 		return fmt.Errorf("render template %q: %w", eventType, err)
 	}
@@ -207,10 +256,48 @@ func (n *Notifier) deliver(eventType string, data any) error {
 		errMsg = truncErr(sendErr.Error())
 	}
 	for _, r := range recipients {
-		n.writeLog(eventType, rec.Id, r.Address, status, errMsg, summaryOf(data))
+		n.writeLog(eventType, rec.Id, r.Address, status, errMsg, ChannelEmail, summaryOf(data))
 	}
 	if sendErr != nil {
 		return fmt.Errorf("smtp send: %w", sendErr)
+	}
+	return nil
+}
+
+// publish marshals the fixed event envelope and publishes it to the
+// customer-scoped outbound subject helpdesk.{customerId}.events.{event_type}.
+// The send log records the subject as the destination. A nil publisher (NATS
+// disabled or its setup failed) is a clean no-op with no log row — nothing was
+// attempted. rec is the already-loaded template row (publish_nats gate is in
+// dispatch).
+func (n *Notifier) publish(eventType string, rec *core.Record, data any) error {
+	if n.pub == nil {
+		return nil
+	}
+	ctx, ok := data.(TicketContext)
+	if !ok || ctx.CustomerID == "" {
+		// Every built-in event is ticket-rooted, so this is defensive: a
+		// non-ticket payload or a missing customer id can't form a valid
+		// subject, so skip rather than publish garbage.
+		n.writeLog(eventType, rec.Id, "", SendStatusSkipped, "", ChannelNATS, summaryOf(data))
+		return nil
+	}
+	subject := n.subj.EventSubject(ctx.CustomerID, eventType)
+	env := ctx.toEnvelope(eventType, timeNowUTC().Format(time.RFC3339))
+	payload, err := json.Marshal(env)
+	if err != nil {
+		n.writeLog(eventType, rec.Id, subject, SendStatusFailed, truncErr(err.Error()), ChannelNATS, summaryOf(data))
+		return fmt.Errorf("marshal envelope %q: %w", eventType, err)
+	}
+	msgID := eventType + ":" + ctx.occurrenceKey
+	pubErr := n.pub.Publish(context.Background(), subject, payload, msgID)
+	status, errMsg := SendStatusSent, ""
+	if pubErr != nil {
+		status, errMsg = SendStatusFailed, truncErr(pubErr.Error())
+	}
+	n.writeLog(eventType, rec.Id, subject, status, errMsg, ChannelNATS, summaryOf(data))
+	if pubErr != nil {
+		return fmt.Errorf("publish %q: %w", eventType, pubErr)
 	}
 	return nil
 }
@@ -300,8 +387,9 @@ func (n *Notifier) loadStaffEmails() []string {
 
 // writeLog inserts one notification_send_log row. Best-effort — log-write
 // errors slog and continue so the underlying send doesn't get masked by an
-// audit-table problem.
-func (n *Notifier) writeLog(eventType, templateID, recipient, status, errMsg, summary string) {
+// audit-table problem. channel is ChannelEmail or ChannelNATS; for NATS rows
+// the recipient column holds the destination subject.
+func (n *Notifier) writeLog(eventType, templateID, recipient, status, errMsg, channel, summary string) {
 	col, err := n.app.FindCollectionByNameOrId(SendLogCollectionName)
 	if err != nil {
 		slog.Warn("send log collection missing", "err", err)
@@ -315,6 +403,7 @@ func (n *Notifier) writeLog(eventType, templateID, recipient, status, errMsg, su
 	rec.Set("recipient", recipient)
 	rec.Set("status", status)
 	rec.Set("error", errMsg)
+	rec.Set("channel", channel)
 	rec.Set("payload_summary", summary)
 	if err := n.app.Save(rec); err != nil {
 		slog.Warn("send log write failed", "err", err)

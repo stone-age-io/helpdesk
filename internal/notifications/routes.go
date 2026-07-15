@@ -33,15 +33,16 @@ func RegisterRoutes(e *core.ServeEvent) {
 // collection columns; recipients is normalized so the SPA always renders
 // concrete checkbox state.
 type templateDTO struct {
-	ID         string     `json:"id"`
-	EventType  string     `json:"event_type"`
-	Name       string     `json:"name"`
-	Enabled    bool       `json:"enabled"`
-	Subject    string     `json:"subject"`
-	Body       string     `json:"body"`
-	Updated    string     `json:"updated"`
-	UpdatedBy  string     `json:"updated_by"`
-	Recipients Recipients `json:"recipients"`
+	ID          string     `json:"id"`
+	EventType   string     `json:"event_type"`
+	Name        string     `json:"name"`
+	Enabled     bool       `json:"enabled"`
+	PublishNats bool       `json:"publish_nats"`
+	Subject     string     `json:"subject"`
+	Body        string     `json:"body"`
+	Updated     string     `json:"updated"`
+	UpdatedBy   string     `json:"updated_by"`
+	Recipients  Recipients `json:"recipients"`
 }
 
 func toTemplateDTO(r *core.Record) templateDTO {
@@ -57,15 +58,16 @@ func toTemplateDTO(r *core.Record) templateDTO {
 		recipients.Extras = []string{}
 	}
 	return templateDTO{
-		ID:         r.Id,
-		EventType:  eventType,
-		Name:       r.GetString("name"),
-		Enabled:    r.GetBool("enabled"),
-		Subject:    r.GetString("subject"),
-		Body:       r.GetString("body"),
-		Updated:    r.GetDateTime("updated").String(),
-		UpdatedBy:  r.GetString("updated_by"),
-		Recipients: recipients,
+		ID:          r.Id,
+		EventType:   eventType,
+		Name:        r.GetString("name"),
+		Enabled:     r.GetBool("enabled"),
+		PublishNats: r.GetBool("publish_nats"),
+		Subject:     r.GetString("subject"),
+		Body:        r.GetString("body"),
+		Updated:     r.GetDateTime("updated").String(),
+		UpdatedBy:   r.GetString("updated_by"),
+		Recipients:  recipients,
 	}
 }
 
@@ -110,16 +112,17 @@ func updateTemplate(re *core.RequestEvent) error {
 	}
 
 	var body struct {
-		Subject    *string     `json:"subject,omitempty"`
-		Body       *string     `json:"body,omitempty"`
-		Enabled    *bool       `json:"enabled,omitempty"`
-		Recipients *Recipients `json:"recipients,omitempty"`
+		Subject     *string     `json:"subject,omitempty"`
+		Body        *string     `json:"body,omitempty"`
+		Enabled     *bool       `json:"enabled,omitempty"`
+		PublishNats *bool       `json:"publish_nats,omitempty"`
+		Recipients  *Recipients `json:"recipients,omitempty"`
 	}
 	if err := re.BindBody(&body); err != nil {
 		return re.BadRequestError("invalid request body", err)
 	}
-	if body.Subject == nil && body.Body == nil && body.Enabled == nil && body.Recipients == nil {
-		return re.BadRequestError("at least one of subject, body, enabled, recipients is required", nil)
+	if body.Subject == nil && body.Body == nil && body.Enabled == nil && body.PublishNats == nil && body.Recipients == nil {
+		return re.BadRequestError("at least one of subject, body, enabled, publish_nats, recipients is required", nil)
 	}
 
 	rec, err := re.App.FindFirstRecordByFilter(
@@ -156,6 +159,9 @@ func updateTemplate(re *core.RequestEvent) error {
 	}
 	if body.Enabled != nil {
 		rec.Set("enabled", *body.Enabled)
+	}
+	if body.PublishNats != nil {
+		rec.Set("publish_nats", *body.PublishNats)
 	}
 	if body.Recipients != nil {
 		normalized, err := normalizeRecipients(*body.Recipients)

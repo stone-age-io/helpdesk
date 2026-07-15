@@ -8,11 +8,17 @@ data_dir: pb_data
 # run without NATS (tickets then arrive only via portal/agent/webhook).
 #
 # The creds file is a Stone-Age.io-issued nats_user in the hub account,
-# permission-scoped to `helpdesk.>`. Managed customer orgs' ticket events are
-# imported into the hub as helpdesk.{platform_org_id}.> by the platform.
+# permission-scoped to `sub helpdesk.>`. Managed customer orgs' ticket events
+# are imported into the hub as helpdesk.{platform_org_id}.> by the platform.
+# To also emit outbound notification events (see notify_stream), the grant is
+# widened to `pub helpdesk.>` — the helpdesk is otherwise blind to it.
 nats:
   urls: []
   # urls: ["nats://localhost:4222"]
   creds_file: ""
   stream: HELPDESK_EVENTS
   durable: helpdesk-ingest
+  # Outbound notification-event stream the helpdesk creates + owns (subjects
+  # helpdesk.*.events.>). Used only when a notification template has
+  # publish_nats enabled; setup fails softly if publish isn't granted.
+  notify_stream: HELPDESK_NOTIFICATIONS

@@ -11,6 +11,7 @@ import TemplateReferenceDrawer from '@/components/TemplateReferenceDrawer.vue'
 const sendColumns: Column<NotificationSendLog>[] = [
   { key: 'event_type', label: 'Event' },
   { key: 'created', label: 'When', class: 'whitespace-nowrap', format: (v) => new Date(v).toLocaleString() },
+  { key: 'channel', label: 'Channel', format: (v) => v || 'email' },
   { key: 'recipient', label: 'Recipient', mobileLabel: 'To' },
   { key: 'status', label: 'Status' },
   { key: 'payload_summary', label: 'Context' },
@@ -30,13 +31,14 @@ const helpOpen = ref(false)
 
 // Editable working copy of the selected template; extras edited as one
 // address per line.
-const form = ref({ enabled: true, subject: '', body: '', requester: false, assignee: false, all_staff: false, extras: '' })
+const form = ref({ enabled: true, publish_nats: false, subject: '', body: '', requester: false, assignee: false, all_staff: false, extras: '' })
 
 const selected = computed(() => templates.value.find((t) => t.event_type === selectedType.value) || null)
 
 function fillForm(t: NotificationTemplate) {
   form.value = {
     enabled: t.enabled,
+    publish_nats: t.publish_nats,
     subject: t.subject,
     body: t.body,
     requester: t.recipients.requester,
@@ -87,6 +89,7 @@ async function save() {
       method: 'PATCH',
       body: {
         enabled: form.value.enabled,
+        publish_nats: form.value.publish_nats,
         subject: form.value.subject,
         body: form.value.body,
         recipients: {
@@ -156,7 +159,7 @@ onMounted(load)
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-2">
-      <h1 class="text-2xl font-bold">Email Notifications</h1>
+      <h1 class="text-2xl font-bold">Notifications</h1>
       <button class="btn btn-ghost btn-sm gap-1" @click="helpOpen = true">
         <span aria-hidden="true">❔</span> Template reference
       </button>
@@ -193,7 +196,20 @@ onMounted(load)
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
               <input v-model="form.enabled" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="saving" />
-              <span class="label-text">Enabled</span>
+              <span class="label-text">Send email</span>
+            </label>
+          </div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input v-model="form.publish_nats" type="checkbox" class="toggle toggle-sm" :disabled="saving" />
+              <span class="label-text">Also publish to NATS</span>
+            </label>
+            <label v-if="form.publish_nats" class="label py-0">
+              <span class="label-text-alt text-base-content/60">
+                Publishes a JSON event to
+                <code class="text-xs">helpdesk.&lt;customer&gt;.events.{{ selected.event_type }}</code>
+              </span>
             </label>
           </div>
 
