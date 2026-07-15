@@ -129,10 +129,10 @@ async function save() {
 }
 
 const statusClass: Record<string, string> = {
-  planned: 'badge-ghost',
-  active: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost opacity-60',
+  planned: 'badge-soft-neutral',
+  active: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
 }
 
 onMounted(load)
@@ -157,7 +157,7 @@ onMounted(load)
           <div class="card bg-base-100 shadow-sm">
             <div class="card-body space-y-3">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="badge" :class="statusClass[project.status]">{{ project.status }}</span>
+                <span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span>
                 <span class="text-base-content/60 text-sm">
                   {{ project.expand?.customer?.name }}
                   <template v-if="project.expand?.location"> · 📍 {{ project.expand.location.name }}</template>

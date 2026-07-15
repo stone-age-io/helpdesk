@@ -123,9 +123,9 @@ const visitColumns: Column<Visit>[] = [
 ]
 
 const statusBadge: Record<string, string> = {
-  scheduled: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost',
+  scheduled: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral',
 }
 
 // PocketBase stores datetimes as "YYYY-MM-DD HH:MM:SS.sssZ"; convert the
@@ -355,7 +355,7 @@ onUnmounted(() => {
                 </div>
               </template>
               <template #cell-status="{ value }">
-                <span class="badge badge-sm" :class="statusBadge[value]">{{ value }}</span>
+                <span class="badge-soft" :class="statusBadge[value]">{{ value }}</span>
               </template>
             </ResponsiveList>
           </div>

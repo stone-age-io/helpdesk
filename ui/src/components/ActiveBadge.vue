@@ -3,7 +3,7 @@ defineProps<{ active: boolean }>()
 </script>
 
 <template>
-  <span class="badge badge-sm" :class="active ? 'badge-success' : 'badge-ghost'">
-    {{ active ? 'active' : 'inactive' }}
+  <span class="badge-soft" :class="active ? 'badge-soft-success' : 'badge-soft-neutral'">
+    <span class="badge-dot"></span>{{ active ? 'active' : 'inactive' }}
   </span>
 </template>

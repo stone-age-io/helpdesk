@@ -161,7 +161,7 @@ onMounted(load)
       <!-- Already closed -->
       <div v-else-if="closed" class="card bg-base-100 shadow-sm">
         <div class="card-body items-center gap-3 p-6 text-center">
-          <span class="badge" :class="visit.status === 'completed' ? 'badge-success' : 'badge-ghost'">{{ visit.status }}</span>
+          <span class="badge-soft" :class="visit.status === 'completed' ? 'badge-soft-success' : 'badge-soft-neutral'">{{ visit.status }}</span>
           <p class="text-sm text-base-content/70">This visit is {{ visit.status }}.</p>
           <button class="btn btn-primary w-full" @click="openTicket">Open ticket</button>
         </div>

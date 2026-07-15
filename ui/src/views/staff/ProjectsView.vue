@@ -51,10 +51,10 @@ function fmtDate(s?: string): string {
 }
 
 const statusClass: Record<ProjectStatus, string> = {
-  planned: 'badge-ghost',
-  active: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost opacity-60',
+  planned: 'badge-soft-neutral',
+  active: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
 }
 
 async function load() {
@@ -159,7 +159,7 @@ onMounted(load)
         </div>
       </template>
       <template #cell-status="{ item }">
-        <span class="badge badge-sm" :class="statusClass[item.status]">{{ item.status }}</span>
+        <span class="badge-soft" :class="statusClass[item.status]">{{ item.status }}</span>
       </template>
       <template #empty>
         <span class="text-base-content/60">No projects{{ statusFilter || customerFilter ? ' match the filters' : ' yet' }}.</span>

@@ -104,10 +104,10 @@ const summaryText = computed(() => {
 })
 
 const statusClass: Record<VisitStatus, string> = {
-  requested: 'badge-warning',
-  scheduled: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost',
+  requested: 'badge-soft-warning',
+  scheduled: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral',
 }
 function rowLabel(v: Visit): string {
   if (v.status === 'requested') return 'needs scheduling'
@@ -358,7 +358,7 @@ onUnmounted(() => {
             <span class="text-base-content/40 transition-transform shrink-0" :class="{ 'rotate-90': expanded.has(v.id) }">▸</span>
             <span aria-hidden="true">📍</span>
             <span :class="v.status === 'requested' ? 'italic text-base-content/60' : 'font-medium'">{{ rowLabel(v) }}</span>
-            <span class="badge badge-xs shrink-0" :class="statusClass[v.status]">{{ v.status }}</span>
+            <span class="badge-soft shrink-0" :class="statusClass[v.status]">{{ v.status }}</span>
             <span class="flex-1 truncate text-base-content/70">{{ v.expand?.assignee?.name }}</span>
             <span v-if="visitTimerActive(v.id)" class="inline-flex h-2 w-2 rounded-full bg-success animate-pulse shrink-0" title="timing"></span>
             <span class="font-mono text-xs whitespace-nowrap">{{ fmt(visitMinutes(v.id)) }}</span>

@@ -144,9 +144,9 @@ let unsubTicket: (() => void) | null = null
 let unsubComments: (() => void) | null = null
 
 const visitBadge: Record<string, string> = {
-  requested: 'badge-warning',
-  scheduled: 'badge-info',
-  completed: 'badge-success',
+  requested: 'badge-soft-warning',
+  scheduled: 'badge-soft-info',
+  completed: 'badge-soft-success',
 }
 
 // Comment identity, portal-side. A staff reply's author record isn't readable
@@ -264,7 +264,7 @@ onUnmounted(() => {
                   <template v-else>
                     <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
                   </template>
-                  <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
+                  <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
                 </div>
                 <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
               </li>
@@ -378,7 +378,7 @@ onUnmounted(() => {
                   <template v-else>
                     <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
                   </template>
-                  <span class="badge badge-xs" :class="visitBadge[v.status]">{{ v.status }}</span>
+                  <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
                 </div>
                 <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
               </li>

@@ -21,16 +21,16 @@ const loading = ref(true)
 const error = ref('')
 
 const statusClass: Record<ProjectStatus, string> = {
-  planned: 'badge-ghost',
-  active: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost opacity-60',
+  planned: 'badge-soft-neutral',
+  active: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
 }
 const visitBadge: Record<string, string> = {
-  requested: 'badge-ghost',
-  scheduled: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost opacity-60',
+  requested: 'badge-soft-neutral',
+  scheduled: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
 }
 
 function fmtDate(s?: string): string {
@@ -74,7 +74,7 @@ onMounted(load)
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body gap-2">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="badge" :class="statusClass[project.status]">{{ project.status }}</span>
+            <span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span>
             <h1 class="text-xl font-bold">{{ project.title }}</h1>
           </div>
           <div class="text-sm text-base-content/60 space-y-0.5">
@@ -118,7 +118,7 @@ onMounted(load)
           <h2 class="font-semibold">Scheduled visits</h2>
           <div class="divide-y divide-base-200">
             <div v-for="v in visits" :key="v.id" class="flex items-center gap-3 py-2">
-              <span class="badge badge-sm" :class="visitBadge[v.status]">{{ v.status }}</span>
+              <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
               <span class="flex-1 text-sm">
                 <span v-if="v.scheduled_at">{{ fmtDateTime(v.scheduled_at) }}</span>
                 <span v-else class="text-base-content/50">Not yet scheduled</span>

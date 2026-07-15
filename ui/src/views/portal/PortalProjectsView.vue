@@ -14,10 +14,10 @@ const loading = ref(true)
 const error = ref('')
 
 const statusClass: Record<ProjectStatus, string> = {
-  planned: 'badge-ghost',
-  active: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost opacity-60',
+  planned: 'badge-soft-neutral',
+  active: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
 }
 
 function fmtDate(s?: string): string {
@@ -58,7 +58,7 @@ onMounted(load)
       >
         <div class="card-body p-4 gap-1">
           <div class="flex items-center gap-2">
-            <span class="badge badge-sm" :class="statusClass[p.status]">{{ p.status }}</span>
+            <span class="badge-soft" :class="statusClass[p.status]">{{ p.status }}</span>
             <span class="font-mono text-xs text-base-content/50">#{{ p.number }}</span>
           </div>
           <div class="font-semibold">{{ p.title }}</div>

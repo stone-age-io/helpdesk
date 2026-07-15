@@ -35,10 +35,10 @@ const logMinutes = ref<number | null>(null)
 const logNote = ref('')
 
 const statusClass: Record<string, string> = {
-  requested: 'badge-warning',
-  scheduled: 'badge-info',
-  completed: 'badge-success',
-  canceled: 'badge-ghost',
+  requested: 'badge-soft-warning',
+  scheduled: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral',
 }
 
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
@@ -217,7 +217,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               · #{{ visit.expand.ticket.number }} {{ visit.expand.ticket.title }}
             </span>
           </h2>
-          <span v-if="visit" class="badge badge-sm" :class="statusClass[visit.status]">{{ visit.status }}</span>
+          <span v-if="visit" class="badge-soft" :class="statusClass[visit.status]">{{ visit.status }}</span>
           <button class="btn btn-ghost btn-sm btn-circle" @click="emit('close')">✕</button>
         </div>
 
