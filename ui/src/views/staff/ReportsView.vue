@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
-import type { Ticket, TimeEntry, Visit } from '@/types'
+import type { Customer, Location, Ticket, TimeEntry, Visit } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
+import SearchSelect from '@/components/SearchSelect.vue'
 
 // Aggregate the data the app already captures — logged time, completed
-// visits, and ticket volume — over a date range. No new storage; just
-// rollups the per-ticket cards never surfaced. Handy for month-end billing,
-// utilization, and spotting what breaks most.
+// visits, and ticket volume — over a date range, optionally scoped to one
+// customer and/or location. No new storage; just rollups the per-ticket cards
+// never surfaced. Handy for month-end billing, utilization, and spotting what
+// breaks most. Every rollup is exportable (per-report + Export all), and the
+// underlying time/visit rows export in detail.
 //
 // Ticket rollups count tickets *created* in the range. Resolution-time and
 // reopen-rate metrics need the ticket_events history and land in a later
@@ -19,6 +22,10 @@ const tickets = ref<Ticket[]>([])
 const loading = ref(false)
 const error = ref('')
 
+// Filter option lists.
+const customers = ref<Customer[]>([])
+const locations = ref<Location[]>([])
+
 // Default to the trailing 30 days.
 function isoDate(offsetDays: number): string {
   const d = new Date()
@@ -27,12 +34,36 @@ function isoDate(offsetDays: number): string {
 }
 const from = ref(isoDate(-30))
 const to = ref(isoDate(0))
+const customerFilter = ref('')
+const locationFilter = ref('')
+
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+// Location picker narrows to the selected customer's sites when one is chosen.
+const locationOptions = computed(() => {
+  const list = customerFilter.value
+    ? locations.value.filter((l) => l.customer === customerFilter.value)
+    : locations.value
+  return list.map((l) => ({ id: l.id, label: l.name, sublabel: l.expand?.customer?.name || undefined }))
+})
+const customerName = computed(() => customers.value.find((c) => c.id === customerFilter.value)?.name || '')
+const locationName = computed(() => locations.value.find((l) => l.id === locationFilter.value)?.name || '')
 
 function pbTime(localDate: string, endOfDay: boolean): string {
   return new Date(`${localDate}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString().replace('T', ' ')
 }
 function rangeFilter(field: string): string {
   return `${field} >= '${pbTime(from.value, false)}' && ${field} <= '${pbTime(to.value, true)}'`
+}
+// Customer/location scope. `prefix` is '' for tickets (customer/location live on
+// the record) and 'ticket.' for time_entries/visits (relation-hop to the ticket).
+function scopeFilter(prefix: string): string {
+  const parts: string[] = []
+  if (customerFilter.value) parts.push(`${prefix}customer = '${customerFilter.value}'`)
+  if (locationFilter.value) parts.push(`${prefix}location = '${locationFilter.value}'`)
+  return parts.join(' && ')
+}
+function and(...clauses: string[]): string {
+  return clauses.filter(Boolean).join(' && ')
 }
 
 async function load() {
@@ -41,17 +72,17 @@ async function load() {
   try {
     ;[entries.value, doneVisits.value, tickets.value] = await Promise.all([
       pb.collection('time_entries').getFullList<TimeEntry>({
-        filter: rangeFilter('work_date'),
+        filter: and(rangeFilter('work_date'), scopeFilter('ticket.')),
         sort: '-work_date',
         expand: 'staff,ticket,ticket.customer,ticket.location',
       }),
       pb.collection('visits').getFullList<Visit>({
-        filter: `status = 'completed' && ${rangeFilter('completed_at')}`,
+        filter: and(`status = 'completed'`, rangeFilter('completed_at'), scopeFilter('ticket.')),
         sort: '-completed_at',
         expand: 'assignee,ticket,ticket.customer,ticket.location',
       }),
       pb.collection('tickets').getFullList<Ticket>({
-        filter: rangeFilter('created'),
+        filter: and(rangeFilter('created'), scopeFilter('')),
         sort: '-created',
         expand: 'category,location',
       }),
@@ -60,6 +91,17 @@ async function load() {
     error.value = err?.message || 'Failed to load reports'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadOptions() {
+  try {
+    ;[customers.value, locations.value] = await Promise.all([
+      pb.collection('customers').getFullList<Customer>({ sort: 'name' }),
+      pb.collection('locations').getFullList<Location>({ sort: 'name', expand: 'customer' }),
+    ])
+  } catch {
+    // Filters degrade to date-only; the rollups still load.
   }
 }
 
@@ -164,7 +206,7 @@ function fmtHours(m: number): string {
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`
 }
 
-// --- CSV export of the detailed time + visit rows ---
+// --- CSV export ---
 function csvEscape(v: unknown): string {
   const s = String(v ?? '')
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
@@ -177,6 +219,82 @@ function download(name: string, lines: string[]) {
   a.click()
   URL.revokeObjectURL(a.href)
 }
+const suffix = () => `${from.value}_${to.value}`
+
+// Each rollup is a self-describing report: minutes stay numeric in CSV (for
+// spreadsheet math), even though the screen shows h/m.
+interface Report {
+  key: string
+  title: string
+  filename: string
+  header: string[]
+  rows: () => (string | number)[][]
+}
+const reports = computed<Report[]>(() => [
+  {
+    key: 'staff',
+    title: 'By staff / technician',
+    filename: 'by-staff',
+    header: ['name', 'minutes', 'field_minutes', 'visits'],
+    rows: () => byPerson.value.map((r) => [r.label === '—' ? '(unattributed)' : r.label, r.minutes, r.fieldMinutes, r.visits]),
+  },
+  {
+    key: 'customer',
+    title: 'By customer',
+    filename: 'by-customer',
+    header: ['customer', 'minutes', 'field_minutes', 'visits'],
+    rows: () => byCustomer.value.map((r) => [r.label === '—' ? '(none)' : r.label, r.minutes, r.fieldMinutes, r.visits]),
+  },
+  {
+    key: 'location',
+    title: 'By location',
+    filename: 'by-location',
+    header: ['location', 'tickets', 'installs', 'minutes', 'visits'],
+    rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.installs, r.minutes, r.visits]),
+  },
+  {
+    key: 'category',
+    title: 'Tickets by category',
+    filename: 'tickets-by-category',
+    header: ['category', 'total', 'open'],
+    rows: () => byCategory.value.map((r) => [r.label, r.count, r.open]),
+  },
+  {
+    key: 'source',
+    title: 'Tickets by source',
+    filename: 'tickets-by-source',
+    header: ['source', 'count', 'share_pct'],
+    rows: () => bySource.value.map((r) => [r.source, r.count, r.pct]),
+  },
+])
+
+function exportOne(key: string) {
+  const rep = reports.value.find((r) => r.key === key)
+  if (!rep) return
+  const lines = [rep.header.join(','), ...rep.rows().map((r) => r.map(csvEscape).join(','))]
+  download(`${rep.filename}-${suffix()}.csv`, lines)
+}
+
+// Export all rollups as one snapshot file: range + scope + totals header, then
+// each report as a titled section.
+function exportAll() {
+  const lines: string[] = [`Reports,${from.value} to ${to.value}`]
+  if (customerName.value) lines.push(`Customer,${csvEscape(customerName.value)}`)
+  if (locationName.value) lines.push(`Location,${csvEscape(locationName.value)}`)
+  lines.push('', 'Totals', 'metric,value',
+    `time_minutes,${totalMinutes.value}`,
+    `field_minutes,${totalFieldMinutes.value}`,
+    `visits_completed,${totalVisits.value}`,
+    `tickets_created,${totalTickets.value}`, '')
+  for (const rep of reports.value) {
+    lines.push(rep.title, rep.header.join(','))
+    for (const row of rep.rows()) lines.push(row.map(csvEscape).join(','))
+    lines.push('')
+  }
+  download(`reports-${suffix()}.csv`, lines)
+}
+
+// Detail exports: the underlying time and visit rows, not the rollups.
 function exportTime() {
   const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'on_site', 'note'].join(',')]
   for (const e of entries.value) {
@@ -194,7 +312,7 @@ function exportTime() {
         .join(','),
     )
   }
-  download(`time-${from.value}_${to.value}.csv`, lines)
+  download(`time-detail-${suffix()}.csv`, lines)
 }
 function exportVisits() {
   const lines = [['completed_at', 'technician', 'customer', 'ticket', 'site', 'directions'].join(',')]
@@ -212,22 +330,60 @@ function exportVisits() {
         .join(','),
     )
   }
-  download(`completed-visits-${from.value}_${to.value}.csv`, lines)
+  download(`visits-detail-${suffix()}.csv`, lines)
 }
 
-watch([from, to], () => load())
-onMounted(load)
+// Switching to a specific customer drops a location scope it no longer owns
+// (clearing retriggers this watcher, which then loads once).
+watch([from, to, customerFilter, locationFilter], (cur, prev) => {
+  const [, , c] = cur
+  const pc = prev[2]
+  const l = locationFilter.value
+  if (c !== pc && c && l && !locations.value.some((loc) => loc.id === l && loc.customer === c)) {
+    locationFilter.value = ''
+    return
+  }
+  load()
+})
+onMounted(() => {
+  load()
+  loadOptions()
+})
 </script>
 
 <template>
   <div class="space-y-4">
-    <h1 class="text-2xl font-bold">Reports</h1>
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+      <h1 class="text-2xl font-bold">Reports</h1>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-sm btn-primary">Export ▾</div>
+        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-60 p-1 z-50">
+          <li><a @click="exportAll">All reports (CSV)</a></li>
+          <li class="menu-title px-2 pt-2 pb-1 text-xs">Detail rows</li>
+          <li><a @click="exportTime">Time entries — detail</a></li>
+          <li><a @click="exportVisits">Completed visits — detail</a></li>
+        </ul>
+      </div>
+    </div>
 
-    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center">
-      <label class="text-sm">From</label>
-      <input v-model="from" type="date" class="input input-bordered input-sm" />
-      <label class="text-sm">To</label>
-      <input v-model="to" type="date" class="input input-bordered input-sm" />
+    <!-- Filters: date range + customer/location scope (applies to every rollup). -->
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
+      <div class="form-control">
+        <label class="label py-1"><span class="label-text text-xs">From</span></label>
+        <input v-model="from" type="date" class="input input-bordered input-sm" />
+      </div>
+      <div class="form-control">
+        <label class="label py-1"><span class="label-text text-xs">To</span></label>
+        <input v-model="to" type="date" class="input input-bordered input-sm" />
+      </div>
+      <div class="form-control w-full sm:w-52">
+        <label class="label py-1"><span class="label-text text-xs">Customer</span></label>
+        <SearchSelect v-model="customerFilter" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Any customer…" />
+      </div>
+      <div class="form-control w-full sm:w-52">
+        <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+        <SearchSelect v-model="locationFilter" :options="locationOptions" size="sm" empty-label="All locations" placeholder="Any location…" />
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-error">{{ error }}</div>
@@ -238,16 +394,16 @@ onMounted(load)
       <div class="stats stats-vertical sm:stats-horizontal shadow-sm bg-base-100 w-full">
         <div class="stat">
           <div class="stat-title">Time logged</div>
-          <div class="stat-value text-2xl">{{ fmtHours(totalMinutes) }}</div>
+          <div class="stat-value text-2xl tabular-nums">{{ fmtHours(totalMinutes) }}</div>
           <div v-if="totalFieldMinutes > 0" class="stat-desc">{{ fmtHours(totalFieldMinutes) }} on-site</div>
         </div>
         <div class="stat">
           <div class="stat-title">Visits completed</div>
-          <div class="stat-value text-2xl">{{ totalVisits }}</div>
+          <div class="stat-value text-2xl tabular-nums">{{ totalVisits }}</div>
         </div>
         <div class="stat">
           <div class="stat-title">Tickets created</div>
-          <div class="stat-value text-2xl">{{ totalTickets }}</div>
+          <div class="stat-value text-2xl tabular-nums">{{ totalTickets }}</div>
         </div>
       </div>
 
@@ -255,44 +411,48 @@ onMounted(load)
         <!-- By person -->
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-2">
               <h2 class="font-semibold text-sm">By staff / technician</h2>
-              <div class="flex gap-1">
-                <button class="btn btn-ghost btn-xs" @click="exportTime">Time CSV</button>
-                <button class="btn btn-ghost btn-xs" @click="exportVisits">Visits CSV</button>
-              </div>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('staff')">CSV</button>
             </div>
-            <table class="table table-sm">
-              <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
-              <tbody>
-                <tr v-for="r in byPerson" :key="r.label">
-                  <td>{{ r.label }}</td>
-                  <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
-                  <td class="text-right font-mono">{{ fmtHours(r.fieldMinutes) }}</td>
-                  <td class="text-right font-mono">{{ r.visits || '—' }}</td>
-                </tr>
-                <tr v-if="byPerson.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
-              </tbody>
-            </table>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in byPerson" :key="r.label">
+                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'Unattributed' : r.label }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
+                  </tr>
+                  <tr v-if="byPerson.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
         <!-- By customer -->
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">By customer</h2>
-            <table class="table table-sm">
-              <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
-              <tbody>
-                <tr v-for="r in byCustomer" :key="r.label">
-                  <td>{{ r.label }}</td>
-                  <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
-                  <td class="text-right font-mono">{{ fmtHours(r.fieldMinutes) }}</td>
-                  <td class="text-right font-mono">{{ r.visits || '—' }}</td>
-                </tr>
-                <tr v-if="byCustomer.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
-              </tbody>
-            </table>
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">By customer</h2>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('customer')">CSV</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in byCustomer" :key="r.label">
+                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'None' : r.label }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
+                  </tr>
+                  <tr v-if="byCustomer.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -300,17 +460,20 @@ onMounted(load)
       <!-- By location: the reporting axis the ticket→location relation adds. -->
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body p-4 space-y-2">
-          <h2 class="font-semibold text-sm">By location</h2>
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="font-semibold text-sm">By location</h2>
+            <button class="btn btn-ghost btn-xs" @click="exportOne('location')">CSV</button>
+          </div>
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead><tr><th>Location</th><th class="text-right">Tickets</th><th class="text-right">Installs</th><th class="text-right">Time</th><th class="text-right">Visits</th></tr></thead>
               <tbody>
                 <tr v-for="r in byLocation" :key="r.label">
                   <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No location' : r.label }}</td>
-                  <td class="text-right font-mono">{{ r.tickets || '—' }}</td>
-                  <td class="text-right font-mono">{{ r.installs || '—' }}</td>
-                  <td class="text-right font-mono">{{ fmtHours(r.minutes) }}</td>
-                  <td class="text-right font-mono">{{ r.visits || '—' }}</td>
+                  <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
+                  <td class="text-right font-mono tabular-nums">{{ r.installs || '—' }}</td>
+                  <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                  <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
                 </tr>
                 <tr v-if="byLocation.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
@@ -324,35 +487,45 @@ onMounted(load)
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">Tickets by category</h2>
-            <table class="table table-sm">
-              <thead><tr><th>Category</th><th class="text-right">Total</th><th class="text-right">Open</th></tr></thead>
-              <tbody>
-                <tr v-for="r in byCategory" :key="r.label">
-                  <td><CategoryBadge v-if="r.label !== 'Uncategorized'" :name="r.label" :color="r.color" /><span v-else class="text-base-content/50">Uncategorized</span></td>
-                  <td class="text-right font-mono">{{ r.count }}</td>
-                  <td class="text-right font-mono">{{ r.open || '—' }}</td>
-                </tr>
-                <tr v-if="byCategory.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
-              </tbody>
-            </table>
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">Tickets by category</h2>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('category')">CSV</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Category</th><th class="text-right">Total</th><th class="text-right">Open</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in byCategory" :key="r.label">
+                    <td><CategoryBadge v-if="r.label !== 'Uncategorized'" :name="r.label" :color="r.color" /><span v-else class="text-base-content/50">Uncategorized</span></td>
+                    <td class="text-right font-mono tabular-nums">{{ r.count }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
+                  </tr>
+                  <tr v-if="byCategory.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">Tickets by source</h2>
-            <table class="table table-sm">
-              <thead><tr><th>Source</th><th class="text-right">Count</th><th class="text-right">Share</th></tr></thead>
-              <tbody>
-                <tr v-for="r in bySource" :key="r.source">
-                  <td class="capitalize">{{ r.source }}</td>
-                  <td class="text-right font-mono">{{ r.count }}</td>
-                  <td class="text-right font-mono">{{ r.pct }}%</td>
-                </tr>
-                <tr v-if="bySource.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
-              </tbody>
-            </table>
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">Tickets by source</h2>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('source')">CSV</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Source</th><th class="text-right">Count</th><th class="text-right">Share</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in bySource" :key="r.source">
+                    <td class="capitalize">{{ r.source }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.count }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.pct }}%</td>
+                  </tr>
+                  <tr v-if="bySource.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
