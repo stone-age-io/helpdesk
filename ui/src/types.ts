@@ -22,6 +22,9 @@ export interface Requester extends BaseRecord {
   customer: string
   active: boolean
   avatar?: string
+  // The requester's direct line (migration 1812000000); the on-site contact
+  // lives on the location, not here.
+  phone?: string
 }
 
 export interface Customer extends BaseRecord {
@@ -45,6 +48,10 @@ export interface Location extends BaseRecord {
   notes?: string
   contact?: string
   contact_phone?: string
+  // Optional coordinates (migration 1813000000): back the map pin and the
+  // maps deep link on a ticket. A hand-entered site may have neither.
+  lat?: number
+  lng?: number
 }
 
 export type ProjectStatus = 'planned' | 'active' | 'completed' | 'canceled'

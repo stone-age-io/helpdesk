@@ -1,19 +1,22 @@
 <script setup lang="ts">
-// Admin-managed locations: a customer's physical places. `code` is the
-// platform Location join key that machine intakes resolve against (see
-// docs/protocol.md); address + access notes make on-site visits better.
-// Staff can quick-create a location inline from the ticket form; this roster
-// is where admins curate codes, addresses, and contacts. Reached only by
-// admins (route meta.adminOnly + collection update/delete rules).
+// Locations: a customer's physical places. `code` is the platform Location
+// join key that machine intakes resolve against (see docs/protocol.md);
+// address + access notes make on-site visits better. In the Directory now, and
+// any staff member can create/edit (migration 1813000000) — only delete stays
+// admin-only, the one destructive op against a location referenced by
+// tickets/projects/visits.
 //
 // Reads as a roster (read-only rows, edit via a panel above the list) to match
 // the other staff list views — the shared ResponsiveList gives the same dense
 // desktop table + stacked mobile cards for free.
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
+import { useAuthStore } from '@/stores/auth'
 import type { Customer, Location } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+
+const auth = useAuthStore()
 
 const columns: Column<Location>[] = [
   { key: 'name', label: 'Name' },
@@ -218,7 +221,7 @@ onMounted(load)
         <button class="btn btn-ghost btn-xs" @click="editing?.id === item.id ? (editing = null) : startEdit(item)">
           {{ editing?.id === item.id ? 'Cancel' : 'Edit' }}
         </button>
-        <button class="btn btn-ghost btn-xs text-error" @click="remove(item)">Delete</button>
+        <button v-if="auth.isAdmin" class="btn btn-ghost btn-xs text-error" @click="remove(item)">Delete</button>
       </template>
       <template #empty>
         <span class="text-base-content/60">No locations yet.</span>
