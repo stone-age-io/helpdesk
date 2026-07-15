@@ -56,8 +56,9 @@ application URL live in PocketBase settings (dashboard), not the YAML.
   requester sees only their own company's tickets and only non-internal
   comments — enforced by collection rules in `migrations/1800000000_init.go`,
   the home of all access rules (later migrations may amend specific rules,
-  e.g. `1803000000` opens visit reads to requesters, and `1808000000` opens
-  status-only ticket_events + category reads for the portal timeline);
+  e.g. `1803000000` opens visit reads to requesters, `1808000000` opens
+  status-only ticket_events + category reads for the portal timeline, and
+  `1813000000` opens locations update to any staff);
   `docs/data-model.md`
   summarizes every collection and rule. Both auth collections stamp
   `emailVisibility = true` on create (`internal/authfix`) — PB masks emails
@@ -120,7 +121,11 @@ optional `code` — the join key to the platform's Location concept: machine
 intakes resolve a payload `location_code` per `(customer, code)` and set the
 ticket's `location` relation (unmatched → free-text `location_note`, no
 auto-stub), making location a queryable dimension (tickets/installs/visits/time
-by location). Still not a CMDB — a place, not an asset catalog. A **project**
+by location). Still not a CMDB — a place, not an asset catalog. Locations live
+in the Directory and any staff member creates/edits them via a detail view
+(`1813000000`; delete stays admin); optional `lat`/`lng` come from a Leaflet
+map picker (Nominatim address search) and drive a maps "Navigate" deep link on
+the ticket. A **project**
 groups 1..N tickets (often one `install`-type ticket per trade, plus reactive
 tickets) at a location over a target window; sequential `number` (hook, like
 tickets) and a single `lead` for whole-rollout accountability. Crucially it is
@@ -206,10 +211,13 @@ first reveal). Idempotent via `dedupe_key` (200 + `duplicate:true`).
 the future email-provider (Postmark/Mailgun) integration point. Wire
 contract for both intakes: `docs/protocol.md`.
 
-**UI** (`ui/`): Vue 3 + Vite + Pinia + Tailwind + daisyUI, PocketBase JS
+**UI** (`ui/`): Vue 3 + Vite + Pinia + Tailwind + daisyUI (custom light/dark
+theme + soft badges, `ui/tailwind.config.js` + `.badge-soft*` in
+`src/style.css`) + Leaflet (lazy-loaded location map picker), PocketBase JS
 SDK, same-origin (`new PocketBase('/')`). One login page tries `staff`
 then falls back to `users`; router guards by auth collection
-(`meta.requires`), plus `meta.adminOnly` for the notification editor.
+(`meta.requires`), plus `meta.adminOnly` for admin surfaces (staff,
+categories, notifications).
 `/t/:id` forwards to the right detail view by role (bounces through login
 with a `redirect` query).
 

@@ -207,10 +207,13 @@ Rules: read `StaffRule || (RequesterRule && ticket.customer =
 
 `customer` (required), `code` (the platform Location join key, optional —
 unique per customer when set), `name` (required), `address`, `notes` (gate
-codes / access directions), `contact`, `contact_phone`. Machine intakes
-resolve a payload `location_code` per `(customer, code)` and set the ticket's
-`location` relation; an unmatched code falls back to `location_note`, no
-auto-stub (`docs/protocol.md`).
+codes / access directions), `contact`, `contact_phone`, `lat` / `lng`
+(optional coordinates, added `1813000000`). Machine intakes resolve a payload
+`location_code` per `(customer, code)` and set the ticket's `location`
+relation; an unmatched code falls back to `location_note`, no auto-stub
+(`docs/protocol.md`). `lat`/`lng` are set from the map picker in the Locations
+detail view and back a maps "Navigate" deep link on the ticket (coordinates
+preferred, `address` as fallback).
 
 A location earns a relation where a one-off ticket visit's free-text location
 did not: a project revisits the same site over weeks, so the place recurs. It
@@ -218,9 +221,10 @@ is still deliberately **not** a CMDB — a place with an address and access
 notes, not an asset catalog.
 
 Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
-(a requester sees their own company's sites); **create** `StaffRule` (any agent
-can quick-create one inline from the ticket/project form); update/delete
-`AdminRule` (the curated roster is the admin-only Locations view).
+(a requester sees their own company's sites); **create** and **update**
+`StaffRule` (any agent manages sites day-to-day from the Directory — update
+opened in `1813000000`); **delete** `AdminRule` (the one destructive op against
+a location referenced by tickets/projects/visits).
 
 ### `projects` — installation / field-work container (added `1812000000`)
 
