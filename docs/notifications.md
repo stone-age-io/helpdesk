@@ -122,6 +122,10 @@ Admin staff only, under `/api/helpdesk/notifications`:
   rather than at send time.
 - `GET  /api/helpdesk/notifications/{event_type}/defaults` — the compiled-in
   copy (backs "Reset to defaults").
+- `GET  /api/helpdesk/notifications/{event_type}/nats-sample` — the subject
+  pattern + a representative JSON envelope for the event's NATS channel,
+  rendered from the publish code itself (`SampleEnvelope`) so it can't drift.
+  Backs the "see event format" reference drawer next to the NATS toggle.
 - `POST /api/helpdesk/notifications/{event_type}/test` — render the current
   draft and send a test to the caller.
 

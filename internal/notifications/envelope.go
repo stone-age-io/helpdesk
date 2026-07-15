@@ -1,5 +1,7 @@
 package notifications
 
+import "github.com/stone-age-io/helpdesk/internal/subjects"
+
 // This file defines the outbound NATS event contract — the JSON envelope
 // published to helpdesk.{customerId}.events.{event_type} when a template has
 // publish_nats enabled. It is deliberately a SEPARATE set of wire structs from
@@ -130,4 +132,38 @@ func (c TicketContext) toEnvelope(eventType, occurredAt string) EventEnvelope {
 		}
 	}
 	return env
+}
+
+// sampleOccurredAt is a fixed, representative timestamp for the reference
+// sample so the rendered envelope is stable (no time.Now noise).
+const sampleOccurredAt = "2026-07-15T14:02:11Z"
+
+// SampleEnvelope builds a representative (subject, envelope) pair for the staff
+// NATS reference drawer. It starts from the shared kitchen-sink SampleContext
+// and trims it to the optional blocks *this* event actually carries — so the
+// reference matches what a consumer really receives (a ticket.created event
+// carries no comment/visit; only rescheduled shows a prior time). toEnvelope
+// itself stays a faithful projection; event-shaping lives here, next to the
+// only caller that needs the kitchen-sink sample. ok is false for an unknown
+// event type. Reused by the nats-sample route and exercised in the tests.
+func SampleEnvelope(eventType string) (subject string, env EventEnvelope, ok bool) {
+	if _, _, known := Defaults(eventType); !known {
+		return "", EventEnvelope{}, false
+	}
+	ctx := SampleContext()
+	isVisit := eventType == EventTypeVisitScheduled ||
+		eventType == EventTypeVisitRescheduled ||
+		eventType == EventTypeVisitCanceled
+	if eventType != EventTypeTicketCommented {
+		ctx.Comment = nil
+	}
+	if !isVisit {
+		ctx.Visit = nil
+	} else if eventType != EventTypeVisitRescheduled {
+		ctx.Visit.OldScheduledAt = "" // only a reschedule reports the prior time
+	}
+	// A placeholder tenant token, matching the subject hint on the editor
+	// toggle — the real second token is the ticket's customer id.
+	subject = subjects.Default().EventSubject("<customer>", eventType)
+	return subject, ctx.toEnvelope(eventType, sampleOccurredAt), true
 }

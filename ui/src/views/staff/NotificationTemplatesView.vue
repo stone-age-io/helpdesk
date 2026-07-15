@@ -5,6 +5,7 @@ import type { NotificationSendLog, NotificationTemplate } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import Pager from '@/components/Pager.vue'
 import TemplateReferenceDrawer from '@/components/TemplateReferenceDrawer.vue'
+import NatsReferenceDrawer from '@/components/NatsReferenceDrawer.vue'
 
 // Event first: ResponsiveList promotes the first column to the mobile card
 // header, and a card headlined by a raw timestamp identifies nothing.
@@ -28,6 +29,7 @@ const sends = ref<NotificationSendLog[]>([])
 const sendPage = ref(1)
 const sendTotalPages = ref(1)
 const helpOpen = ref(false)
+const natsHelpOpen = ref(false)
 
 // Editable working copy of the selected template; extras edited as one
 // address per line.
@@ -166,6 +168,7 @@ onMounted(load)
     </div>
 
     <TemplateReferenceDrawer :open="helpOpen" @close="helpOpen = false" />
+    <NatsReferenceDrawer :open="natsHelpOpen" :event-type="selected?.event_type || ''" @close="natsHelpOpen = false" />
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
@@ -222,6 +225,7 @@ onMounted(load)
               <span class="label-text-alt text-base-content/60">
                 Publishes a JSON event to
                 <code class="text-xs">helpdesk.&lt;customer&gt;.events.{{ selected.event_type }}</code>
+                — <button type="button" class="link" @click="natsHelpOpen = true">see event format</button>
               </span>
             </label>
           </div>

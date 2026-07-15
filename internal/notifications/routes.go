@@ -26,6 +26,7 @@ func RegisterRoutes(e *core.ServeEvent) {
 	e.Router.GET("/api/helpdesk/notifications", listTemplates)
 	e.Router.PATCH("/api/helpdesk/notifications/{event_type}", updateTemplate)
 	e.Router.GET("/api/helpdesk/notifications/{event_type}/defaults", templateDefaults)
+	e.Router.GET("/api/helpdesk/notifications/{event_type}/nats-sample", natsSample)
 	e.Router.POST("/api/helpdesk/notifications/{event_type}/test", sendTestEmail)
 }
 
@@ -265,6 +266,27 @@ func sendTestEmail(re *core.RequestEvent) error {
 		return re.JSON(http.StatusOK, map[string]any{"sent": false, "error": sendErr.Error()})
 	}
 	return re.JSON(http.StatusOK, map[string]any{"sent": true, "to": to, "subject": subject})
+}
+
+// natsSample returns the subject pattern and a representative JSON envelope for
+// the event's NATS channel, rendered from the same code that publishes (see
+// SampleEnvelope). Read-only, admin-only; backs the "see event format"
+// reference drawer next to the Publish-to-NATS toggle. Deliberately generated
+// rather than hand-documented in the SPA, so it can't drift from the contract.
+func natsSample(re *core.RequestEvent) error {
+	if err := requireAdmin(re); err != nil {
+		return err
+	}
+	eventType := re.Request.PathValue("event_type")
+	subject, env, ok := SampleEnvelope(eventType)
+	if !ok {
+		return re.NotFoundError("no NATS sample for that event_type", nil)
+	}
+	return re.JSON(http.StatusOK, map[string]any{
+		"event_type": eventType,
+		"subject":    subject,
+		"envelope":   env,
+	})
 }
 
 // templateDefaults returns the compiled-in subject + body for the given
