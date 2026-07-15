@@ -34,7 +34,7 @@ function removeAt(i: number) {
       @change="onChange"
     />
     <ul v-if="files.length" class="flex flex-wrap gap-1">
-      <li v-for="(f, i) in files" :key="i" class="badge badge-ghost gap-1">
+      <li v-for="(f, i) in files" :key="i" class="badge-soft badge-soft-neutral gap-1">
         📎 <span class="max-w-[10rem] truncate">{{ f.name }}</span>
         <button type="button" class="text-error" :disabled="disabled" @click="removeAt(i)">✕</button>
       </li>

@@ -288,7 +288,7 @@ onUnmounted(() => {
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
                     <span class="font-semibold text-base-content">{{ authorLabel(c) }}</span>
-                    <span v-if="isSupport(c)" class="badge badge-ghost badge-xs">support</span>
+                    <span v-if="isSupport(c)" class="badge-soft badge-soft-neutral">support</span>
                     <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
                   </div>
                   <p class="whitespace-pre-wrap text-sm mt-0.5">{{ c.body }}</p>

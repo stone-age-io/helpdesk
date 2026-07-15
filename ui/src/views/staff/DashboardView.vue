@@ -172,17 +172,20 @@ onUnmounted(() => {
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
           <h2 class="card-title text-base">My Active Tickets</h2>
-          <ul class="space-y-1">
-            <li v-for="t in mine" :key="t.id">
-              <router-link :to="`/staff/tickets/${t.id}`" class="flex items-center gap-2 text-sm link-hover">
-                <span class="font-mono">#{{ t.number }}</span>
-                <span class="flex-1 truncate">{{ t.title }}</span>
-                <span class="text-base-content/50">{{ t.expand?.customer?.name }}</span>
-                <TicketBadges :status="t.status" :priority="t.priority" />
-              </router-link>
-            </li>
-          </ul>
-          <p v-if="mine.length === 0" class="text-sm text-base-content/50">Nothing assigned to you. Nice.</p>
+          <div class="divide-y divide-base-200">
+            <router-link
+              v-for="t in mine"
+              :key="t.id"
+              :to="`/staff/tickets/${t.id}`"
+              class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+            >
+              <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
+              <span class="flex-1 truncate">{{ t.title }}</span>
+              <span class="text-xs text-base-content/60 hidden sm:block">{{ t.expand?.customer?.name }}</span>
+              <TicketBadges :status="t.status" :priority="t.priority" />
+            </router-link>
+            <p v-if="mine.length === 0" class="py-3 text-sm text-base-content/50">Nothing assigned to you. Nice.</p>
+          </div>
         </div>
       </div>
     </template>

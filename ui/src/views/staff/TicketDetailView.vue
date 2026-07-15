@@ -377,7 +377,7 @@ onUnmounted(() => {
                 <div class="flex items-center gap-2 text-xs text-base-content/60">
                   <Avatar :record="authorRecord(item.comment)" :name="authorLabel(item.comment)" size="xs" />
                   <span class="font-semibold text-base-content">{{ authorLabel(item.comment) }}</span>
-                  <span v-if="item.comment.internal" class="badge badge-warning badge-xs">internal</span>
+                  <span v-if="item.comment.internal" class="badge-soft badge-soft-warning">internal</span>
                   <span>{{ format(new Date(item.comment.created), 'MMM d, yyyy HH:mm') }}</span>
                 </div>
                 <p class="whitespace-pre-wrap text-sm">{{ item.comment.body }}</p>

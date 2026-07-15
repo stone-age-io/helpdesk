@@ -184,7 +184,7 @@ onMounted(load)
               <li v-for="r in requesters" :key="r.id" class="text-sm flex items-center gap-2">
                 <router-link :to="`/staff/tickets?search=${encodeURIComponent(r.email)}`" class="flex-1 link link-hover truncate" title="View this requester's tickets">{{ r.name || r.email }}</router-link>
                 <span class="text-base-content/50">{{ r.email }}</span>
-                <span class="badge badge-xs" :class="r.active ? 'badge-success' : 'badge-ghost'">{{ r.active ? 'active' : 'inactive' }}</span>
+                <span class="badge-soft" :class="r.active ? 'badge-soft-success' : 'badge-soft-neutral'">{{ r.active ? 'active' : 'inactive' }}</span>
               </li>
             </ul>
             <p v-if="requesters.length === 0" class="text-sm text-base-content/50">No portal accounts.</p>

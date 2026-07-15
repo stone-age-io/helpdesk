@@ -1,20 +1,19 @@
 <script setup lang="ts">
-// Soft category chip: a colored dot + name over a low-alpha tint of the
-// category's color, so it stays legible in both light and dark themes. The
-// color is a hex string stored on the category; empty falls back to neutral.
-const props = defineProps<{ name?: string; color?: string }>()
-
-// 8-bit alpha suffix on the hex → ~13% tint for the background.
-const bg = props.color ? props.color + '22' : undefined
+// Category chip: same soft geometry as the status/priority badges, tinted
+// with the category's own color. The tint is mixed against the theme's base
+// surface (--b1) rather than laid on as a low-alpha overlay, so it stays
+// visible in dark mode; the color also drives the leading dot and the label.
+// Empty name renders nothing; missing color falls back to the text color.
+defineProps<{ name?: string; color?: string }>()
 </script>
 
 <template>
   <span
     v-if="name"
-    class="badge badge-sm gap-1 border-transparent font-medium"
-    :style="color ? { backgroundColor: bg, color: color } : {}"
+    class="badge-soft"
+    :style="color ? { background: `color-mix(in srgb, ${color} 16%, oklch(var(--b1)))`, color } : {}"
   >
-    <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ backgroundColor: color || 'currentColor' }"></span>
+    <span class="badge-dot" :style="{ backgroundColor: color || 'currentColor' }"></span>
     <span class="truncate">{{ name }}</span>
   </span>
 </template>

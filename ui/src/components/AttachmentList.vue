@@ -35,7 +35,7 @@ const label = (name: string) => name.replace(/_[a-z0-9]{10}(\.[^.]+)?$/i, '$1')
         :alt="label(name)"
         class="max-h-28 max-w-[10rem] rounded border border-base-300 object-cover"
       />
-      <span v-else class="badge badge-outline gap-1 max-w-[12rem] truncate">📎 {{ label(name) }}</span>
+      <span v-else class="badge-soft badge-soft-neutral gap-1 max-w-[12rem] truncate">📎 {{ label(name) }}</span>
     </a>
   </div>
 </template>

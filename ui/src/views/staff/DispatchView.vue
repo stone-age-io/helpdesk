@@ -296,7 +296,7 @@ onUnmounted(() => {
       <section class="space-y-2">
         <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60">
           Needs scheduling
-          <span v-if="requestedSorted.length" class="badge badge-warning badge-sm align-middle">{{ requestedSorted.length }}</span>
+          <span v-if="requestedSorted.length" class="badge-soft badge-soft-warning align-middle">{{ requestedSorted.length }}</span>
         </h2>
         <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
           <template #cell-priority="{ item }"><TicketBadges :priority="item.expand?.ticket?.priority" /></template>

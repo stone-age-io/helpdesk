@@ -174,7 +174,7 @@ onMounted(load)
             <li v-for="t in templates" :key="t.event_type">
               <a :class="{ active: t.event_type === selectedType }" @click="select(t.event_type)">
                 <span class="flex-1">{{ t.name }}</span>
-                <span class="badge badge-xs" :class="t.enabled ? 'badge-success' : 'badge-ghost'">
+                <span class="badge-soft" :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'">
                   {{ t.enabled ? 'on' : 'off' }}
                 </span>
               </a>
@@ -263,7 +263,7 @@ onMounted(load)
         <ResponsiveList :items="sends" :columns="sendColumns" :clickable="false">
           <template #cell-event_type="{ value }"><code class="text-xs">{{ value }}</code></template>
           <template #cell-status="{ item }">
-            <span class="badge badge-xs" :class="item.status === 'sent' ? 'badge-success' : item.status === 'failed' ? 'badge-error' : 'badge-ghost'" :title="item.error">
+            <span class="badge-soft" :class="item.status === 'sent' ? 'badge-soft-success' : item.status === 'failed' ? 'badge-soft-error' : 'badge-soft-neutral'" :title="item.error">
               {{ item.status }}
             </span>
           </template>

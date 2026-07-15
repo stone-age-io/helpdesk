@@ -123,7 +123,7 @@ const funcs: FuncRow[] = [
                   <li v-for="v in g.vars" :key="v.token" class="flex flex-col gap-0.5 border-b border-base-200/70 pb-1 last:border-0">
                     <div class="flex items-center gap-2 flex-wrap">
                       <code class="text-xs bg-base-200 px-1.5 py-0.5 rounded">{{ mustache(v.token) }}</code>
-                      <span v-if="v.only" class="badge badge-ghost badge-xs">{{ v.only }} only</span>
+                      <span v-if="v.only" class="badge-soft badge-soft-neutral">{{ v.only }} only</span>
                     </div>
                     <span class="text-xs text-base-content/60">{{ v.desc }}</span>
                   </li>

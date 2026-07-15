@@ -290,7 +290,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <div class="border-t border-base-300 pt-3 space-y-2">
             <div class="flex items-center justify-between">
               <h3 class="font-semibold text-sm">Time on this visit</h3>
-              <span class="badge badge-ghost badge-sm">{{ fmtMinutes(totalMinutes) }}</span>
+              <span class="badge-soft badge-soft-neutral">{{ fmtMinutes(totalMinutes) }}</span>
             </div>
             <ul class="space-y-1">
               <li v-for="e in entries" :key="e.id" class="flex items-center justify-between text-sm gap-2">

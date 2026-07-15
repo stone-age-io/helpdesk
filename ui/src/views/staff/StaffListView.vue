@@ -151,14 +151,14 @@ onMounted(load)
         <div class="flex items-center gap-2">
           <Avatar :record="item" :name="item.name || item.email" size="xs" />
           <span class="font-medium text-sm">{{ item.name }}</span>
-          <span v-if="isSelf(item)" class="badge badge-ghost badge-xs">you</span>
+          <span v-if="isSelf(item)" class="badge-soft badge-soft-neutral">you</span>
         </div>
       </template>
       <template #card-name="{ item }">
         <div class="flex items-center gap-2 min-w-0">
           <Avatar :record="item" :name="item.name || item.email" size="xs" />
           <div class="text-sm font-bold truncate">
-            {{ item.name }}<span v-if="isSelf(item)" class="badge badge-ghost badge-xs ml-2">you</span>
+            {{ item.name }}<span v-if="isSelf(item)" class="badge-soft badge-soft-neutral ml-2">you</span>
           </div>
         </div>
       </template>
@@ -173,7 +173,7 @@ onMounted(load)
           <option value="agent">agent</option>
           <option value="admin">admin</option>
         </select>
-        <span v-else class="badge badge-sm">{{ item.role }}</span>
+        <span v-else class="badge-soft badge-soft-neutral">{{ item.role }}</span>
       </template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
       <template #actions="{ item }">
