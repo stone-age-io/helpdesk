@@ -25,6 +25,9 @@ const customers = ref<Customer[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+// View/edit toggle: opens locked; admins unlock with Edit (non-admins never see
+// the button, so their view stays read-only).
+const editing = ref(false)
 
 const form = ref({ name: '', email: '', phone: '', customer: '', active: true })
 // One-time credential banner after a password reset — never persisted.
@@ -38,18 +41,32 @@ function generatePassword(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 16)
 }
 
+function applyRecord(r: Requester) {
+  form.value = {
+    name: r.name || '',
+    email: r.email,
+    phone: r.phone || '',
+    customer: r.customer,
+    active: r.active,
+  }
+}
+
+function startEdit() {
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (requester.value) applyRecord(requester.value)
+  editing.value = false
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     requester.value = await pb.collection('users').getOne<Requester>(id, { expand: 'customer' })
-    form.value = {
-      name: requester.value.name || '',
-      email: requester.value.email,
-      phone: requester.value.phone || '',
-      customer: requester.value.customer,
-      active: requester.value.active,
-    }
+    applyRecord(requester.value)
+    editing.value = false
     tickets.value = (
       await pb.collection('tickets').getList<Ticket>(1, 10, {
         filter: `requester = '${id}'`,
@@ -75,6 +92,7 @@ async function save() {
       customer: form.value.customer,
       active: form.value.active,
     }, { expand: 'customer' })
+    editing.value = false
   } catch (err: any) {
     error.value = err?.data?.message || err?.message || 'Failed to save'
   } finally {
@@ -108,9 +126,21 @@ onMounted(load)
         <li>{{ requester.email }}</li>
       </ul>
     </div>
-    <div class="flex items-center gap-3">
-      <Avatar :record="requester" :name="requester.name || requester.email" size="md" />
-      <h1 class="text-2xl font-bold">{{ requester.name || requester.email }}</h1>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-3 min-w-0">
+        <Avatar :record="requester" :name="requester.name || requester.email" size="md" />
+        <h1 class="text-2xl font-bold truncate">{{ requester.name || requester.email }}</h1>
+      </div>
+      <div v-if="canEdit" class="flex gap-2">
+        <template v-if="editing">
+          <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
+            <span v-if="saving" class="loading loading-spinner loading-xs"></span>
+            Save
+          </button>
+        </template>
+        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
@@ -129,32 +159,28 @@ onMounted(load)
           <h2 class="card-title text-base">Details</h2>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Name</span></label>
-            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="!canEdit || saving" />
+            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Email</span></label>
-            <input v-model="form.email" type="email" class="input input-bordered input-sm" :disabled="!canEdit || saving" />
+            <input v-model="form.email" type="email" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Phone</span></label>
-            <input v-model="form.phone" type="tel" class="input input-bordered input-sm" placeholder="+1 555-555-0100" :disabled="!canEdit || saving" />
+            <input v-model="form.phone" type="tel" class="input input-bordered input-sm" placeholder="+1 555-555-0100" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Customer</span></label>
-            <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="!canEdit || saving" />
+            <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
-              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!canEdit || saving" />
+              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!editing || saving" />
               <span class="label-text">Active</span>
             </label>
           </div>
-          <div v-if="canEdit" class="flex justify-between items-center pt-1">
+          <div v-if="canEdit && editing" class="pt-1">
             <button class="btn btn-ghost btn-sm" @click="resetPassword">Reset password</button>
-            <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
-              <span v-if="saving" class="loading loading-spinner loading-xs"></span>
-              Save
-            </button>
           </div>
         </div>
       </div>

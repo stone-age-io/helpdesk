@@ -1,12 +1,16 @@
 <script setup lang="ts">
-// Project detail: the header fields (editable), the linked tickets that make
-// up the work, and the DERIVED rollups — crew (lead ∪ ticket/visit assignees)
-// and total logged time. Nothing here is a second source of truth: crew and
-// time are computed live from the project's tickets, never stored.
-import { computed, onMounted, ref } from 'vue'
+// Project detail / create / edit. Handles both create (/staff/projects/new) and
+// edit (/staff/projects/:id) in one view — consistent with LocationDetailView.
+// The header fields toggle between a locked "view" and an unlocked "edit" mode
+// (any staff may edit); the linked tickets and the DERIVED rollups — crew
+// (lead ∪ ticket/visit assignees) and total logged time — are read-only and
+// only meaningful once the project exists. Nothing here is a second source of
+// truth: crew and time are computed live from the project's tickets, never
+// stored.
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Location, Project, Staff, Ticket, TimeEntry, Visit } from '@/types'
+import type { Customer, Location, Project, Staff, Ticket, TimeEntry, Visit } from '@/types'
 import { PROJECT_STATUSES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import TicketBadges from '@/components/TicketBadges.vue'
@@ -14,20 +18,26 @@ import { format } from 'date-fns'
 
 const route = useRoute()
 const router = useRouter()
-const id = route.params.id as string
+
+const id = computed(() => route.params.id as string | undefined)
+const isCreate = computed(() => !id.value)
 
 const project = ref<Project | null>(null)
 const tickets = ref<Ticket[]>([])
 const visits = ref<Visit[]>([])
 const entries = ref<TimeEntry[]>([])
 const staff = ref<Staff[]>([])
+const customers = ref<Customer[]>([])
 const locations = ref<Location[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
+// View/edit toggle. Create starts unlocked (nothing to view); edit starts locked.
+const editing = ref(false)
 
 // Editable copy of the header fields.
 const form = ref({
+  customer: '',
   title: '',
   status: 'planned',
   description: '',
@@ -37,6 +47,7 @@ const form = ref({
   target_date: '',
 })
 
+const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
@@ -62,8 +73,17 @@ const totalTime = computed(() => {
   return h ? `${h}h${min ? ' ' + min + 'm' : ''}` : `${min}m`
 })
 
-function fmtDate(s?: string): string {
-  return s ? format(new Date(s), 'MMM d, yyyy') : '—'
+function applyRecord(p: Project) {
+  form.value = {
+    customer: p.customer,
+    title: p.title,
+    status: p.status,
+    description: p.description || '',
+    location: p.location || '',
+    lead: p.lead || '',
+    start_date: (p.start_date || '').slice(0, 10),
+    target_date: (p.target_date || '').slice(0, 10),
+  }
 }
 
 async function loadLocations(customerId: string) {
@@ -76,26 +96,23 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    project.value = await pb.collection('projects').getOne<Project>(id, { expand: 'customer,location,lead' })
-    form.value = {
-      title: project.value.title,
-      status: project.value.status,
-      description: project.value.description || '',
-      location: project.value.location || '',
-      lead: project.value.lead || '',
-      start_date: (project.value.start_date || '').slice(0, 10),
-      target_date: (project.value.target_date || '').slice(0, 10),
-    }
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
-    await loadLocations(project.value.customer)
-    tickets.value = await pb.collection('tickets').getFullList<Ticket>({
-      filter: `project = '${id}'`,
-      sort: '-created',
-      expand: 'assignee',
-    })
-    // Relation-hop filters: visits/time whose ticket belongs to this project.
-    visits.value = await pb.collection('visits').getFullList<Visit>({ filter: `ticket.project = '${id}'` })
-    entries.value = await pb.collection('time_entries').getFullList<TimeEntry>({ filter: `ticket.project = '${id}'` })
+    if (isCreate.value) {
+      customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name', filter: 'active = true' })
+      editing.value = true
+    } else {
+      project.value = await pb.collection('projects').getOne<Project>(id.value!, { expand: 'customer,location,lead' })
+      applyRecord(project.value)
+      editing.value = false
+      tickets.value = await pb.collection('tickets').getFullList<Ticket>({
+        filter: `project = '${id.value}'`,
+        sort: '-created',
+        expand: 'assignee',
+      })
+      // Relation-hop filters: visits/time whose ticket belongs to this project.
+      visits.value = await pb.collection('visits').getFullList<Visit>({ filter: `ticket.project = '${id.value}'` })
+      entries.value = await pb.collection('time_entries').getFullList<TimeEntry>({ filter: `ticket.project = '${id.value}'` })
+    }
   } catch (err: any) {
     error.value = err?.message || 'Failed to load project'
   } finally {
@@ -104,28 +121,47 @@ async function load() {
 }
 
 async function save() {
-  if (!form.value.title.trim()) return
+  if (!form.value.title.trim() || !form.value.customer) return
   saving.value = true
   error.value = ''
+  const data = {
+    customer: form.value.customer,
+    title: form.value.title.trim(),
+    status: form.value.status,
+    description: form.value.description.trim(),
+    location: form.value.location,
+    lead: form.value.lead,
+    start_date: form.value.start_date || '',
+    target_date: form.value.target_date || '',
+  }
   try {
-    project.value = await pb.collection('projects').update<Project>(
-      id,
-      {
-        title: form.value.title.trim(),
-        status: form.value.status,
-        description: form.value.description.trim(),
-        location: form.value.location,
-        lead: form.value.lead,
-        start_date: form.value.start_date || '',
-        target_date: form.value.target_date || '',
-      },
-      { expand: 'customer,location,lead' },
-    )
+    if (isCreate.value) {
+      const rec = await pb.collection('projects').create<Project>(data)
+      router.replace(`/staff/projects/${rec.id}`)
+      return
+    }
+    project.value = await pb
+      .collection('projects')
+      .update<Project>(id.value!, data, { expand: 'customer,location,lead' })
+    editing.value = false
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
   } finally {
     saving.value = false
   }
+}
+
+function startEdit() {
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (isCreate.value) {
+    router.push('/staff/projects')
+    return
+  }
+  if (project.value) applyRecord(project.value)
+  editing.value = false
 }
 
 const statusClass: Record<string, string> = {
@@ -136,27 +172,46 @@ const statusClass: Record<string, string> = {
 }
 
 onMounted(load)
+// Create flow router.replace()s from /new to /:id, reusing this instance
+// (onMounted won't refire) — reload so the freshly created record's expands,
+// tickets and rollups populate and the view locks.
+watch(() => route.params.id, load)
+// Location options follow the selected customer (create mode) or the loaded
+// record (edit mode).
+watch(() => form.value.customer, (c) => loadLocations(c))
 </script>
 
 <template>
   <div class="max-w-6xl mx-auto space-y-4">
-    <div class="breadcrumbs text-sm">
-      <ul>
-        <li><a @click="router.push('/staff/projects')">Projects</a></li>
-        <li>{{ project ? `#${project.number}` : '…' }}</li>
-      </ul>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="breadcrumbs text-sm">
+        <ul>
+          <li><a @click="router.push('/staff/projects')">Projects</a></li>
+          <li>{{ isCreate ? 'New project' : project ? `#${project.number}` : '…' }}</li>
+        </ul>
+      </div>
+      <div v-if="!loading" class="flex gap-2">
+        <template v-if="editing">
+          <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="saving || !form.title.trim() || !form.customer" @click="save">
+            <span v-if="saving" class="loading loading-spinner loading-xs"></span>
+            {{ isCreate ? 'Create' : 'Save' }}
+          </button>
+        </template>
+        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <template v-else-if="project">
+    <template v-else>
       <div class="flex flex-col xl:flex-row gap-4 items-start">
         <!-- Main: editable header + linked tickets -->
         <div class="flex-1 w-full min-w-0 space-y-4">
           <div class="card bg-base-100 shadow-sm">
             <div class="card-body space-y-3">
-              <div class="flex items-center gap-2 flex-wrap">
+              <div v-if="!isCreate && project" class="flex items-center gap-2 flex-wrap">
                 <span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span>
                 <span class="text-base-content/60 text-sm">
                   {{ project.expand?.customer?.name }}
@@ -164,25 +219,23 @@ onMounted(load)
                 </span>
               </div>
 
+              <div v-if="isCreate" class="form-control">
+                <label class="label py-1"><span class="label-text text-xs">Customer *</span></label>
+                <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
+              </div>
               <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs">Title</span></label>
-                <input v-model="form.title" type="text" maxlength="300" class="input input-bordered" :disabled="saving" />
+                <input v-model="form.title" type="text" maxlength="300" placeholder="e.g. HQ Security Rollout" class="input input-bordered" :disabled="!editing || saving" />
               </div>
               <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs">Description / scope</span></label>
-                <textarea v-model="form.description" rows="4" class="textarea textarea-bordered" :disabled="saving"></textarea>
-              </div>
-              <div class="flex justify-end">
-                <button class="btn btn-primary btn-sm" :disabled="saving || !form.title.trim()" @click="save">
-                  <span v-if="saving" class="loading loading-spinner loading-xs"></span>
-                  Save
-                </button>
+                <textarea v-model="form.description" rows="4" class="textarea textarea-bordered" :disabled="!editing || saving"></textarea>
               </div>
             </div>
           </div>
 
-          <!-- Linked tickets -->
-          <div class="card bg-base-100 shadow-sm">
+          <!-- Linked tickets (edit mode only — needs a persisted project) -->
+          <div v-if="!isCreate" class="card bg-base-100 shadow-sm">
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <h2 class="font-semibold">Tickets <span class="text-base-content/50 font-normal">({{ tickets.length }})</span></h2>
@@ -215,33 +268,33 @@ onMounted(load)
             <div class="card-body py-4 px-4 space-y-3">
               <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs">Status</span></label>
-                <select v-model="form.status" class="select select-bordered select-sm" :disabled="saving">
+                <select v-model="form.status" class="select select-bordered select-sm" :disabled="!editing || saving">
                   <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }}</option>
                 </select>
               </div>
               <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs">Lead</span></label>
-                <SearchSelect v-model="form.lead" :options="staffOptions" size="sm" empty-label="None" placeholder="Project lead…" :disabled="saving" />
+                <SearchSelect v-model="form.lead" :options="staffOptions" size="sm" empty-label="None" placeholder="Project lead…" :disabled="!editing || saving" />
               </div>
               <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-                <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Site…" :disabled="saving" />
+                <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Site…" :disabled="!editing || saving" />
               </div>
               <div class="flex gap-2">
                 <div class="form-control flex-1">
                   <label class="label py-1"><span class="label-text text-xs">Start</span></label>
-                  <input v-model="form.start_date" type="date" class="input input-bordered input-sm" :disabled="saving" />
+                  <input v-model="form.start_date" type="date" class="input input-bordered input-sm" :disabled="!editing || saving" />
                 </div>
                 <div class="form-control flex-1">
                   <label class="label py-1"><span class="label-text text-xs">Target</span></label>
-                  <input v-model="form.target_date" type="date" class="input input-bordered input-sm" :disabled="saving" />
+                  <input v-model="form.target_date" type="date" class="input input-bordered input-sm" :disabled="!editing || saving" />
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Derived rollups -->
-          <div class="card bg-base-100 shadow-sm">
+          <!-- Derived rollups (edit mode only) -->
+          <div v-if="!isCreate" class="card bg-base-100 shadow-sm">
             <div class="card-body py-4 px-4 space-y-3">
               <div>
                 <div class="text-xs text-base-content/60 mb-1">Crew ({{ crew.length }})</div>

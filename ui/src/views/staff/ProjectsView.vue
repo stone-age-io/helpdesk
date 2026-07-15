@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Projects: the durable container grouping 1..N tickets (installs + reactive
-// work) at a customer location over a target window. This is the list +
-// quick-create; the detail view owns the rest (linked tickets, derived crew
-// and time). A project is created minimally here, then enriched on its page.
+// work) at a customer location over a target window. This is the list; creation
+// and everything else (linked tickets, derived crew and time) lives on the
+// detail/form view, reached via "New Project" — consistent with the other
+// objects (customers, locations).
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
@@ -31,20 +32,23 @@ const error = ref('')
 // Filters.
 const statusFilter = ref<'' | ProjectStatus>('')
 const customerFilter = ref('')
-
-// New-project form.
-const nu = ref({ customer: '', title: '', target_date: '' })
-const creating = ref(false)
+const search = ref('')
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 
-const filtered = computed(() =>
-  projects.value.filter(
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return projects.value.filter(
     (p) =>
       (!statusFilter.value || p.status === statusFilter.value) &&
-      (!customerFilter.value || p.customer === customerFilter.value),
-  ),
-)
+      (!customerFilter.value || p.customer === customerFilter.value) &&
+      (!q ||
+        p.title.toLowerCase().includes(q) ||
+        String(p.number).includes(q) ||
+        (p.expand?.customer?.name || '').toLowerCase().includes(q) ||
+        (p.expand?.location?.name || '').toLowerCase().includes(q)),
+  )
+})
 
 function fmtDate(s?: string): string {
   return s ? format(new Date(s), 'MMM d, yyyy') : '—'
@@ -72,31 +76,15 @@ async function load() {
   }
 }
 
-async function create() {
-  const title = nu.value.title.trim()
-  if (!nu.value.customer || !title) return
-  creating.value = true
-  error.value = ''
-  try {
-    const rec = await pb.collection('projects').create({
-      customer: nu.value.customer,
-      title,
-      target_date: nu.value.target_date || '',
-      status: 'planned',
-    })
-    router.push(`/staff/projects/${rec.id}`)
-  } catch (err: any) {
-    error.value = err?.message || 'Failed to create project'
-    creating.value = false
-  }
-}
-
 onMounted(load)
 </script>
 
 <template>
   <div class="space-y-4">
-    <h1 class="text-2xl font-bold">Projects</h1>
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+      <h1 class="text-2xl font-bold">Projects</h1>
+      <router-link to="/staff/projects/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Project</router-link>
+    </div>
     <p class="text-sm text-base-content/60">
       Installations and multi-visit field work. A project groups its tickets at a
       customer location over a target window.
@@ -104,41 +92,14 @@ onMounted(load)
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-    <!-- New project -->
-    <form class="flex flex-col sm:flex-row flex-wrap gap-2 sm:items-end" @submit.prevent="create">
-      <div class="form-control">
-        <label class="label py-1"><span class="label-text text-xs">Customer *</span></label>
-        <div class="w-full sm:w-56">
-          <SearchSelect v-model="nu.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="creating" />
-        </div>
-      </div>
-      <div class="form-control">
-        <label class="label py-1"><span class="label-text text-xs">Title *</span></label>
-        <input v-model="nu.title" type="text" placeholder="e.g. HQ Security Rollout" class="input input-bordered input-sm w-full sm:w-64" :disabled="creating" />
-      </div>
-      <div class="form-control">
-        <label class="label py-1"><span class="label-text text-xs">Target date</span></label>
-        <input v-model="nu.target_date" type="date" class="input input-bordered input-sm" :disabled="creating" />
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm" :disabled="creating || !nu.customer || !nu.title.trim()">
-        <span v-if="creating" class="loading loading-spinner loading-xs"></span>
-        Create
-      </button>
-    </form>
-
     <!-- Filters -->
-    <div class="flex flex-wrap gap-2 items-end">
-      <div class="form-control">
-        <label class="label py-1"><span class="label-text text-xs">Status</span></label>
-        <select v-model="statusFilter" class="select select-bordered select-sm">
-          <option value="">All statuses</option>
-          <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }}</option>
-        </select>
-      </div>
-      <div class="form-control">
-        <label class="label py-1"><span class="label-text text-xs">Customer</span></label>
-        <div class="w-56"><SearchSelect v-model="customerFilter" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Any customer…" /></div>
-      </div>
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
+      <input v-model="search" type="search" placeholder="Search #, title, customer, location…" class="input input-bordered input-sm w-full sm:w-64" />
+      <select v-model="statusFilter" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">All statuses</option>
+        <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }}</option>
+      </select>
+      <div class="w-full sm:w-56"><SearchSelect v-model="customerFilter" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Any customer…" /></div>
     </div>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
@@ -162,7 +123,7 @@ onMounted(load)
         <span class="badge-soft" :class="statusClass[item.status]">{{ item.status }}</span>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No projects{{ statusFilter || customerFilter ? ' match the filters' : ' yet' }}.</span>
+        <span class="text-base-content/60">No projects{{ statusFilter || customerFilter || search ? ' match the filters' : ' yet' }}.</span>
       </template>
     </ResponsiveList>
   </div>

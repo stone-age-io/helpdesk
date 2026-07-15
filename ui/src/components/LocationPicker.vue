@@ -18,6 +18,10 @@ import { theme } from '@/theme'
 const lat = defineModel<number>('lat', { required: true })
 const lng = defineModel<number>('lng', { required: true })
 
+// Read-only mode (parent's view/edit toggle): the map still pans/zooms so it
+// works as a location display, but the pin can't be moved and search is off.
+const props = defineProps<{ disabled?: boolean }>()
+
 const TILE_LIGHT = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
 const TILE_ATTRIBUTION =
@@ -72,7 +76,7 @@ function applyTiles() {
 function placeMarker(la: number, ln: number) {
   if (!map) return
   if (!marker) {
-    marker = L.marker([la, ln], { draggable: true })
+    marker = L.marker([la, ln], { draggable: !props.disabled })
     marker.on('dragend', () => {
       const ll = marker!.getLatLng()
       setCoords(ll.lat, ll.lng)
@@ -110,7 +114,7 @@ function syncMarkerFromModel() {
 
 async function search() {
   const q = searchQuery.value.trim()
-  if (!q || searching.value) return
+  if (!q || searching.value || props.disabled) return
   searching.value = true
   searchError.value = ''
   results.value = []
@@ -156,7 +160,10 @@ onMounted(() => {
   applyTiles()
   centered = hasCoords.value
   if (hasCoords.value) placeMarker(lat.value, lng.value)
-  map.on('click', (e: L.LeafletMouseEvent) => setCoords(e.latlng.lat, e.latlng.lng))
+  map.on('click', (e: L.LeafletMouseEvent) => {
+    if (props.disabled) return
+    setCoords(e.latlng.lat, e.latlng.lng)
+  })
   nextTick(() => map?.invalidateSize())
 })
 
@@ -167,6 +174,12 @@ onUnmounted(() => {
 
 watch([lat, lng], syncMarkerFromModel)
 watch(theme, applyTiles)
+// Toggling edit mode flips whether the pin can be dragged.
+watch(() => props.disabled, (d) => {
+  if (!marker) return
+  if (d) marker.dragging?.disable()
+  else marker.dragging?.enable()
+})
 </script>
 
 <template>
@@ -179,9 +192,10 @@ watch(theme, applyTiles)
           type="text"
           placeholder="Search an address or place…"
           class="input input-bordered input-sm flex-1"
+          :disabled="disabled"
           @keydown.enter.prevent="search"
         />
-        <button type="button" class="btn btn-primary btn-sm" :disabled="searching" @click="search">
+        <button type="button" class="btn btn-primary btn-sm" :disabled="searching || disabled" @click="search">
           <span v-if="searching" class="loading loading-spinner loading-xs"></span>
           <span v-else>Search</span>
         </button>
@@ -207,7 +221,7 @@ watch(theme, applyTiles)
     <div class="relative h-72 rounded-lg overflow-hidden border border-base-300">
       <div ref="mapEl" class="absolute inset-0 z-0"></div>
       <button
-        v-if="hasCoords"
+        v-if="hasCoords && !disabled"
         type="button"
         class="btn btn-xs absolute top-2 left-2 z-[400] bg-base-100/90 backdrop-blur border-base-300 shadow-sm hover:bg-base-200"
         @click="clearPin"
@@ -217,7 +231,8 @@ watch(theme, applyTiles)
     </div>
 
     <p class="text-xs leading-relaxed text-base-content/60">
-      Search for a place, click the map, or drag the pin to set coordinates. Map &amp; geocoding by
+      <template v-if="!disabled">Search for a place, click the map, or drag the pin to set coordinates. </template>
+      Map &amp; geocoding by
       <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" class="link">OpenStreetMap</a>
       (needs internet).
     </p>

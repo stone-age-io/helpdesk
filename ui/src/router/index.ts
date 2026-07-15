@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'tickets/:id', name: 'ticket-detail', component: () => import('@/views/staff/TicketDetailView.vue') },
         { path: 'dispatch', name: 'dispatch', component: () => import('@/views/staff/DispatchView.vue') },
         { path: 'projects', name: 'projects', component: () => import('@/views/staff/ProjectsView.vue') },
+        { path: 'projects/new', name: 'project-new', component: () => import('@/views/staff/ProjectDetailView.vue') },
         { path: 'projects/:id', name: 'project-detail', component: () => import('@/views/staff/ProjectDetailView.vue') },
         { path: 'visits/:id/work', name: 'visit-work', component: () => import('@/views/staff/VisitWorkView.vue') },
         { path: 'reports', name: 'reports', component: () => import('@/views/staff/ReportsView.vue') },

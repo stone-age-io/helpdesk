@@ -19,10 +19,13 @@ const auth = useAuthStore()
 
 const id = computed(() => route.params.id as string | undefined)
 const isEdit = computed(() => !!id.value)
+// View/edit toggle: create opens unlocked, an existing record opens locked.
+const editing = ref(false)
 
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
+const record = ref<Location | null>(null)
 const customer = ref<Customer | null>(null)
 const customers = ref<Customer[]>([])
 const tickets = ref<Ticket[]>([])
@@ -53,6 +56,33 @@ const navigateUrl = computed(() => {
   return ''
 })
 
+function applyRecord(loc: Location) {
+  form.value = {
+    customer: loc.customer,
+    code: loc.code || '',
+    name: loc.name || '',
+    address: loc.address || '',
+    contact: loc.contact || '',
+    contact_phone: loc.contact_phone || '',
+    notes: loc.notes || '',
+    lat: loc.lat || 0,
+    lng: loc.lng || 0,
+  }
+}
+
+function startEdit() {
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (!isEdit.value) {
+    router.push('/staff/locations')
+    return
+  }
+  if (record.value) applyRecord(record.value)
+  editing.value = false
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -60,17 +90,9 @@ async function load() {
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     if (isEdit.value) {
       const loc = await pb.collection('locations').getOne<Location>(id.value!, { expand: 'customer' })
-      form.value = {
-        customer: loc.customer,
-        code: loc.code || '',
-        name: loc.name || '',
-        address: loc.address || '',
-        contact: loc.contact || '',
-        contact_phone: loc.contact_phone || '',
-        notes: loc.notes || '',
-        lat: loc.lat || 0,
-        lng: loc.lng || 0,
-      }
+      record.value = loc
+      applyRecord(loc)
+      editing.value = false
       customer.value = (loc.expand?.customer as Customer) || null
       tickets.value = (
         await pb.collection('tickets').getList<Ticket>(1, 10, {
@@ -78,6 +100,8 @@ async function load() {
           sort: '-created',
         })
       ).items
+    } else {
+      editing.value = true
     }
   } catch (err: any) {
     error.value = err?.message || 'Failed to load location'
@@ -103,7 +127,9 @@ async function save() {
   }
   try {
     if (isEdit.value) {
-      await pb.collection('locations').update(id.value!, data)
+      record.value = await pb.collection('locations').update<Location>(id.value!, data, { expand: 'customer' })
+      customer.value = (record.value.expand?.customer as Customer) || customer.value
+      editing.value = false
     } else {
       const created = await pb.collection('locations').create<Location>(data)
       router.replace(`/staff/locations/${created.id}`)
@@ -148,13 +174,23 @@ watch(() => route.params.id, load)
 
     <div class="flex items-center justify-between gap-2 flex-wrap">
       <h1 class="text-2xl font-bold">{{ isEdit ? form.name || 'Location' : 'New location' }}</h1>
-      <a
-        v-if="navigateUrl"
-        :href="navigateUrl"
-        target="_blank"
-        rel="noopener"
-        class="btn btn-ghost btn-sm gap-1"
-      >📍 Navigate</a>
+      <div class="flex gap-2 items-center">
+        <a
+          v-if="navigateUrl"
+          :href="navigateUrl"
+          target="_blank"
+          rel="noopener"
+          class="btn btn-ghost btn-sm gap-1"
+        >📍 Navigate</a>
+        <template v-if="editing">
+          <button class="btn btn-ghost btn-sm" :disabled="!editing || saving" @click="cancelEdit">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="saving || !form.customer || !form.name.trim()" @click="save">
+            <span v-if="saving" class="loading loading-spinner loading-xs"></span>
+            {{ isEdit ? 'Save' : 'Create' }}
+          </button>
+        </template>
+        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
@@ -172,45 +208,40 @@ watch(() => route.params.id, load)
               :options="customerOptions"
               size="sm"
               placeholder="Customer…"
-              :disabled="saving"
+              :disabled="!editing || saving"
             />
             <input v-else type="text" class="input input-bordered input-sm" :value="customer?.name || '—'" disabled />
           </div>
           <div class="flex gap-2">
             <div class="form-control flex-1">
               <label class="label py-1"><span class="label-text">Name *</span></label>
-              <input v-model="form.name" type="text" placeholder="HQ – Bldg C" class="input input-bordered input-sm" :disabled="saving" />
+              <input v-model="form.name" type="text" placeholder="HQ – Bldg C" class="input input-bordered input-sm" :disabled="!editing || saving" />
             </div>
             <div class="form-control w-32">
               <label class="label py-1"><span class="label-text">Code</span></label>
-              <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="saving" />
+              <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="!editing || saving" />
             </div>
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Address</span></label>
-            <input v-model="form.address" type="text" placeholder="123 Main St, City" class="input input-bordered input-sm" :disabled="saving" />
+            <input v-model="form.address" type="text" placeholder="123 Main St, City" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="flex gap-2">
             <div class="form-control flex-1">
               <label class="label py-1"><span class="label-text">Contact</span></label>
-              <input v-model="form.contact" type="text" class="input input-bordered input-sm" :disabled="saving" />
+              <input v-model="form.contact" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
             </div>
             <div class="form-control flex-1">
               <label class="label py-1"><span class="label-text">Phone</span></label>
-              <input v-model="form.contact_phone" type="tel" class="input input-bordered input-sm" :disabled="saving" />
+              <input v-model="form.contact_phone" type="tel" class="input input-bordered input-sm" :disabled="!editing || saving" />
             </div>
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Access notes</span></label>
-            <textarea v-model="form.notes" rows="2" placeholder="Gate code, parking, dock hours…" class="textarea textarea-bordered textarea-sm" :disabled="saving"></textarea>
+            <textarea v-model="form.notes" rows="2" placeholder="Gate code, parking, dock hours…" class="textarea textarea-bordered textarea-sm" :disabled="!editing || saving"></textarea>
           </div>
-          <div class="flex justify-between items-center pt-1">
-            <button v-if="isEdit && auth.isAdmin" class="btn btn-ghost btn-sm text-error" @click="remove">Delete</button>
-            <span v-else></span>
-            <button class="btn btn-primary btn-sm" :disabled="saving || !form.customer || !form.name.trim()" @click="save">
-              <span v-if="saving" class="loading loading-spinner loading-xs"></span>
-              {{ isEdit ? 'Save' : 'Create' }}
-            </button>
+          <div v-if="isEdit && auth.isAdmin && editing" class="pt-1">
+            <button class="btn btn-ghost btn-sm text-error" @click="remove">Delete</button>
           </div>
         </div>
       </div>
@@ -220,10 +251,10 @@ watch(() => route.params.id, load)
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body space-y-2">
             <h2 class="card-title text-base">Location on map</h2>
-            <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" />
+            <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" :disabled="!editing || saving" />
             <div class="flex gap-2">
-              <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="saving" />
-              <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="saving" />
+              <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
+              <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
             </div>
           </div>
         </div>

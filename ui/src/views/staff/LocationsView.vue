@@ -5,7 +5,7 @@
 // staff can create/edit via the detail view (migration 1813000000); only delete
 // stays admin-only. Rows click through to the detail/edit view; the shared
 // ResponsiveList gives the dense desktop table + stacked mobile cards.
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Location } from '@/types'
@@ -25,6 +25,18 @@ const columns: Column<Location>[] = [
 const locations = ref<Location[]>([])
 const loading = ref(true)
 const error = ref('')
+const search = ref('')
+
+// Client-side filter — the roster is loaded whole (getFullList, no pager), so a
+// browser-side match over the visible fields is simplest and instant.
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return locations.value
+  return locations.value.filter((l) =>
+    [l.name, l.code, l.address, l.contact, l.expand?.customer?.name]
+      .some((v) => (v || '').toLowerCase().includes(q)),
+  )
+})
 
 async function load() {
   loading.value = true
@@ -61,9 +73,11 @@ onMounted(load)
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
+    <input v-model="search" type="search" placeholder="Filter by name, customer, code, address…" class="input input-bordered input-sm w-full sm:w-72" />
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <ResponsiveList v-else :items="locations" :columns="columns" clickable @row-click="openDetail">
+    <ResponsiveList v-else :items="filtered" :columns="columns" clickable @row-click="openDetail">
       <template #cell-name="{ value }"><span class="font-medium text-sm">{{ value }}</span></template>
       <template #cell-code="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
       <template #cell-contact="{ item }">
@@ -72,7 +86,7 @@ onMounted(load)
         </span>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No locations yet.</span>
+        <span class="text-base-content/60">No locations{{ search ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

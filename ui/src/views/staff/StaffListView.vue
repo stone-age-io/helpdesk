@@ -22,6 +22,7 @@ const columns: Column<Staff>[] = [
 const staff = ref<Staff[]>([])
 const loading = ref(true)
 const error = ref('')
+const search = ref('')
 
 const page = ref(1)
 const totalPages = ref(1)
@@ -39,11 +40,18 @@ function generatePassword(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 16)
 }
 
+function buildFilter(): string {
+  const raw = search.value.trim()
+  if (!raw) return ''
+  const q = raw.replace(/'/g, "\\'")
+  return `(name ~ '${q}' || email ~ '${q}')`
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await pb.collection('staff').getList<Staff>(page.value, perPage, { sort: 'name' })
+    const res = await pb.collection('staff').getList<Staff>(page.value, perPage, { sort: 'name', filter: buildFilter() })
     staff.value = res.items
     totalPages.value = res.totalPages
   } catch (err: any) {
@@ -54,6 +62,15 @@ async function load() {
 }
 
 watch(page, () => load())
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    load()
+  }, 300)
+})
 
 async function create() {
   saving.value = true
@@ -117,6 +134,8 @@ onMounted(load)
       <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !form.email || !form.name">Create</button>
     </form>
 
+    <input v-model="search" type="search" placeholder="Filter by name or email…" class="input input-bordered input-sm w-full sm:w-72" />
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
     <ResponsiveList v-else :items="staff" :columns="columns" clickable @row-click="openDetail">
@@ -138,7 +157,7 @@ onMounted(load)
       <template #cell-role="{ value }"><span class="badge-soft badge-soft-neutral">{{ value }}</span></template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
       <template #empty>
-        <span class="text-base-content/60">No staff accounts.</span>
+        <span class="text-base-content/60">No staff accounts{{ search ? ' match.' : '.' }}</span>
       </template>
     </ResponsiveList>
 

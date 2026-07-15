@@ -21,6 +21,9 @@ const tickets = ref<Ticket[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+// View/edit toggle — opens locked, unlock with Edit. (All who reach this
+// admin-only route may edit; the self-guards below still apply within edit.)
+const editing = ref(false)
 
 const isSelf = computed(() => id === auth.record?.id)
 const form = ref({ name: '', email: '', role: 'agent' as 'agent' | 'admin', active: true })
@@ -32,17 +35,31 @@ function generatePassword(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '').slice(0, 16)
 }
 
+function applyRecord(m: Staff) {
+  form.value = {
+    name: m.name || '',
+    email: m.email,
+    role: m.role,
+    active: m.active,
+  }
+}
+
+function startEdit() {
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (member.value) applyRecord(member.value)
+  editing.value = false
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     member.value = await pb.collection('staff').getOne<Staff>(id)
-    form.value = {
-      name: member.value.name || '',
-      email: member.value.email,
-      role: member.value.role,
-      active: member.value.active,
-    }
+    applyRecord(member.value)
+    editing.value = false
     tickets.value = (
       await pb.collection('tickets').getList<Ticket>(1, 10, {
         filter: `assignee = '${id}' && status != 'resolved' && status != 'closed'`,
@@ -67,6 +84,7 @@ async function save() {
   }
   try {
     member.value = await pb.collection('staff').update<Staff>(id, data)
+    editing.value = false
   } catch (err: any) {
     error.value = err?.data?.message || err?.message || 'Failed to save'
   } finally {
@@ -100,10 +118,22 @@ onMounted(load)
         <li>{{ member.name || member.email }}</li>
       </ul>
     </div>
-    <div class="flex items-center gap-3">
-      <Avatar :record="member" :name="member.name || member.email" size="md" />
-      <h1 class="text-2xl font-bold">{{ member.name || member.email }}</h1>
-      <span v-if="isSelf" class="badge-soft badge-soft-neutral">you</span>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="flex items-center gap-3 min-w-0">
+        <Avatar :record="member" :name="member.name || member.email" size="md" />
+        <h1 class="text-2xl font-bold truncate">{{ member.name || member.email }}</h1>
+        <span v-if="isSelf" class="badge-soft badge-soft-neutral">you</span>
+      </div>
+      <div class="flex gap-2">
+        <template v-if="editing">
+          <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
+            <span v-if="saving" class="loading loading-spinner loading-xs"></span>
+            Save
+          </button>
+        </template>
+        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
@@ -122,15 +152,15 @@ onMounted(load)
           <h2 class="card-title text-base">Details</h2>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Name</span></label>
-            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="saving" />
+            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Email</span></label>
-            <input v-model="form.email" type="email" class="input input-bordered input-sm" :disabled="saving" />
+            <input v-model="form.email" type="email" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Role</span></label>
-            <select v-model="form.role" class="select select-bordered select-sm" :disabled="saving || isSelf">
+            <select v-model="form.role" class="select select-bordered select-sm" :disabled="!editing || saving || isSelf">
               <option value="agent">agent</option>
               <option value="admin">admin</option>
             </select>
@@ -138,16 +168,12 @@ onMounted(load)
           </div>
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
-              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="saving || isSelf" />
+              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!editing || saving || isSelf" />
               <span class="label-text">Active</span>
             </label>
           </div>
-          <div class="flex justify-between items-center pt-1">
+          <div v-if="editing" class="pt-1">
             <button class="btn btn-ghost btn-sm" @click="resetPassword">Reset password</button>
-            <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
-              <span v-if="saving" class="loading loading-spinner loading-xs"></span>
-              Save
-            </button>
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ const columns: Column<Customer>[] = [
 const customers = ref<Customer[]>([])
 const loading = ref(true)
 const error = ref('')
+const search = ref('')
 
 const showForm = ref(false)
 const newName = ref('')
@@ -29,11 +30,20 @@ const page = ref(1)
 const totalPages = ref(1)
 const perPage = 30
 
+// Search runs server-side (name / platform org id) so paging stays correct on a
+// large roster — same shape as the requester and ticket lists.
+function buildFilter(): string {
+  const raw = search.value.trim()
+  if (!raw) return ''
+  const q = raw.replace(/'/g, "\\'")
+  return `(name ~ '${q}' || platform_org_id ~ '${q}')`
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await pb.collection('customers').getList<Customer>(page.value, perPage, { sort: 'name' })
+    const res = await pb.collection('customers').getList<Customer>(page.value, perPage, { sort: 'name', filter: buildFilter() })
     customers.value = res.items
     totalPages.value = res.totalPages
   } catch (err: any) {
@@ -44,6 +54,15 @@ async function load() {
 }
 
 watch(page, () => load())
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    load()
+  }, 300)
+})
 
 async function create() {
   if (!newName.value.trim()) return
@@ -77,6 +96,8 @@ onMounted(load)
       <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !newName.trim()">Create</button>
     </form>
 
+    <input v-model="search" type="search" placeholder="Filter by name or platform org…" class="input input-bordered input-sm w-full sm:w-72" />
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
     <div v-else-if="error" class="alert alert-error">{{ error }}</div>
 
@@ -90,7 +111,7 @@ onMounted(load)
       <template #cell-platform_org_id="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
       <template #empty>
-        <span class="text-base-content/60">No customers yet.</span>
+        <span class="text-base-content/60">No customers{{ search ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
 

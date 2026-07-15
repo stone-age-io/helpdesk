@@ -7,7 +7,7 @@
 //
 // Reads as a roster (read-only rows, edit via a panel above the list) to match
 // the other staff list views via the shared ResponsiveList.
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import type { TicketCategory } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
@@ -28,6 +28,16 @@ const categories = ref<TicketCategory[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+const search = ref('')
+
+// Client-side filter — the list is loaded whole (getFullList, no pager).
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return categories.value
+  return categories.value.filter((c) =>
+    (c.name || '').toLowerCase().includes(q) || (c.key || '').toLowerCase().includes(q),
+  )
+})
 
 // New-category form.
 const newName = ref('')
@@ -198,9 +208,11 @@ onMounted(load)
       </div>
     </div>
 
+    <input v-model="search" type="search" placeholder="Filter by name or key…" class="input input-bordered input-sm w-full sm:w-72" />
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
-    <ResponsiveList v-else :items="categories" :columns="columns" :clickable="false">
+    <ResponsiveList v-else :items="filtered" :columns="columns" :clickable="false">
       <template #cell-name="{ item }"><CategoryBadge :name="item.name" :color="item.color" /></template>
       <template #card-name="{ item }"><CategoryBadge :name="item.name" :color="item.color" /></template>
       <template #cell-key="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
@@ -220,7 +232,7 @@ onMounted(load)
         <button class="btn btn-ghost btn-xs text-error" @click="remove(item)">Delete</button>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No categories yet.</span>
+        <span class="text-base-content/60">No categories{{ search ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

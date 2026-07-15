@@ -17,21 +17,38 @@ const requesters = ref<Requester[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+// View/edit toggle: the record opens locked; admins unlock with Edit. Non-admins
+// never see Edit, so the view stays permanently read-only for them.
+const editing = ref(false)
 
 const form = ref({ name: '', active: true, platform_org_id: '', notes: '', show_time_to_requester: false })
 const webhookToken = ref('')
+
+function applyRecord(c: Customer) {
+  form.value = {
+    name: c.name,
+    active: c.active,
+    platform_org_id: c.platform_org_id || '',
+    notes: c.notes || '',
+    show_time_to_requester: c.show_time_to_requester || false,
+  }
+}
+
+function startEdit() {
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (customer.value) applyRecord(customer.value)
+  editing.value = false
+}
 
 async function load() {
   loading.value = true
   try {
     customer.value = await pb.collection('customers').getOne<Customer>(id)
-    form.value = {
-      name: customer.value.name,
-      active: customer.value.active,
-      platform_org_id: customer.value.platform_org_id || '',
-      notes: customer.value.notes || '',
-      show_time_to_requester: customer.value.show_time_to_requester || false,
-    }
+    applyRecord(customer.value)
+    editing.value = false
     tickets.value = (
       await pb.collection('tickets').getList<Ticket>(1, 10, {
         filter: `customer = '${id}'`,
@@ -54,6 +71,7 @@ async function save() {
   error.value = ''
   try {
     customer.value = await pb.collection('customers').update<Customer>(id, form.value)
+    editing.value = false
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
   } finally {
@@ -97,7 +115,19 @@ onMounted(load)
         <li>{{ customer.name }}</li>
       </ul>
     </div>
-    <h1 class="text-2xl font-bold">{{ customer.name }}</h1>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <h1 class="text-2xl font-bold">{{ customer.name }}</h1>
+      <div v-if="auth.isAdmin" class="flex gap-2">
+        <template v-if="editing">
+          <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">Cancel</button>
+          <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
+            <span v-if="saving" class="loading loading-spinner loading-xs"></span>
+            Save
+          </button>
+        </template>
+        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+      </div>
+    </div>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
@@ -107,42 +137,38 @@ onMounted(load)
           <h2 class="card-title text-base">Details</h2>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Name</span></label>
-            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="!auth.isAdmin || saving" />
+            <input v-model="form.name" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
           </div>
           <div class="form-control">
             <label class="label py-1">
               <span class="label-text">Platform Org ID</span>
             </label>
-            <input v-model="form.platform_org_id" type="text" class="input input-bordered input-sm font-mono" placeholder="15-char platform organization id" :disabled="!auth.isAdmin || saving" />
+            <input v-model="form.platform_org_id" type="text" class="input input-bordered input-sm font-mono" placeholder="15-char platform organization id" :disabled="!editing || saving" />
             <label class="label py-1">
               <span class="label-text-alt text-base-content/60">NATS events on helpdesk.{org}.> create tickets for this customer</span>
             </label>
           </div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text">Notes</span></label>
-            <textarea v-model="form.notes" rows="3" class="textarea textarea-bordered textarea-sm" :disabled="!auth.isAdmin || saving"></textarea>
+            <textarea v-model="form.notes" rows="3" class="textarea textarea-bordered textarea-sm" :disabled="!editing || saving"></textarea>
           </div>
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
-              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!auth.isAdmin || saving" />
+              <input v-model="form.active" type="checkbox" class="toggle toggle-success toggle-sm" :disabled="!editing || saving" />
               <span class="label-text">Active</span>
             </label>
           </div>
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3 py-1">
-              <input v-model="form.show_time_to_requester" type="checkbox" class="toggle toggle-sm" :disabled="!auth.isAdmin || saving" />
+              <input v-model="form.show_time_to_requester" type="checkbox" class="toggle toggle-sm" :disabled="!editing || saving" />
               <span class="label-text">Show logged time to requesters</span>
             </label>
             <label class="label py-0">
               <span class="label-text-alt text-base-content/60">Portal shows the total hours on each ticket — the aggregate only, never entries or names.</span>
             </label>
           </div>
-          <div v-if="auth.isAdmin" class="flex justify-between items-center pt-1">
+          <div v-if="auth.isAdmin && editing" class="pt-1">
             <button class="btn btn-ghost btn-sm" @click="revealToken()">Webhook token</button>
-            <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
-              <span v-if="saving" class="loading loading-spinner loading-xs"></span>
-              Save
-            </button>
           </div>
           <div v-if="webhookToken" class="alert py-2">
             <div class="text-xs w-full">
