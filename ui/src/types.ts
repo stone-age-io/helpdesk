@@ -8,10 +8,14 @@ export interface BaseRecord {
   expand?: Record<string, any>
 }
 
+// `field` is a mobile, on-site variant of `agent` (migration 1816000000) — same
+// staff access, a different SPA shell. `agent`/`admin` keep the desk app.
+export type StaffRole = 'agent' | 'field' | 'admin'
+
 export interface Staff extends BaseRecord {
   email: string
   name: string
-  role: 'agent' | 'admin'
+  role: StaffRole
   active: boolean
   avatar?: string
 }

@@ -15,6 +15,10 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => pb.authStore.isValid && !!record.value)
   const isStaff = computed(() => record.value?.collectionName === 'staff')
   const isAdmin = computed(() => isStaff.value && record.value?.role === 'admin')
+  // Field agents are staff on a mobile, on-site shell (migration 1816000000).
+  // Same access as an agent — this only steers which app shell/route they land
+  // in, so `isStaff` stays true and every staff route/rule still applies.
+  const isField = computed(() => isStaff.value && record.value?.role === 'field')
   const isRequester = computed(() => record.value?.collectionName === 'users')
   // Avatar initial for the shells (sidebar, portal navbar).
   const initial = computed(() =>
@@ -36,5 +40,5 @@ export const useAuthStore = defineStore('auth', () => {
     pb.authStore.clear()
   }
 
-  return { record, isAuthenticated, isStaff, isAdmin, isRequester, initial, login, logout }
+  return { record, isAuthenticated, isStaff, isAdmin, isField, isRequester, initial, login, logout }
 })
