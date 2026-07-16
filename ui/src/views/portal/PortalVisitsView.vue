@@ -1,26 +1,49 @@
 <script setup lang="ts">
-// Read-only, cross-project view of the requester's on-site visits. Collection
-// rules scope `visits` by ticket.customer, so this only ever returns the
-// requester's own company's work; we expand ticket + ticket.location but never
-// `assignee`, so the MSP technician stays hidden (same roster-hiding as the
-// portal project view). Upcoming-first agenda grouped by day; past visits sit
-// behind a toggle. Rows drill into the owning ticket — the requester's natural
-// detail surface (there's no field work view for them).
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import type { Visit, VisitStatus } from '@/types'
+// Read-only, cross-project view of the requester's on-site visits, as a single
+// filtered ResponsiveList (the Dispatch board, trimmed to what a single-customer
+// requester needs). Collection rules scope `visits` by ticket.customer, so this
+// only ever returns their own company's work; we expand ticket + ticket.location
+// but never `assignee`, so the MSP technician stays hidden (same roster-hiding as
+// the portal project view). Rows drill into the owning ticket — the requester's
+// natural detail surface (there's no field work view for them).
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import type { Location, Visit, VisitStatus } from '@/types'
 import { pb } from '@/pb'
-import { format, isSameDay, isToday, isTomorrow, startOfToday } from 'date-fns'
+import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import { format, startOfToday } from 'date-fns'
+
+const router = useRouter()
 
 const visits = ref<Visit[]>([])
+const locations = ref<Location[]>([])
 const loading = ref(true)
 const error = ref('')
-const showPast = ref(false)
 
-const visitBadge: Record<VisitStatus, string> = {
+// Filters — deliberately fewer than Dispatch (no technician/customer: it's one
+// customer, and the tech is hidden). `when` defaults to what a requester cares
+// about most: what's coming up. `site` only appears for multi-site customers.
+type When = 'upcoming' | 'past' | 'all'
+const when = ref<When>('upcoming')
+const site = ref('')
+
+const statusBadge: Record<VisitStatus, string> = {
   requested: 'badge-soft-neutral',
   scheduled: 'badge-soft-info',
   completed: 'badge-soft-success',
   canceled: 'badge-soft-neutral opacity-60',
+}
+
+// Only visits with a real time on them matter to a requester: a scheduled block
+// ahead, or a completed one behind. `requested` (no time yet) and `canceled` are
+// noise. "Upcoming" = still scheduled and dated today-or-later; "past" = the rest.
+function buildFilter(): string {
+  const parts = [`(status = 'scheduled' || status = 'completed')`]
+  const todayStart = startOfToday().toISOString().replace('T', ' ')
+  if (when.value === 'upcoming') parts.push(`status = 'scheduled'`, `scheduled_at >= '${todayStart}'`)
+  else if (when.value === 'past') parts.push(`(status = 'completed' || scheduled_at < '${todayStart}')`)
+  if (site.value) parts.push(`ticket.location = '${site.value}'`)
+  return parts.join(' && ')
 }
 
 // quiet=true refreshes in place without the spinner swap (realtime updates).
@@ -28,12 +51,10 @@ async function load(quiet = false) {
   if (!quiet) loading.value = true
   error.value = ''
   try {
-    // Only visits with a real time on them matter to a requester: a scheduled
-    // block ahead, or a completed one behind. `requested` (no time yet) and
-    // `canceled` are noise here.
     visits.value = await pb.collection('visits').getFullList<Visit>({
-      filter: `(status = 'scheduled' || status = 'completed')`,
-      sort: 'scheduled_at',
+      filter: buildFilter(),
+      // Soonest-first while looking ahead; most-recent-first when looking back.
+      sort: when.value === 'upcoming' ? 'scheduled_at' : '-scheduled_at',
       expand: 'ticket,ticket.location',
     })
   } catch (e: any) {
@@ -43,46 +64,37 @@ async function load(quiet = false) {
   }
 }
 
-// A visit is "upcoming" if it's still scheduled and dated today or later;
-// everything else (completed, or a scheduled block whose day has passed) is past.
-const dayStart = startOfToday()
-const isUpcoming = (v: Visit) =>
-  v.status === 'scheduled' && !!v.scheduled_at && new Date(v.scheduled_at) >= dayStart
+const ticketLabel = (v: Visit) => `#${v.expand?.ticket?.number ?? '?'} — ${v.expand?.ticket?.title ?? ''}`
+const siteName = (v: Visit) => v.expand?.ticket?.expand?.location?.name || ''
+const fmtWhen = (v?: string) => (v ? format(new Date(v), 'EEE, MMM d · HH:mm') : '—')
 
-const upcomingByDay = computed(() => {
-  const groups: { day: Date; items: Visit[] }[] = []
-  for (const v of visits.value) {
-    if (!isUpcoming(v) || !v.scheduled_at) continue
-    const d = new Date(v.scheduled_at)
-    const g = groups.find((x) => isSameDay(x.day, d))
-    if (g) g.items.push(v)
-    else groups.push({ day: d, items: [v] })
-  }
-  return groups // already time-ascending from the server sort
-})
+// Column keys stay dot-free (dots break `#cell-{key}` slot names); ticket/site
+// values live on the expanded ticket and resolve through format(_, item).
+const columns: Column<Visit>[] = [
+  { key: 'ticket', label: 'Ticket', format: (_, item) => ticketLabel(item) },
+  { key: 'scheduled_at', label: 'When', class: 'whitespace-nowrap', format: (v) => fmtWhen(v) },
+  { key: 'site', label: 'Site', class: 'max-w-40 truncate', format: (_, item) => siteName(item) || '—' },
+  { key: 'status', label: 'Status' },
+]
 
-const past = computed(() =>
-  visits.value
-    .filter((v) => !isUpcoming(v))
-    .sort((a, b) => (b.scheduled_at || '').localeCompare(a.scheduled_at || '')),
+const emptyLabel = computed(() =>
+  when.value === 'upcoming' ? 'No upcoming visits scheduled.' : when.value === 'past' ? 'No past visits.' : 'No visits yet.',
 )
 
-const upcomingCount = computed(() => upcomingByDay.value.reduce((n, g) => n + g.items.length, 0))
-
-const siteOf = (v: Visit) => v.expand?.ticket?.expand?.location?.name || ''
-const fmtTime = (v: Visit) => (v.scheduled_at ? format(new Date(v.scheduled_at), 'HH:mm') : '—')
-function fmtDayHeader(d: Date): string {
-  if (isToday(d)) return `Today · ${format(d, 'EEE, MMM d')}`
-  if (isTomorrow(d)) return `Tomorrow · ${format(d, 'EEE, MMM d')}`
-  return format(d, 'EEEE, MMM d')
-}
-const fmtPastWhen = (v: Visit) => (v.scheduled_at ? format(new Date(v.scheduled_at), 'MMM d, yyyy · HH:mm') : '')
+watch([when, site], () => load())
 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
 let unsubscribe: (() => void) | null = null
 
 onMounted(async () => {
   await load()
+  // Site options for the filter — scoped to the requester's customer by the
+  // locations portal-read rule. Degrades to no site filter on failure.
+  try {
+    locations.value = await pb.collection('locations').getFullList<Location>({ sort: 'name' })
+  } catch {
+    // fine — the site filter just won't render.
+  }
   try {
     unsubscribe = await pb.collection('visits').subscribe('*', () => {
       clearTimeout(reloadTimer)
@@ -100,76 +112,38 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <div>
       <h1 class="text-2xl font-bold">Visits</h1>
       <p class="text-sm text-base-content/60">On-site visits scheduled for your team.</p>
     </div>
 
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center">
+      <div class="join">
+        <button class="btn btn-sm join-item" :class="when === 'upcoming' ? 'btn-active' : ''" @click="when = 'upcoming'">Upcoming</button>
+        <button class="btn btn-sm join-item" :class="when === 'past' ? 'btn-active' : ''" @click="when = 'past'">Past</button>
+        <button class="btn btn-sm join-item" :class="when === 'all' ? 'btn-active' : ''" @click="when = 'all'">All</button>
+      </div>
+      <select v-if="locations.length > 1" v-model="site" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">All sites</option>
+        <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }}</option>
+      </select>
+    </div>
+
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
     <div v-else-if="error" class="alert alert-error text-sm">{{ error }}</div>
 
-    <template v-else>
-      <!-- Upcoming, grouped by day -->
-      <div class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title text-base">Upcoming <span class="text-base-content/50 font-normal">({{ upcomingCount }})</span></h2>
-
-          <p v-if="upcomingCount === 0" class="py-2 text-sm text-base-content/50">No upcoming visits scheduled.</p>
-
-          <div v-for="group in upcomingByDay" :key="group.day.toISOString()" class="mt-2 first:mt-0">
-            <div class="text-xs font-semibold text-base-content/50 uppercase tracking-wide mb-1">{{ fmtDayHeader(group.day) }}</div>
-            <div class="divide-y divide-base-200">
-              <router-link
-                v-for="v in group.items"
-                :key="v.id"
-                :to="`/portal/tickets/${v.ticket}`"
-                class="flex items-center gap-3 py-2.5 -mx-2 px-2 rounded hover:bg-base-200/50"
-              >
-                <div class="w-12 shrink-0 text-center font-semibold text-sm">{{ fmtTime(v) }}</div>
-                <div class="flex-1 min-w-0">
-                  <div class="truncate text-sm font-medium">
-                    <span class="font-mono text-xs text-base-content/60">#{{ v.expand?.ticket?.number }}</span>
-                    {{ v.expand?.ticket?.title }}
-                  </div>
-                  <div v-if="siteOf(v)" class="text-xs text-base-content/60 truncate">📍 {{ siteOf(v) }}</div>
-                </div>
-                <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
-              </router-link>
-            </div>
-          </div>
+    <ResponsiveList v-else :items="visits" :columns="columns" @row-click="(v: Visit) => router.push(`/portal/tickets/${v.ticket}`)">
+      <template #cell-ticket="{ item }">
+        <span class="text-sm"><span class="font-mono text-base-content/60">#{{ item.expand?.ticket?.number }}</span> {{ item.expand?.ticket?.title }}</span>
+      </template>
+      <template #card-ticket="{ item }">
+        <div class="text-sm font-bold truncate">
+          <span class="font-mono text-base-content/60">#{{ item.expand?.ticket?.number }}</span> {{ item.expand?.ticket?.title }}
         </div>
-      </div>
-
-      <!-- Past, behind a toggle -->
-      <div v-if="past.length" class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <button class="flex items-center justify-between w-full" @click="showPast = !showPast">
-            <span class="card-title text-base">Past visits <span class="text-base-content/50 font-normal">({{ past.length }})</span></span>
-            <span class="text-base-content/50" aria-hidden="true">{{ showPast ? '▾' : '▸' }}</span>
-          </button>
-
-          <div v-if="showPast" class="divide-y divide-base-200 mt-1">
-            <router-link
-              v-for="v in past"
-              :key="v.id"
-              :to="`/portal/tickets/${v.ticket}`"
-              class="flex items-center gap-3 py-2.5 -mx-2 px-2 rounded hover:bg-base-200/50"
-            >
-              <div class="flex-1 min-w-0">
-                <div class="truncate text-sm font-medium">
-                  <span class="font-mono text-xs text-base-content/60">#{{ v.expand?.ticket?.number }}</span>
-                  {{ v.expand?.ticket?.title }}
-                </div>
-                <div class="text-xs text-base-content/60 truncate">
-                  {{ fmtPastWhen(v) }}<template v-if="siteOf(v)"> · 📍 {{ siteOf(v) }}</template>
-                </div>
-              </div>
-              <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
-            </router-link>
-          </div>
-        </div>
-      </div>
-    </template>
+      </template>
+      <template #cell-status="{ value }"><span class="badge-soft" :class="statusBadge[value as VisitStatus]">{{ value }}</span></template>
+      <template #empty><span class="text-base-content/60">{{ emptyLabel }}</span></template>
+    </ResponsiveList>
   </div>
 </template>
