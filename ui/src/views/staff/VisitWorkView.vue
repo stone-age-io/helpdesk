@@ -69,7 +69,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    visit.value = await pb.collection('visits').getOne<Visit>(visitId.value, { expand: 'ticket,ticket.location' })
+    visit.value = await pb.collection('visits').getOne<Visit>(visitId.value, { expand: 'ticket,ticket.location,ticket.customer' })
   } catch (e: any) {
     error.value = e?.message || 'Failed to load visit'
   } finally {
@@ -213,27 +213,43 @@ onMounted(load)
           <h1 class="text-lg font-semibold leading-tight">
             <span v-if="ticket">#{{ ticket.number }} · </span>{{ ticket?.title || 'Ticket' }}
           </h1>
-          <div class="text-sm text-base-content/70">{{ windowLabel }}</div>
+          <div v-if="ticket?.expand?.customer?.name" class="text-sm text-base-content/70">{{ ticket.expand.customer.name }}</div>
+          <div class="text-sm text-base-content/60">{{ windowLabel }}</div>
 
-          <!-- Structured site (address + access) preferred; free-text dispatch
-               directions fall back when there's no linked location. -->
-          <a v-if="mapsHref" :href="mapsHref" target="_blank" rel="noopener" class="link link-primary text-sm break-words">
-            📍 {{ site?.name || site?.address || visit.location }}
-          </a>
-          <p v-if="site?.name && site?.address" class="text-sm text-base-content/70 break-words">{{ site.address }}</p>
+          <!-- Location: structured site preferred, with a Navigate button; the
+               free-text dispatch note falls back when there's no linked site. -->
+          <div v-if="site || visit.location" class="flex items-start gap-2 pt-1">
+            <span aria-hidden="true">📍</span>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium break-words">{{ site?.name || visit.location }}</div>
+              <div v-if="site?.address" class="text-sm text-base-content/70 break-words">{{ site.address }}</div>
+            </div>
+            <a v-if="mapsHref" :href="mapsHref" target="_blank" rel="noopener" class="btn btn-outline btn-xs shrink-0">Navigate</a>
+          </div>
+
           <p v-if="site?.notes" class="whitespace-pre-wrap text-sm text-base-content/80">
             <span class="text-base-content/50">Access:</span> {{ site.notes }}
           </p>
-          <a v-if="site?.contact_phone" :href="`tel:${site.contact_phone}`" class="link text-sm">
-            📞 {{ site.contact || site.contact_phone }}
-          </a>
           <p v-if="visit.location && site" class="text-sm text-base-content/70 break-words">
             <span class="text-base-content/50">Directions:</span> {{ visit.location }}
           </p>
+
+          <!-- Contact: name and number both visible, with a Call button. -->
+          <div v-if="site?.contact || site?.contact_phone" class="flex items-center gap-2">
+            <span aria-hidden="true">📞</span>
+            <div class="flex-1 min-w-0 text-sm break-words">
+              <span v-if="site?.contact" class="font-medium">{{ site.contact }}</span>
+              <span v-if="site?.contact_phone" class="text-base-content/70"><template v-if="site?.contact"> · </template>{{ site.contact_phone }}</span>
+            </div>
+            <a v-if="site?.contact_phone" :href="`tel:${site.contact_phone}`" class="btn btn-outline btn-xs shrink-0">Call</a>
+          </div>
+
           <p v-if="visit.notes" class="whitespace-pre-wrap text-sm text-base-content/80">{{ visit.notes }}</p>
 
-          <!-- Snap an on-site photo onto the ticket; works whether or not timing. -->
-          <div class="pt-1">
+          <!-- Actions: open the ticket, or snap an on-site photo onto it (either
+               works whether or not the timer is running). -->
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button class="btn btn-outline btn-sm" @click="openTicket">🎫 Open ticket</button>
             <input ref="photoInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onPhoto" />
             <button class="btn btn-outline btn-sm" :disabled="photoBusy" @click="photoInput?.click()">
               <span v-if="photoBusy" class="loading loading-spinner loading-xs"></span>

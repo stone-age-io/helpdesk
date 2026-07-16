@@ -20,11 +20,7 @@ async function submit() {
     await auth.login(email.value, password.value)
     // Honor an email deep link (/t/{id}) that bounced through login.
     const redirect = route.query.redirect as string | undefined
-    if (redirect && redirect.startsWith('/')) {
-      router.push(redirect)
-    } else {
-      router.push(auth.homePath)
-    }
+    router.push(redirect && redirect.startsWith('/') ? redirect : auth.homePath)
   } catch {
     error.value = 'Invalid email or password.'
   } finally {
