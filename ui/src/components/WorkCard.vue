@@ -321,10 +321,18 @@ onUnmounted(() => {
           >▶ Start timer</button>
           <p v-else class="text-xs text-success">Timing this ticket — stop from the bar above.</p>
         </div>
-        <div v-else class="flex gap-1 min-w-0">
+        <!-- Stacks on phones (number+unit, then a real note textarea, then a
+             full-width Log); collapses back to one inline row on sm+. -->
+        <div v-else class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-1 min-w-0">
           <MinutesInput v-model="logMinutes" size="sm" placeholder="min" :disabled="saving" class="shrink-0" />
-          <input v-model="logNote" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-0" :disabled="saving" />
-          <button class="btn btn-sm btn-primary shrink-0" :disabled="saving || !logMinutes" @click="logManual">Log</button>
+          <textarea
+            v-model="logNote"
+            rows="2"
+            placeholder="Note — what you did"
+            class="textarea textarea-bordered textarea-sm w-full flex-1 min-w-0 resize-none"
+            :disabled="saving"
+          ></textarea>
+          <button class="btn btn-sm btn-primary shrink-0 w-full sm:w-auto" :disabled="saving || !logMinutes" @click="logManual">Log</button>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Staff, Ticket } from '@/types'
+import type { Staff, StaffRole, Ticket } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import Avatar from '@/components/Avatar.vue'
 
@@ -26,7 +26,7 @@ const saving = ref(false)
 const editing = ref(false)
 
 const isSelf = computed(() => id === auth.record?.id)
-const form = ref({ name: '', email: '', role: 'agent' as 'agent' | 'admin', active: true })
+const form = ref({ name: '', email: '', role: 'agent' as StaffRole, active: true })
 const issued = ref<{ email: string; password: string } | null>(null)
 
 function generatePassword(): string {
@@ -162,8 +162,10 @@ onMounted(load)
             <label class="label py-1"><span class="label-text">Role</span></label>
             <select v-model="form.role" class="select select-bordered select-sm" :disabled="!editing || saving || isSelf">
               <option value="agent">agent</option>
+              <option value="field">field</option>
               <option value="admin">admin</option>
             </select>
+            <label v-if="form.role === 'field' && editing" class="label py-0"><span class="label-text-alt text-base-content/60">Field agents get the mobile, on-site app.</span></label>
             <label v-if="isSelf" class="label py-0"><span class="label-text-alt text-base-content/60">You can't change your own role.</span></label>
           </div>
           <div class="form-control">

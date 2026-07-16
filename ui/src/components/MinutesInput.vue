@@ -5,7 +5,7 @@
 // (time_entries.minutes, tickets.estimated_minutes) — this is input sugar only.
 //
 // Used by the WorkCard manual time-log and the ticket "Estimated effort" field.
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -58,34 +58,48 @@ function switchUnit(u: 'min' | 'hr') {
 function onInput() {
   emit('update:modelValue', textToMinutes())
 }
+
+// The field shows the value in the active unit; the hint restates it in the
+// other unit so switching min ↔ hr always has a visible effect (the old toggle
+// looked inert on a small/zero value — same digits either way).
+const hint = computed(() => {
+  const m = props.modelValue
+  if (m == null || m <= 0) return ''
+  if (unit.value === 'min') return `= ${Math.round((m / 60) * 100) / 100} hr`
+  return `= ${m} min`
+})
 </script>
 
 <template>
-  <div class="join">
-    <input
-      v-model="text"
-      type="number"
-      min="0"
-      step="any"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      class="input input-bordered join-item w-16"
-      :class="size === 'xs' ? 'input-xs' : 'input-sm'"
-      @input="onInput"
-    />
-    <button
-      type="button"
-      class="btn join-item"
-      :class="[size === 'xs' ? 'btn-xs' : 'btn-sm', unit === 'min' ? 'btn-primary' : 'btn-ghost']"
-      :disabled="disabled"
-      @click="switchUnit('min')"
-    >min</button>
-    <button
-      type="button"
-      class="btn join-item"
-      :class="[size === 'xs' ? 'btn-xs' : 'btn-sm', unit === 'hr' ? 'btn-primary' : 'btn-ghost']"
-      :disabled="disabled"
-      @click="switchUnit('hr')"
-    >hr</button>
+  <div class="inline-flex items-center gap-2">
+    <div class="join">
+      <input
+        v-model="text"
+        type="number"
+        min="0"
+        step="any"
+        inputmode="decimal"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        class="input input-bordered join-item w-20"
+        :class="size === 'xs' ? 'input-xs' : 'input-sm'"
+        @input="onInput"
+      />
+      <button
+        type="button"
+        class="btn join-item"
+        :class="[size === 'xs' ? 'btn-xs' : 'btn-sm', unit === 'min' ? 'btn-primary' : 'btn-ghost']"
+        :disabled="disabled"
+        @click="switchUnit('min')"
+      >min</button>
+      <button
+        type="button"
+        class="btn join-item"
+        :class="[size === 'xs' ? 'btn-xs' : 'btn-sm', unit === 'hr' ? 'btn-primary' : 'btn-ghost']"
+        :disabled="disabled"
+        @click="switchUnit('hr')"
+      >hr</button>
+    </div>
+    <span v-if="hint" class="text-xs text-base-content/60 whitespace-nowrap tabular-nums">{{ hint }}</span>
   </div>
 </template>

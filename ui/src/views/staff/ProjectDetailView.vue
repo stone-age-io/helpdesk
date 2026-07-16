@@ -10,6 +10,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
+import { useAuthStore } from '@/stores/auth'
 import type { Customer, Location, Project, Staff, Ticket, TimeEntry, Visit } from '@/types'
 import { PROJECT_STATUSES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
@@ -18,6 +19,7 @@ import { format } from 'date-fns'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
 const id = computed(() => route.params.id as string | undefined)
 const isCreate = computed(() => !id.value)
@@ -200,7 +202,8 @@ watch(() => form.value.customer, (c) => loadLocations(c))
           <li>{{ isCreate ? 'New project' : project ? `#${project.number}` : '…' }}</li>
         </ul>
       </div>
-      <div v-if="!loading" class="flex gap-2">
+      <!-- Field agents get read-only projects: no edit/create affordances. -->
+      <div v-if="!loading && !auth.isField" class="flex gap-2">
         <template v-if="editing">
           <button class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEdit">Cancel</button>
           <button class="btn btn-primary btn-sm" :disabled="saving || !form.title.trim() || !form.customer" @click="save">
@@ -249,7 +252,7 @@ watch(() => form.value.customer, (c) => loadLocations(c))
             <div class="card-body">
               <div class="flex items-center justify-between">
                 <h2 class="font-semibold">Tickets <span class="text-base-content/50 font-normal">({{ tickets.length }})</span></h2>
-                <router-link to="/staff/tickets/new" class="btn btn-ghost btn-xs">＋ New ticket</router-link>
+                <router-link v-if="!auth.isField" to="/staff/tickets/new" class="btn btn-ghost btn-xs">＋ New ticket</router-link>
               </div>
               <div class="divide-y divide-base-200">
                 <router-link

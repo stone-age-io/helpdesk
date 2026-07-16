@@ -8,14 +8,21 @@ const router = createRouter({
     { path: '/forgot-password', name: 'forgot-password', component: () => import('@/views/ForgotPasswordView.vue') },
     { path: '/reset-password', name: 'reset-password', component: () => import('@/views/ResetPasswordView.vue') },
 
-    // Staff app
+    // Staff app. One route tree; the shell (desk sidebar vs. field bottom-tabs)
+    // is chosen by role inside StaffShell, so field agents browse the same
+    // /staff/* URLs and every hardcoded desk link keeps working.
     {
       path: '/staff',
-      component: () => import('@/components/StaffLayout.vue'),
+      component: () => import('@/components/StaffShell.vue'),
       meta: { requires: 'staff' },
       children: [
-        { path: '', redirect: '/staff/dashboard' },
+        { path: '', redirect: () => (useAuthStore().isField ? '/staff/today' : '/staff/dashboard') },
         { path: 'dashboard', name: 'dashboard', component: () => import('@/views/staff/DashboardView.vue') },
+        // Field-agent surfaces (mobile, on-site). Reachable by any staff, but
+        // only the field shell links to them.
+        { path: 'today', name: 'field-today', component: () => import('@/views/staff/FieldTodayView.vue') },
+        { path: 'schedule', name: 'field-schedule', component: () => import('@/views/staff/FieldScheduleView.vue') },
+        { path: 'my-time', name: 'field-time', component: () => import('@/views/staff/FieldTimeLogView.vue') },
         { path: 'tickets', name: 'tickets', component: () => import('@/views/staff/TicketQueueView.vue') },
         { path: 'tickets/new', name: 'ticket-new', component: () => import('@/views/staff/TicketFormView.vue') },
         { path: 'tickets/:id', name: 'ticket-detail', component: () => import('@/views/staff/TicketDetailView.vue') },
@@ -67,17 +74,16 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   if (to.name === 'login') {
-    if (auth.isStaff) return '/staff/dashboard'
-    if (auth.isRequester) return '/portal/dashboard'
-    return true
+    return auth.isAuthenticated ? auth.homePath : true
   }
 
   const requires = to.matched.find((r) => r.meta.requires)?.meta.requires
   if (!requires) return true
   if (!auth.isAuthenticated) return { name: 'login' }
-  if (requires === 'staff' && !auth.isStaff) return '/portal/dashboard'
-  if (requires === 'requester' && !auth.isRequester) return '/staff/dashboard'
-  if (to.meta.adminOnly && !auth.isAdmin) return '/staff/dashboard'
+  // Wrong shell for this identity → bounce to wherever they belong.
+  if (requires === 'staff' && !auth.isStaff) return auth.homePath
+  if (requires === 'requester' && !auth.isRequester) return auth.homePath
+  if (to.meta.adminOnly && !auth.isAdmin) return auth.homePath
   return true
 })
 
