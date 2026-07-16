@@ -6,12 +6,27 @@ import { computed, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { TimeEntry } from '@/types'
-import { format } from 'date-fns'
+import { format, startOfMonth, startOfWeek } from 'date-fns'
 
 const auth = useAuthStore()
 const entries = ref<TimeEntry[]>([])
 const loading = ref(true)
 const error = ref('')
+
+// Default to this week — a field agent thinks in shifts/pay periods, not
+// all-time. Filtered client-side over the loaded list (MSP-scale volumes).
+type Range = 'week' | 'month' | 'all'
+const range = ref<Range>('week')
+const rangeStart = computed<Date | null>(() => {
+  if (range.value === 'all') return null
+  const now = new Date()
+  return range.value === 'week' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now)
+})
+const inRange = computed(() => {
+  const start = rangeStart.value
+  if (!start) return entries.value
+  return entries.value.filter((e) => e.work_date && new Date(e.work_date) >= start)
+})
 
 async function load() {
   const me = auth.record?.id
@@ -38,7 +53,7 @@ function fmt(min: number): string {
 // Group by local day of work_date, newest first.
 const groups = computed(() => {
   const m = new Map<string, { label: string; items: TimeEntry[]; total: number }>()
-  for (const e of entries.value) {
+  for (const e of inRange.value) {
     if (!e.work_date) continue
     const d = new Date(e.work_date)
     const key = format(d, 'yyyy-MM-dd')
@@ -50,21 +65,29 @@ const groups = computed(() => {
   return [...m.entries()].sort(([a], [b]) => b.localeCompare(a)).map(([, g]) => g)
 })
 
-const grandTotal = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
+const grandTotal = computed(() => inRange.value.reduce((s, e) => s + e.minutes, 0))
 
 onMounted(load)
 </script>
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-baseline gap-2">
+    <div class="flex flex-wrap items-baseline gap-2">
       <h1 class="text-2xl font-bold mr-auto">My time</h1>
-      <span v-if="entries.length" class="text-sm text-base-content/60">{{ fmt(grandTotal) }} total</span>
+      <span class="text-sm text-base-content/60">{{ fmt(grandTotal) }} total</span>
+    </div>
+
+    <div class="join">
+      <button class="btn btn-xs join-item" :class="range === 'week' ? 'btn-active' : ''" @click="range = 'week'">This week</button>
+      <button class="btn btn-xs join-item" :class="range === 'month' ? 'btn-active' : ''" @click="range = 'month'">This month</button>
+      <button class="btn btn-xs join-item" :class="range === 'all' ? 'btn-active' : ''" @click="range = 'all'">All</button>
     </div>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
     <div v-else-if="error" class="alert alert-error text-sm">{{ error }}</div>
-    <p v-else-if="!entries.length" class="text-sm text-base-content/50">No time logged yet. Start a timer from a visit to begin.</p>
+    <p v-else-if="!groups.length" class="text-sm text-base-content/50">
+      {{ entries.length ? 'No time logged in this range.' : 'No time logged yet. Start a timer from a visit to begin.' }}
+    </p>
 
     <template v-else>
       <section v-for="g in groups" :key="g.label" class="space-y-1">

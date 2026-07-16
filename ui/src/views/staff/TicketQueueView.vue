@@ -34,7 +34,8 @@ const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] a
 const status = ref<'active' | TicketStatus | ''>((q('status') as any) || 'active')
 const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const customer = ref(q('customer'))
-const assignee = ref(q('assignee'))
+// Field agents care about their own queue first; desk staff see everyone.
+const assignee = ref(q('assignee') || (auth.isField ? auth.record?.id || '' : ''))
 const category = ref(q('category'))
 const location = ref(q('location'))
 const type = ref<TicketType | ''>((q('type') as any) || '')
@@ -376,24 +377,27 @@ onUnmounted(() => {
       </div>
       <div class="flex gap-2">
         <button class="btn btn-sm flex-1 sm:flex-none" :class="mineActive ? 'btn-primary' : 'btn-ghost'" @click="toggleMine">My tickets</button>
-        <!-- Saved views: named filter+sort sets, per-browser. -->
-        <div class="dropdown">
-          <div tabindex="0" role="button" class="btn btn-sm btn-ghost">Views ▾</div>
-          <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-56 p-1 z-50">
-            <li v-for="v in savedViews" :key="v.name">
-              <div class="flex items-center justify-between gap-2">
-                <a class="flex-1 truncate" @click="applyView(v)">{{ v.name }}</a>
-                <button class="text-error text-xs" title="Delete view" @click.stop="deleteView(v.name)">✕</button>
-              </div>
-            </li>
-            <li v-if="savedViews.length === 0" class="menu-title px-2 py-1 text-xs">No saved views</li>
-            <li><a class="border-t border-base-200 mt-1 pt-1" @click="saveCurrentView">＋ Save current view…</a></li>
-          </ul>
-        </div>
-        <button class="btn btn-sm btn-ghost flex-1 sm:flex-none" :disabled="exporting" @click="exportCsv">
-          <span v-if="exporting" class="loading loading-spinner loading-xs"></span>
-          Export CSV
-        </button>
+        <!-- Saved views + CSV + bulk are desk power-tools; hidden for field. -->
+        <template v-if="!auth.isField">
+          <!-- Saved views: named filter+sort sets, per-browser. -->
+          <div class="dropdown">
+            <div tabindex="0" role="button" class="btn btn-sm btn-ghost">Views ▾</div>
+            <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-56 p-1 z-50">
+              <li v-for="v in savedViews" :key="v.name">
+                <div class="flex items-center justify-between gap-2">
+                  <a class="flex-1 truncate" @click="applyView(v)">{{ v.name }}</a>
+                  <button class="text-error text-xs" title="Delete view" @click.stop="deleteView(v.name)">✕</button>
+                </div>
+              </li>
+              <li v-if="savedViews.length === 0" class="menu-title px-2 py-1 text-xs">No saved views</li>
+              <li><a class="border-t border-base-200 mt-1 pt-1" @click="saveCurrentView">＋ Save current view…</a></li>
+            </ul>
+          </div>
+          <button class="btn btn-sm btn-ghost flex-1 sm:flex-none" :disabled="exporting" @click="exportCsv">
+            <span v-if="exporting" class="loading loading-spinner loading-xs"></span>
+            Export CSV
+          </button>
+        </template>
       </div>
     </div>
 
@@ -423,7 +427,7 @@ onUnmounted(() => {
       :columns="columns"
       :sort-key="sortKey"
       :sort-dir="sortDir"
-      selectable
+      :selectable="!auth.isField"
       @sort="onSort"
       @row-click="(t) => router.push(`/staff/tickets/${t.id}`)"
     >

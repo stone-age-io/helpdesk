@@ -70,26 +70,20 @@ const router = createRouter({
   ],
 })
 
-// Field agents land on today's visits; desk staff on the dashboard.
-function staffHome(auth: ReturnType<typeof useAuthStore>): string {
-  return auth.isField ? '/staff/today' : '/staff/dashboard'
-}
-
 router.beforeEach((to) => {
   const auth = useAuthStore()
 
   if (to.name === 'login') {
-    if (auth.isStaff) return staffHome(auth)
-    if (auth.isRequester) return '/portal/dashboard'
-    return true
+    return auth.isAuthenticated ? auth.homePath : true
   }
 
   const requires = to.matched.find((r) => r.meta.requires)?.meta.requires
   if (!requires) return true
   if (!auth.isAuthenticated) return { name: 'login' }
-  if (requires === 'staff' && !auth.isStaff) return '/portal/dashboard'
-  if (requires === 'requester' && !auth.isRequester) return staffHome(auth)
-  if (to.meta.adminOnly && !auth.isAdmin) return staffHome(auth)
+  // Wrong shell for this identity → bounce to wherever they belong.
+  if (requires === 'staff' && !auth.isStaff) return auth.homePath
+  if (requires === 'requester' && !auth.isRequester) return auth.homePath
+  if (to.meta.adminOnly && !auth.isAdmin) return auth.homePath
   return true
 })
 

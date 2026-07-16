@@ -20,6 +20,15 @@ export const useAuthStore = defineStore('auth', () => {
   // in, so `isStaff` stays true and every staff route/rule still applies.
   const isField = computed(() => isStaff.value && record.value?.role === 'field')
   const isRequester = computed(() => record.value?.collectionName === 'users')
+  // Where this identity belongs after login / on a misrouted navigation. Single
+  // source of truth so LoginView and the router guard can't drift (field agents
+  // were landing on the agent dashboard when only LoginView was updated).
+  const homePath = computed(() => {
+    if (isField.value) return '/staff/today'
+    if (isStaff.value) return '/staff/dashboard'
+    if (isRequester.value) return '/portal/dashboard'
+    return '/login'
+  })
   // Avatar initial for the shells (sidebar, portal navbar).
   const initial = computed(() =>
     (record.value?.name || record.value?.email || '?').slice(0, 1).toUpperCase(),
@@ -40,5 +49,5 @@ export const useAuthStore = defineStore('auth', () => {
     pb.authStore.clear()
   }
 
-  return { record, isAuthenticated, isStaff, isAdmin, isField, isRequester, initial, login, logout }
+  return { record, isAuthenticated, isStaff, isAdmin, isField, isRequester, homePath, initial, login, logout }
 })

@@ -7,6 +7,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
+import { useAuthStore } from '@/stores/auth'
 import type { Customer, Project, ProjectStatus } from '@/types'
 import { PROJECT_STATUSES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
@@ -14,6 +15,7 @@ import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import { format } from 'date-fns'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const columns: Column<Project>[] = [
   { key: 'title', label: 'Title' },
@@ -83,7 +85,7 @@ onMounted(load)
   <div class="space-y-4">
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
       <h1 class="text-2xl font-bold">Projects</h1>
-      <router-link to="/staff/projects/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Project</router-link>
+      <router-link v-if="!auth.isField" to="/staff/projects/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Project</router-link>
     </div>
     <p class="text-sm text-base-content/60">
       Installations and multi-visit field work. A project groups its tickets at a

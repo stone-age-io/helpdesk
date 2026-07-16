@@ -47,6 +47,8 @@ async function load() {
 
 const liveCount = computed(() => visits.value.filter((v) => v.status !== 'completed').length)
 const doneCount = computed(() => visits.value.filter((v) => v.status === 'completed').length)
+// visits are sorted ascending by time, so the first still-open one is up next.
+const nextVisit = computed(() => visits.value.find((v) => v.status !== 'completed' && v.status !== 'canceled'))
 
 const timingThis = (v: Visit) => timer.isTimingVisit(v.id)
 
@@ -102,7 +104,7 @@ onUnmounted(() => {
 
     <template v-else>
       <p class="text-sm text-base-content/60">
-        <template v-if="visits.length">{{ liveCount }} to do<span v-if="doneCount"> · {{ doneCount }} done</span></template>
+        <template v-if="visits.length">{{ liveCount }} to do<span v-if="doneCount"> · {{ doneCount }} done</span><span v-if="nextVisit"> · next {{ fmtTime(nextVisit) }}</span></template>
         <template v-else>Nothing scheduled for you today.</template>
       </p>
 
