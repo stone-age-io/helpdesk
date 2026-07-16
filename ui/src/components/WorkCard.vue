@@ -18,9 +18,10 @@ import { useTimerStore } from '@/stores/timer'
 import type { Staff, TimeEntry, Visit, VisitStatus } from '@/types'
 import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
+import MinutesInput from '@/components/MinutesInput.vue'
 import { format } from 'date-fns'
 
-const props = defineProps<{ ticketId: string; staff: Staff[] }>()
+const props = defineProps<{ ticketId: string; staff: Staff[]; estimatedMinutes?: number | null }>()
 const auth = useAuthStore()
 const timer = useTimerStore()
 
@@ -96,10 +97,13 @@ function fmt(m: number): string {
 }
 
 const summaryText = computed(() => {
-  if (!visits.value.length && !totalMinutes.value) return 'nothing logged yet'
+  const est = props.estimatedMinutes || 0
+  if (!visits.value.length && !totalMinutes.value) {
+    return est ? `0m / ${fmt(est)} est` : 'nothing logged yet'
+  }
   const parts: string[] = []
   if (liveVisitCount.value) parts.push(`${liveVisitCount.value} visit${liveVisitCount.value === 1 ? '' : 's'}`)
-  parts.push(`${fmt(totalMinutes.value)} logged`)
+  parts.push(est ? `${fmt(totalMinutes.value)} / ${fmt(est)} est` : `${fmt(totalMinutes.value)} logged`)
   return parts.join(' · ')
 })
 
@@ -318,7 +322,7 @@ onUnmounted(() => {
           <p v-else class="text-xs text-success">Timing this ticket — stop from the bar above.</p>
         </div>
         <div v-else class="flex gap-1 min-w-0">
-          <input v-model.number="logMinutes" type="number" min="1" placeholder="min" class="input input-bordered input-sm w-16 shrink-0" :disabled="saving" />
+          <MinutesInput v-model="logMinutes" size="sm" placeholder="min" :disabled="saving" class="shrink-0" />
           <input v-model="logNote" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-0" :disabled="saving" />
           <button class="btn btn-sm btn-primary shrink-0" :disabled="saving || !logMinutes" @click="logManual">Log</button>
         </div>

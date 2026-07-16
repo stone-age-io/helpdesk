@@ -76,6 +76,10 @@ full hub-side NATS subject, provenance for machine tickets), `dedupe_key`
 (free text), `location` (→ locations, optional — the structured place, and
 the reporting axis), `location_note` (free text — dispatch hints, or the
 unmatched-code fallback from machine intake). All added/changed `1812000000`.
+`estimated_minutes` (int ≥ 1, optional — staff effort estimate, added
+`1815000000`; compared against the logged `time_entries` total per ticket and
+summed per project at read time — see `projects`). Distinct from
+`visits.duration_minutes` (a *calendar block*, not an *effort estimate*).
 
 Rules:
 
@@ -83,9 +87,9 @@ Rules:
   A requester sees only their own company's tickets.
 - **create** — staff freely; a requester only for their own customer, with
   `requester` = themselves, no `assignee`, `source = 'portal'`, and none of
-  `category` / `type` / `project` / `location` (all pinned in the create rule
-  so the portal can't forge them — classification and the service-delivery
-  fields are staff actions).
+  `category` / `type` / `project` / `location` / `estimated_minutes` (all
+  pinned in the create rule so the portal can't forge them — classification,
+  the service-delivery fields, and the effort estimate are staff actions).
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
 - **delete** — `AdminRule`.
@@ -238,9 +242,11 @@ per-ticket assignees).
 A project is a planning-and-grouping layer **above** the ticket → visit → time
 ledger: it groups 1..N tickets (often one `install` ticket per trade, plus any
 reactive tickets) and stores none of their execution data. Crew (lead ∪
-ticket/visit assignees) and total time are **derived** at read time via
-relation-hop queries on `ticket.project`, never stored — so the project
-collection could be dropped and the helpdesk would still work.
+ticket/visit assignees), total logged time, and total estimated effort
+(`sum(ticket.estimated_minutes)`, shown as an estimated-vs-logged bar) are all
+**derived** at read time via relation-hop queries on `ticket.project`, never
+stored — so the project collection could be dropped and the helpdesk would
+still work.
 
 Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
 — a requester sees their own company's projects (the portal shows the tickets

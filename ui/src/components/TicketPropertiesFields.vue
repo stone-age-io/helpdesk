@@ -8,6 +8,7 @@ import { computed } from 'vue'
 import type { Ticket } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
+import MinutesInput from '@/components/MinutesInput.vue'
 import Avatar from '@/components/Avatar.vue'
 
 interface Option {
@@ -29,7 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update-field': [field: 'status' | 'priority' | 'assignee', value: string]
-  patch: [fields: Record<string, string>]
+  patch: [fields: Record<string, string | number | null>]
   'change-customer': [value: string]
   'create-location': [label: string]
   'update:notify': [value: boolean]
@@ -79,15 +80,37 @@ const navigateUrl = computed(() => {
       @update:model-value="emit('patch', { requester: $event })"
     />
   </div>
-  <!-- Location + project surface here as read chips only when set (the pickers
-       to change them live in Classification below) — glanceable for field work
-       without cluttering a plain desk ticket. -->
-  <div v-if="ticket.expand?.location" class="flex items-center justify-between gap-2 px-1">
-    <span class="text-xs text-base-content/60 shrink-0">Location</span>
-    <span class="text-sm text-right flex items-center gap-2 min-w-0">
-      <span class="truncate">📍 {{ ticket.expand.location.name }}</span>
-      <a v-if="navigateUrl" :href="navigateUrl" target="_blank" rel="noopener" class="link link-hover shrink-0 text-xs">Navigate</a>
-    </span>
+  <!-- Location is editable in place here (always visible) — field work needs it
+       reachable, and the Navigate link doubles as the read affordance when a
+       site is set. Location note carries dispatch hints / the intake fallback.
+       Project surfaces as a read chip only when set (its picker lives in
+       Classification below). -->
+  <div class="form-control">
+    <label class="label py-1">
+      <span class="label-text text-xs">Location</span>
+      <a v-if="navigateUrl" :href="navigateUrl" target="_blank" rel="noopener" class="label-text-alt link link-hover">Navigate →</a>
+    </label>
+    <SearchSelect
+      :model-value="ticket.location || ''"
+      :options="locationOptions"
+      size="sm"
+      empty-label="None"
+      placeholder="Pick a site…"
+      create-label="New location"
+      @update:model-value="emit('patch', { location: $event })"
+      @create="emit('create-location', $event)"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
+    <input
+      :value="ticket.location_note || ''"
+      type="text"
+      maxlength="200"
+      class="input input-bordered input-sm"
+      placeholder="Access hints / where"
+      @change="emit('patch', { location_note: ($event.target as HTMLInputElement).value })"
+    />
   </div>
   <router-link
     v-if="ticket.expand?.project"
@@ -127,6 +150,15 @@ const navigateUrl = computed(() => {
       empty-label="Unassigned"
       placeholder="Type a name…"
       @update:model-value="emit('update-field', 'assignee', $event)"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Estimated effort</span></label>
+    <MinutesInput
+      :model-value="ticket.estimated_minutes ?? null"
+      size="sm"
+      placeholder="estimate"
+      @update:model-value="emit('patch', { estimated_minutes: $event })"
     />
   </div>
   <label class="label cursor-pointer justify-start gap-2 py-1">
@@ -186,30 +218,6 @@ const navigateUrl = computed(() => {
       class="input input-bordered input-sm"
       placeholder="Device / system"
       @change="emit('patch', { asset: ($event.target as HTMLInputElement).value })"
-    />
-  </div>
-  <div class="form-control">
-    <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-    <SearchSelect
-      :model-value="ticket.location || ''"
-      :options="locationOptions"
-      size="sm"
-      empty-label="None"
-      placeholder="Pick a site…"
-      create-label="New location"
-      @update:model-value="emit('patch', { location: $event })"
-      @create="emit('create-location', $event)"
-    />
-  </div>
-  <div class="form-control">
-    <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
-    <input
-      :value="ticket.location_note || ''"
-      type="text"
-      maxlength="200"
-      class="input input-bordered input-sm"
-      placeholder="Access hints / where"
-      @change="emit('patch', { location_note: ($event.target as HTMLInputElement).value })"
     />
   </div>
   <div class="flex items-center justify-between gap-2">

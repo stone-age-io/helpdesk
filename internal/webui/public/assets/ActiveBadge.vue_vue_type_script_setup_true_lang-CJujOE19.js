@@ -1,1 +1,0 @@
-import{d as t,o as s,c as o,D as n,a as c,g as i,t as r}from"./index-B2peMbWM.js";const p=t({__name:"ActiveBadge",props:{active:{type:Boolean}},setup(e){return(l,a)=>(s(),o("span",{class:n(["badge-soft",e.active?"badge-soft-success":"badge-soft-neutral"])},[a[0]||(a[0]=c("span",{class:"badge-dot"},null,-1)),i(r(e.active?"active":"inactive"),1)],2))}});export{p as _};

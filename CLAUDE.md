@@ -77,10 +77,15 @@ Classification (migration `1806000000`): an optional `category` (admin-managed
 `ticket_categories` **relation**, not a select — staff-classified). A ticket
 also carries a `type` (`issue` | `install`) and an optional `project`, free-text
 `asset`, a structured `location` (→ `locations`) and a free-text `location_note`
-fallback (all migration `1812000000`). The portal create rule blocks requesters
-from setting `category` / `type` / `project` / `location` (via `:isset = false`);
-machine intakes set `asset` and resolve a payload `location_code` to the
-`location` relation (unmatched → `location_note`). `docs/data-model.md` covers it.
+fallback (all migration `1812000000`). An optional `estimated_minutes` (staff
+effort estimate, migration `1815000000`) is compared against the logged
+`time_entries` total per ticket and summed per project at read time — one
+nullable column, distinct from `visits.duration_minutes` (a calendar block, not
+an effort estimate). The portal create rule blocks requesters from setting
+`category` / `type` / `project` / `location` / `estimated_minutes` (via
+`:isset = false`); machine intakes set `asset` and resolve a payload
+`location_code` to the `location` relation (unmatched → `location_note`).
+`docs/data-model.md` covers it.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee) writes a `ticket_events` row rendered as a staff-only

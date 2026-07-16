@@ -159,7 +159,7 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
 
 // patchPlain saves fields that never trigger email (title/body/customer/
 // requester), so no quiet header is needed.
-async function patchPlain(fields: Record<string, string>) {
+async function patchPlain(fields: Record<string, string | number | null>) {
   if (!ticket.value) return
   try {
     ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
@@ -333,7 +333,7 @@ onUnmounted(() => {
         <!-- Work: field visits and labor unified in one card, organized by
              visit, directly under the header for both breakpoints — the
              operational work no longer lives in the rail. Rendered once here. -->
-        <WorkCard :ticket-id="id" :staff="staff" />
+        <WorkCard :ticket-id="id" :staff="staff" :estimated-minutes="ticket?.estimated_minutes" />
 
         <!-- Mobile: properties collapse behind a summary directly under the
              header. Rendered here on mobile OR in the desktop rail — never

@@ -38,6 +38,12 @@ management. Three options were weighed:
   ticket lead ∪ its visits' assignees; each **visit is one person's scheduled
   block** (lead scheduled all day, others come later). Multi-person labor is
   already captured per-staff in `time_entries`.
+- **Derived estimate rollup.** A single optional `tickets.estimated_minutes`
+  (staff-set effort estimate, migration `1815000000`) is compared against the
+  logged `time_entries` total per ticket and **summed per project** at read
+  time — one nullable column, no baselines or re-estimate history. It is an
+  *effort* estimate, distinct from `visits.duration_minutes` (a *calendar
+  block* entered at dispatch).
 - **`locations` carries a `code`** = the join key to the platform's Location
   concept, payload-sourced on NATS/webhook intake and resolved per
   `(customer, code)`. This turns location into a queryable dimension
@@ -112,6 +118,8 @@ rollups all already work through the ticket.
 
 ## Out of scope (deliberate)
 
-CMDB / asset catalog, estimates / budget / materials, task dependencies /
-Gantt, resource leveling, customer sign-off, calendar sync. Ship the spine;
-let real pain argue features back in.
+CMDB / asset catalog, budget / materials / cost estimating, estimate baselines
+or re-estimate history, task dependencies / Gantt, resource leveling, customer
+sign-off, calendar sync. (A single lightweight *effort* estimate per ticket,
+rolled up per project, is in — see above; the full estimating/budgeting
+machinery is not.) Ship the spine; let real pain argue features back in.

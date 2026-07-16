@@ -64,14 +64,24 @@ const crew = computed(() => {
   return [...ids].map((sid) => staffName.value.get(sid) || 'Unknown').sort()
 })
 
-const totalMinutes = computed(() => entries.value.reduce((sum, e) => sum + (e.minutes || 0), 0))
-const totalTime = computed(() => {
-  const m = totalMinutes.value
+function fmt(m: number): string {
   if (!m) return '0m'
   const h = Math.floor(m / 60)
   const min = m % 60
   return h ? `${h}h${min ? ' ' + min + 'm' : ''}` : `${min}m`
-})
+}
+
+const totalMinutes = computed(() => entries.value.reduce((sum, e) => sum + (e.minutes || 0), 0))
+const totalTime = computed(() => fmt(totalMinutes.value))
+
+// Estimated-vs-actual rollup: summed ticket estimates against logged time.
+// Derived like crew/total time — nothing stored on the project.
+const totalEstimated = computed(() => tickets.value.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0))
+const estimatedTime = computed(() => fmt(totalEstimated.value))
+const estPct = computed(() =>
+  totalEstimated.value ? Math.round((totalMinutes.value / totalEstimated.value) * 100) : 0,
+)
+const overEstimate = computed(() => totalEstimated.value > 0 && totalMinutes.value > totalEstimated.value)
 
 function applyRecord(p: Project) {
   form.value = {
@@ -251,6 +261,7 @@ watch(() => form.value.customer, (c) => loadLocations(c))
                   <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
                   <span v-if="t.type === 'install'" class="badge-soft badge-soft-primary">install</span>
                   <span class="flex-1 truncate">{{ t.title }}</span>
+                  <span v-if="t.estimated_minutes" class="text-xs text-base-content/50 hidden sm:block whitespace-nowrap" title="Estimated effort">~{{ fmt(t.estimated_minutes) }}</span>
                   <span class="text-xs text-base-content/60 hidden sm:block">{{ t.expand?.assignee?.name || 'Unassigned' }}</span>
                   <TicketBadges :status="t.status" :priority="t.priority" />
                 </router-link>
@@ -303,13 +314,28 @@ watch(() => form.value.customer, (c) => loadLocations(c))
                 </div>
                 <div v-else class="text-sm text-base-content/50">No one assigned yet.</div>
               </div>
-              <div class="flex items-center justify-between">
-                <span class="text-xs text-base-content/60">Total time logged</span>
-                <span class="font-semibold">{{ totalTime }}</span>
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs text-base-content/60">Time logged</span>
+                  <span class="font-semibold">{{ totalTime }}</span>
+                </div>
+                <template v-if="totalEstimated">
+                  <progress
+                    class="progress w-full"
+                    :class="overEstimate ? 'progress-error' : 'progress-primary'"
+                    :value="Math.min(totalMinutes, totalEstimated)"
+                    :max="totalEstimated"
+                  ></progress>
+                  <div class="flex items-center justify-between text-[11px] text-base-content/50 mt-0.5">
+                    <span>{{ estPct }}% of {{ estimatedTime }} est</span>
+                    <span v-if="overEstimate" class="text-error">+{{ fmt(totalMinutes - totalEstimated) }} over</span>
+                  </div>
+                </template>
+                <div v-else class="text-[11px] text-base-content/40">No estimate set on these tickets.</div>
               </div>
               <p class="text-[11px] text-base-content/40 leading-snug">
-                Crew and time are derived from this project's tickets and visits — the
-                ticket stays the ledger.
+                Crew, estimate, and time are derived from this project's tickets and
+                visits — the ticket stays the ledger.
               </p>
             </div>
           </div>

@@ -99,6 +99,9 @@ export interface Ticket extends BaseRecord {
   type?: TicketType
   // Optional grouping into a project (installation / field work).
   project?: string
+  // Staff estimate of effort in minutes (nil = unestimated); compared against
+  // the logged time_entries total and rolled up per project.
+  estimated_minutes?: number
   // Classification: what the ticket is about (staff-set) + provenance.
   category?: string
   asset?: string

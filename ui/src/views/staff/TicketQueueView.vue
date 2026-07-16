@@ -3,8 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Staff, Ticket, TicketCategory, TicketStatus, TicketPriority } from '@/types'
-import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
+import type { Customer, Location, Staff, Ticket, TicketCategory, TicketStatus, TicketPriority, TicketType } from '@/types'
+import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
@@ -20,6 +20,7 @@ const tickets = ref<Ticket[]>([])
 const customers = ref<Customer[]>([])
 const staff = ref<Staff[]>([])
 const categories = ref<TicketCategory[]>([])
+const locations = ref<Location[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -35,6 +36,8 @@ const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const customer = ref(q('customer'))
 const assignee = ref(q('assignee'))
 const category = ref(q('category'))
+const location = ref(q('location'))
+const type = ref<TicketType | ''>((q('type') as any) || '')
 const search = ref(q('search'))
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
@@ -43,6 +46,10 @@ const staffOptions = computed(() => [
   ...staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })),
 ])
 const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, label: c.name })))
+// Locations span customers here, so disambiguate by customer name in the sublabel.
+const locationOptions = computed(() =>
+  locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.expand?.customer?.name })),
+)
 
 const mineActive = computed(() => assignee.value === auth.record?.id)
 function toggleMine() {
@@ -113,9 +120,9 @@ async function exportCsv() {
     const rows = await pb.collection('tickets').getFullList<Ticket>({
       filter: buildFilter(),
       sort: '-created',
-      expand: 'customer,assignee,requester,category',
+      expand: 'customer,assignee,requester,category,location',
     })
-    const header = ['number', 'title', 'customer', 'category', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
+    const header = ['number', 'title', 'customer', 'category', 'type', 'location', 'estimated_minutes', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
     const lines = [header.join(',')]
     for (const t of rows) {
       lines.push(
@@ -124,6 +131,9 @@ async function exportCsv() {
           t.title,
           t.expand?.customer?.name || '',
           t.expand?.category?.name || '',
+          t.type || '',
+          t.expand?.location?.name || '',
+          t.estimated_minutes ?? '',
           t.status,
           t.priority,
           t.expand?.assignee?.name || '',
@@ -170,6 +180,8 @@ function buildFilter(): string {
   if (priority.value) parts.push(`priority = '${priority.value}'`)
   if (customer.value) parts.push(`customer = '${customer.value}'`)
   if (category.value) parts.push(`category = '${category.value}'`)
+  if (location.value) parts.push(`location = '${location.value}'`)
+  if (type.value) parts.push(`type = '${type.value}'`)
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
   else if (assignee.value) parts.push(`assignee = '${assignee.value}'`)
   if (search.value.trim()) {
@@ -215,12 +227,13 @@ async function loadFilterOptions() {
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
     categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
+    locations.value = await pb.collection('locations').getFullList<Location>({ sort: 'name', expand: 'customer' })
   } catch {
     // Filter dropdowns degrade gracefully; the queue itself still loads.
   }
 }
 
-watch([status, priority, customer, category, assignee, sortKey, sortDir], () => {
+watch([status, priority, customer, category, location, type, assignee, sortKey, sortDir], () => {
   page.value = 1
   // Filter changes drop the selection — bulk-acting on rows that are no
   // longer visible would be a footgun. Paging keeps it (cross-page select).
@@ -235,6 +248,8 @@ interface SavedView {
   priority: string
   customer: string
   category: string
+  location: string
+  type: string
   assignee: string
   search: string
   sortKey: string
@@ -261,6 +276,8 @@ function saveCurrentView() {
     priority: priority.value,
     customer: customer.value,
     category: category.value,
+    location: location.value,
+    type: type.value,
     assignee: assignee.value,
     search: search.value,
     sortKey: sortKey.value,
@@ -276,6 +293,8 @@ function applyView(v: SavedView) {
   priority.value = v.priority as any
   customer.value = v.customer
   category.value = v.category || ''
+  location.value = v.location || ''
+  type.value = (v.type as any) || ''
   assignee.value = v.assignee
   search.value = v.search
   sortKey.value = v.sortKey
@@ -345,6 +364,13 @@ onUnmounted(() => {
       <div class="w-full sm:w-52">
         <SearchSelect v-model="category" :options="categoryOptions" size="sm" empty-label="All categories" placeholder="Category…" />
       </div>
+      <div class="w-full sm:w-52">
+        <SearchSelect v-model="location" :options="locationOptions" size="sm" empty-label="All locations" placeholder="Location…" />
+      </div>
+      <select v-model="type" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">All types</option>
+        <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
+      </select>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="assignee" :options="staffOptions" size="sm" empty-label="Anyone" placeholder="Assignee…" />
       </div>
