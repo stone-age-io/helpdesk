@@ -7,7 +7,8 @@ import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
-import type { Visit, VisitStatus } from '@/types'
+import type { Visit } from '@/types'
+import FieldVisitCard from '@/components/FieldVisitCard.vue'
 import { format } from 'date-fns'
 
 const router = useRouter()
@@ -52,22 +53,10 @@ const nextVisit = computed(() => visits.value.find((v) => v.status !== 'complete
 
 const timingThis = (v: Visit) => timer.isTimingVisit(v.id)
 
+// Only the summary line needs a formatter now; the card formats its own fields.
 const fmtTime = (v: Visit) => (v.scheduled_at ? format(new Date(v.scheduled_at), 'HH:mm') : '—')
-function fmtDuration(min?: number): string {
-  if (!min) return ''
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return h > 0 ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`
-}
-function open(v: Visit) {
-  router.push(`/staff/visits/${v.id}/work`)
-}
-
-const statusClass: Record<VisitStatus, string> = {
-  requested: 'badge-soft-warning',
-  scheduled: 'badge-soft-info',
-  completed: 'badge-soft-success',
-  canceled: 'badge-soft-neutral',
+function open(id: string) {
+  router.push(`/staff/visits/${id}/work`)
 }
 
 // Realtime: a visit completed here or from the work view reflects without a
@@ -110,33 +99,7 @@ onUnmounted(() => {
 
       <ul class="space-y-2">
         <li v-for="v in visits" :key="v.id">
-          <button
-            class="w-full flex gap-3 items-start rounded-2xl border p-3 text-left bg-base-100 hover:bg-base-200/50 transition-colors"
-            :class="timingThis(v) ? 'border-success' : 'border-base-300'"
-            @click="open(v)"
-          >
-            <div class="text-center shrink-0 w-12">
-              <div class="font-semibold">{{ fmtTime(v) }}</div>
-              <div class="text-[11px] text-base-content/50">{{ fmtDuration(v.duration_minutes) }}</div>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="font-medium truncate">
-                <span class="font-mono text-base-content/60">#{{ v.expand?.ticket?.number }}</span>
-                {{ v.expand?.ticket?.title }}
-              </div>
-              <div class="text-xs text-base-content/60 truncate">
-                {{ v.expand?.ticket?.expand?.customer?.name }}
-                <template v-if="v.expand?.ticket?.expand?.location?.name"> · {{ v.expand?.ticket?.expand?.location?.name }}</template>
-              </div>
-              <div class="mt-1 flex items-center gap-2">
-                <span class="badge-soft" :class="statusClass[v.status]">{{ v.status }}</span>
-                <span v-if="timingThis(v)" class="inline-flex items-center gap-1 text-xs text-success">
-                  <span class="inline-flex h-2 w-2 rounded-full bg-success animate-pulse"></span> timing now
-                </span>
-              </div>
-            </div>
-            <span class="text-base-content/30 self-center" aria-hidden="true">›</span>
-          </button>
+          <FieldVisitCard :visit="v" :timing="timingThis(v)" @select="open" />
         </li>
       </ul>
     </template>

@@ -61,7 +61,7 @@ async function load() {
     visits.value = await pb.collection('visits').getFullList<Visit>({
       filter: buildFilter(),
       sort: 'scheduled_at',
-      expand: 'ticket,ticket.customer',
+      expand: 'ticket,ticket.customer,ticket.location',
     })
   } catch (e: any) {
     error.value = e?.message || 'Failed to load schedule'
