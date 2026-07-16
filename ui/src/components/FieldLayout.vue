@@ -103,8 +103,10 @@ onMounted(() => timer.load())
 
       <TimerBar />
 
+      <!-- Same generous width as the desk shell so reused table views (Tickets,
+           Projects) get full room; the field-native list views cap themselves. -->
       <main class="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
-        <div class="mx-auto w-full max-w-3xl p-4 lg:p-6 pad-safe-bottom">
+        <div class="mx-auto w-full max-w-7xl p-4 lg:p-6 pad-safe-bottom">
           <router-view />
         </div>
       </main>

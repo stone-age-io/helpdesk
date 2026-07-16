@@ -99,7 +99,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-4 max-w-2xl mx-auto">
     <div class="flex items-center gap-2">
       <h1 class="text-2xl font-bold mr-auto">Schedule</h1>
       <div class="join">

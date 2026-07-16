@@ -93,7 +93,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-4 max-w-2xl mx-auto">
     <div>
       <div class="text-xs text-base-content/50">{{ format(new Date(), 'EEEE, MMM d') }}</div>
       <h1 class="text-2xl font-bold">Today</h1>

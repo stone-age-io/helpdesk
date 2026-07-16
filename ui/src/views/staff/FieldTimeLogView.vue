@@ -71,7 +71,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-4 max-w-2xl mx-auto">
     <div class="flex flex-wrap items-baseline gap-2">
       <h1 class="text-2xl font-bold mr-auto">My time</h1>
       <span class="text-sm text-base-content/60">{{ fmt(grandTotal) }} total</span>
