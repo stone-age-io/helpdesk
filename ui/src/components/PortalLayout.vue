@@ -15,6 +15,7 @@ const sections: NavSection[] = [
     items: [
       { label: 'Dashboard', icon: '📊', path: '/portal/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/portal/tickets' },
+      { label: 'Visits', icon: '📅', path: '/portal/visits' },
       { label: 'Projects', icon: '📁', path: '/portal/projects' },
       { label: 'New Ticket', icon: '➕', path: '/portal/tickets/new' },
     ],
@@ -58,7 +59,7 @@ watch(
       </header>
 
       <main class="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-base-200">
-        <div class="mx-auto w-full max-w-5xl p-4 lg:p-6 pad-safe-bottom">
+        <div class="mx-auto w-full max-w-7xl p-4 lg:p-6 pad-safe-bottom">
           <router-view />
         </div>
       </main>
