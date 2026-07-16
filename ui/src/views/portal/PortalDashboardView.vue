@@ -2,8 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { pb } from '@/pb'
 import type { Ticket } from '@/types'
-import TicketBadges from '@/components/TicketBadges.vue'
-import { formatDistanceToNow } from 'date-fns'
+import TicketListRow from '@/components/TicketListRow.vue'
 
 // Collection rules scope every query here to the requester's own customer —
 // this is the staff dashboard recipe with nothing staff-only in it.
@@ -88,21 +87,12 @@ onUnmounted(() => {
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
           <h2 class="card-title text-base">Recent Tickets</h2>
-          <ul class="space-y-1">
-            <li v-for="t in recent" :key="t.id">
-              <router-link :to="`/portal/tickets/${t.id}`" class="flex items-center gap-2 text-sm link-hover">
-                <span class="font-mono">#{{ t.number }}</span>
-                <span class="flex-1 truncate">{{ t.title }}</span>
-                <TicketBadges :status="t.status" />
-                <span class="text-xs text-base-content/50 whitespace-nowrap hidden sm:inline">
-                  {{ formatDistanceToNow(new Date(t.created)) }} ago
-                </span>
-              </router-link>
-            </li>
-          </ul>
-          <p v-if="recent.length === 0" class="text-sm text-base-content/50">
-            No tickets yet. <router-link to="/portal/tickets/new" class="link">Open one</router-link>.
-          </p>
+          <div class="divide-y divide-base-200">
+            <TicketListRow v-for="t in recent" :key="t.id" :ticket="t" :to="`/portal/tickets/${t.id}`" show-age />
+            <p v-if="recent.length === 0" class="py-3 text-sm text-base-content/50">
+              No tickets yet. <router-link to="/portal/tickets/new" class="link">Open one</router-link>.
+            </p>
+          </div>
         </div>
       </div>
     </template>

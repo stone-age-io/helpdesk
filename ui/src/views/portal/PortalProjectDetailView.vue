@@ -7,7 +7,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Project, ProjectStatus, Ticket, Visit } from '@/types'
-import TicketBadges from '@/components/TicketBadges.vue'
+import TicketListRow from '@/components/TicketListRow.vue'
 import { format } from 'date-fns'
 
 const route = useRoute()
@@ -97,16 +97,7 @@ onMounted(load)
         <div class="card-body">
           <h2 class="font-semibold">Tickets <span class="text-base-content/50 font-normal">({{ tickets.length }})</span></h2>
           <div class="divide-y divide-base-200">
-            <router-link
-              v-for="t in tickets"
-              :key="t.id"
-              :to="`/portal/tickets/${t.id}`"
-              class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
-            >
-              <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
-              <span class="flex-1 truncate">{{ t.title }}</span>
-              <TicketBadges :status="t.status" :priority="t.priority" />
-            </router-link>
+            <TicketListRow v-for="t in tickets" :key="t.id" :ticket="t" :to="`/portal/tickets/${t.id}`" />
             <p v-if="tickets.length === 0" class="py-3 text-sm text-base-content/50">No tickets on this project yet.</p>
           </div>
         </div>
