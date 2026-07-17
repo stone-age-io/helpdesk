@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
@@ -34,6 +34,15 @@ const newComment = ref('')
 const internalNote = ref(false)
 const commentFiles = ref<File[]>([])
 const posting = ref(false)
+// Mobile only: the composer collapses to a slim sticky bar so a long thread
+// stays readable, expanding to the full reply box on tap. Desktop renders the
+// full composer statically and ignores this (see the isDesktop guard below).
+const composerOpen = ref(false)
+const composerTextarea = ref<HTMLTextAreaElement | null>(null)
+function openComposer() {
+  composerOpen.value = true
+  nextTick(() => composerTextarea.value?.focus())
+}
 // When off, field edits are saved without emailing the requester — for
 // triage cleanup, a mis-set status, or an internal reassignment.
 const notify = ref(true)
@@ -220,6 +229,8 @@ async function postComment() {
     newComment.value = ''
     internalNote.value = false
     commentFiles.value = []
+    // Reclaim the reading area on mobile once the reply is in.
+    if (!isDesktop.value) composerOpen.value = false
     await loadComments()
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
@@ -402,26 +413,48 @@ onUnmounted(() => {
         </div>
 
         <!-- Composer. Sticky at the viewport bottom on mobile so replying is
-             always in reach no matter how long the timeline; static on desktop. -->
-        <div class="card bg-base-100 shadow-sm sticky bottom-0 z-20 shadow-lg xl:static xl:z-auto xl:shadow-sm">
-          <div class="card-body py-3 px-4 space-y-2">
-            <textarea
-              v-model="newComment"
-              rows="3"
-              class="textarea textarea-bordered w-full"
-              placeholder="Write a reply…"
-              :disabled="posting"
-            ></textarea>
-            <FileInput v-model:files="commentFiles" :disabled="posting" />
-            <div class="flex justify-between items-center">
-              <label class="label cursor-pointer gap-2">
-                <input v-model="internalNote" type="checkbox" class="checkbox checkbox-sm checkbox-warning" :disabled="posting" />
-                <span class="label-text text-sm">Internal note (hidden from requester)</span>
-              </label>
-              <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
-                <span v-if="posting" class="loading loading-spinner loading-xs"></span>
-                Post
+             always in reach no matter how long the timeline; static on desktop.
+             On mobile it collapses to a slim bar (below) to keep the thread
+             readable, expanding to the full box on tap. -->
+        <div class="sticky bottom-0 z-20 xl:static xl:z-auto">
+          <!-- Collapsed mobile bar: one tap to expand. -->
+          <button
+            v-if="!isDesktop && !composerOpen"
+            class="btn btn-block justify-start font-normal text-base-content/50 bg-base-100 border-base-300 shadow-lg"
+            @click="openComposer"
+          >
+            Write a reply…
+          </button>
+
+          <!-- Full composer: always on desktop, on demand on mobile. -->
+          <div v-else class="card bg-base-100 shadow-lg xl:shadow-sm">
+            <div class="card-body py-3 px-4 space-y-2">
+              <button
+                v-if="!isDesktop"
+                class="btn btn-ghost btn-xs self-end -mb-1"
+                @click="composerOpen = false"
+              >
+                Collapse ▾
               </button>
+              <textarea
+                ref="composerTextarea"
+                v-model="newComment"
+                rows="3"
+                class="textarea textarea-bordered w-full"
+                placeholder="Write a reply…"
+                :disabled="posting"
+              ></textarea>
+              <FileInput v-model:files="commentFiles" :disabled="posting" />
+              <div class="flex justify-between items-center">
+                <label class="label cursor-pointer gap-2">
+                  <input v-model="internalNote" type="checkbox" class="checkbox checkbox-sm checkbox-warning" :disabled="posting" />
+                  <span class="label-text text-sm">Internal note (hidden from requester)</span>
+                </label>
+                <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
+                  <span v-if="posting" class="loading loading-spinner loading-xs"></span>
+                  Post
+                </button>
+              </div>
             </div>
           </div>
         </div>

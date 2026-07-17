@@ -353,11 +353,11 @@ onMounted(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+    <div class="flex flex-row justify-between items-center gap-2">
       <h1 class="text-2xl font-bold">Reports</h1>
       <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-sm btn-primary">Export ▾</div>
-        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-60 p-1 z-50">
+        <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box shadow-lg border border-base-300 w-60 max-w-[calc(100vw-2rem)] p-1 z-50">
           <li><a @click="exportAll">All reports (CSV)</a></li>
           <li class="menu-title px-2 pt-2 pb-1 text-xs">Detail rows</li>
           <li><a @click="exportTime">Time entries — detail</a></li>
@@ -368,13 +368,13 @@ onMounted(() => {
 
     <!-- Filters: date range + customer/location scope (applies to every rollup). -->
     <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
-      <div class="form-control">
+      <div class="form-control w-full sm:w-auto">
         <label class="label py-1"><span class="label-text text-xs">From</span></label>
-        <input v-model="from" type="date" class="input input-bordered input-sm" />
+        <input v-model="from" type="date" class="input input-bordered input-sm w-full sm:w-auto" />
       </div>
-      <div class="form-control">
+      <div class="form-control w-full sm:w-auto">
         <label class="label py-1"><span class="label-text text-xs">To</span></label>
-        <input v-model="to" type="date" class="input input-bordered input-sm" />
+        <input v-model="to" type="date" class="input input-bordered input-sm w-full sm:w-auto" />
       </div>
       <div class="form-control w-full sm:w-52">
         <label class="label py-1"><span class="label-text text-xs">Customer</span></label>

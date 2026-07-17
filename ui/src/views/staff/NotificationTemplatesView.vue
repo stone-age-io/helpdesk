@@ -178,13 +178,14 @@ onMounted(load)
         <div class="card-body p-3">
           <ul class="menu p-0">
             <li v-for="t in templates" :key="t.event_type">
-              <a :class="{ active: t.event_type === selectedType }" @click="select(t.event_type)">
-                <span class="flex-1 truncate">{{ t.name }}</span>
-                <span class="flex items-center gap-1">
+              <a class="flex items-center gap-2" :class="{ active: t.event_type === selectedType }" @click="select(t.event_type)">
+                <span class="flex-1 min-w-0 truncate">{{ t.name }}</span>
+                <span class="flex items-center gap-1 shrink-0">
                   <span
                     class="badge-soft"
                     :class="t.enabled ? 'badge-soft-success' : 'badge-soft-neutral'"
                     :title="`Email ${t.enabled ? 'enabled' : 'disabled'}`"
+                    :aria-label="`Email ${t.enabled ? 'enabled' : 'disabled'}`"
                   >
                     <span class="badge-dot"></span>email
                   </span>
@@ -192,6 +193,7 @@ onMounted(load)
                     class="badge-soft"
                     :class="t.publish_nats ? 'badge-soft-success' : 'badge-soft-neutral'"
                     :title="`NATS ${t.publish_nats ? 'enabled' : 'disabled'}`"
+                    :aria-label="`NATS ${t.publish_nats ? 'enabled' : 'disabled'}`"
                   >
                     <span class="badge-dot"></span>nats
                   </span>

@@ -190,30 +190,42 @@ onMounted(load)
               <h2 class="card-title text-base">Recent Tickets</h2>
               <router-link :to="`/staff/tickets?customer=${id}`" class="link link-hover text-sm">View all →</router-link>
             </div>
-            <ul class="space-y-1">
-              <li v-for="t in tickets" :key="t.id">
-                <router-link :to="`/staff/tickets/${t.id}`" class="flex items-center gap-2 text-sm link-hover">
-                  <span class="font-mono">#{{ t.number }}</span>
-                  <span class="flex-1 truncate">{{ t.title }}</span>
-                  <TicketBadges :status="t.status" />
-                </router-link>
-              </li>
-            </ul>
-            <p v-if="tickets.length === 0" class="text-sm text-base-content/50">No tickets.</p>
+            <div class="divide-y divide-base-200">
+              <router-link
+                v-for="t in tickets"
+                :key="t.id"
+                :to="`/staff/tickets/${t.id}`"
+                class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+              >
+                <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
+                <span class="flex-1 truncate">{{ t.title }}</span>
+                <TicketBadges :status="t.status" :priority="t.priority" />
+              </router-link>
+              <p v-if="tickets.length === 0" class="py-3 text-sm text-base-content/50">No tickets.</p>
+            </div>
           </div>
         </div>
 
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
-            <h2 class="card-title text-base">Requesters</h2>
-            <ul class="space-y-1">
-              <li v-for="r in requesters" :key="r.id" class="text-sm flex items-center gap-2">
-                <router-link :to="`/staff/tickets?search=${encodeURIComponent(r.email)}`" class="flex-1 link link-hover truncate" title="View this requester's tickets">{{ r.name || r.email }}</router-link>
-                <span class="text-base-content/50">{{ r.email }}</span>
-                <span class="badge-soft" :class="r.active ? 'badge-soft-success' : 'badge-soft-neutral'">{{ r.active ? 'active' : 'inactive' }}</span>
-              </li>
-            </ul>
-            <p v-if="requesters.length === 0" class="text-sm text-base-content/50">No portal accounts.</p>
+            <h2 class="card-title text-base">
+              Requesters
+              <span v-if="requesters.length" class="text-sm font-normal text-base-content/50">· {{ requesters.length }}</span>
+            </h2>
+            <div class="divide-y divide-base-200">
+              <router-link
+                v-for="r in requesters"
+                :key="r.id"
+                :to="`/staff/tickets?search=${encodeURIComponent(r.email)}`"
+                class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+                title="View this requester's tickets"
+              >
+                <span class="flex-1 truncate">{{ r.name || r.email }}</span>
+                <span class="hidden sm:inline text-xs text-base-content/50 truncate">{{ r.email }}</span>
+                <span class="badge-soft shrink-0" :class="r.active ? 'badge-soft-success' : 'badge-soft-neutral'">{{ r.active ? 'active' : 'inactive' }}</span>
+              </router-link>
+              <p v-if="requesters.length === 0" class="py-3 text-sm text-base-content/50">No portal accounts.</p>
+            </div>
           </div>
         </div>
       </div>
