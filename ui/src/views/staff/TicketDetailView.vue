@@ -318,11 +318,13 @@ onUnmounted(() => {
         <div class="card bg-base-100 shadow-sm">
           <div class="card-body">
             <template v-if="!editingHeader">
-              <div class="flex items-start gap-2 flex-wrap">
-                <h1 class="text-xl font-bold flex-1">#{{ ticket.number }} — {{ ticket.title }}</h1>
+              <div class="flex items-start justify-between gap-2">
+                <h1 class="text-xl font-bold min-w-0">#{{ ticket.number }} — {{ ticket.title }}</h1>
+                <button class="btn btn-ghost btn-xs shrink-0" @click="startEditHeader">Edit</button>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 mt-2">
                 <TicketBadges :status="ticket.status" :priority="ticket.priority" />
                 <CategoryBadge :name="ticket.expand?.category?.name" :color="ticket.expand?.category?.color" />
-                <button class="btn btn-ghost btn-xs" @click="startEditHeader">Edit</button>
               </div>
               <p v-if="ticket.body" class="whitespace-pre-wrap text-sm mt-2">{{ ticket.body }}</p>
               <AttachmentList :record="ticket" :files="ticket.attachments" />
