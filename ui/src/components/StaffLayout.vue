@@ -127,7 +127,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" brand="Service Desk" icon="🛠️" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
+      <AppSidebar :sections="sections" brand="Service Desk" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />

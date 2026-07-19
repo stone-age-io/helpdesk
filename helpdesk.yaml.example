@@ -4,6 +4,14 @@
 # PocketBase data directory (SQLite database, uploads).
 data_dir: pb_data
 
+# Optional operator branding overlay. Point `dir` at a host directory holding
+# any of theme.css, logo.svg, and branding.json; the helpdesk serves them under
+# /branding/* so an operator can override the app name, logo, and DaisyUI theme
+# without rebuilding. branding.json shape: { "appName": "...", "logo": "logo.svg" }.
+# Empty / unset (or HELPDESK_BRANDING_DIR) = embedded defaults. See branding.example/.
+branding:
+  dir: ""
+
 # NATS connection to the platform operator's hub account. Leave urls empty to
 # run without NATS (tickets then arrive only via portal/agent/webhook).
 #

@@ -11,6 +11,7 @@ import (
 	"context"
 	"io/fs"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -146,6 +147,7 @@ func main() {
 			}
 		}
 
+		serveBranding(e, cfg.BrandingDir)
 		if err := serveSPA(e); err != nil {
 			return err
 		}
@@ -164,6 +166,44 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatalf("pocketbase exited with error: %v", err)
 	}
+}
+
+// serveBranding registers the operator branding overlay under /branding/*,
+// before the SPA catch-all. When brandingDir is set it serves that host
+// directory's files (theme.css, logo.svg, branding.json); index.html
+// unconditionally <link>s theme.css and the SPA fetches branding.json, so we
+// serve silent empty fallbacks for those two when no overlay is configured —
+// otherwise a stock deployment fills the browser console with 404s. Path
+// traversal ("..") is rejected.
+func serveBranding(e *core.ServeEvent, brandingDir string) {
+	var brandingFS fs.FS
+	if brandingDir != "" {
+		if info, err := os.Stat(brandingDir); err != nil || !info.IsDir() {
+			log.Printf("branding.dir is set but not a usable directory: %s", brandingDir)
+		} else {
+			brandingFS = os.DirFS(brandingDir)
+			log.Printf("branding overlay serving from: %s", brandingDir)
+		}
+	}
+	e.Router.GET("/branding/{path...}", func(re *core.RequestEvent) error {
+		p := re.Request.PathValue("path")
+		if p == "" || strings.Contains(p, "..") {
+			return re.NotFoundError("Not found", nil)
+		}
+		if brandingFS != nil {
+			if f, openErr := brandingFS.Open(p); openErr == nil {
+				_ = f.Close()
+				return re.FileFS(brandingFS, p)
+			}
+		}
+		switch p {
+		case "theme.css":
+			return re.Blob(200, "text/css; charset=utf-8", nil)
+		case "branding.json":
+			return re.Blob(200, "application/json", []byte("{}"))
+		}
+		return re.NotFoundError("Not found", nil)
+	})
 }
 
 // serveSPA registers the embedded SPA at "/" with history-mode fallback.

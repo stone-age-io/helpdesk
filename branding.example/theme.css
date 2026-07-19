@@ -1,0 +1,62 @@
+/*
+ * Operator branding overlay — theme override.
+ *
+ * Copy this directory somewhere on the host (e.g. /etc/helpdesk/branding/), add
+ * your own logo.svg, then point `branding.dir` in helpdesk.yaml at it (or set
+ * HELPDESK_BRANDING_DIR). The helpdesk serves these files under /branding/*.
+ *
+ * The UI uses DaisyUI v4, which exposes its palette as OKLCH triplets
+ * (lightness% chroma hue) on the [data-theme=...] selector. Tailwind utilities
+ * resolve these via `oklch(var(--p))`, etc. This file is loaded AFTER the
+ * bundled CSS, so anything you set here wins by cascade order.
+ *
+ * IMPORTANT — override only what you need. The helpdesk ships a custom
+ * light/dark theme (defined in ui/tailwind.config.js); every variable you leave
+ * out below keeps that built-in value. So a one-line override recolors just the
+ * primary and inherits the rest of the tuned palette — you do NOT need to
+ * restate the whole theme. The examples below are commented out; uncomment and
+ * change the ones you want.
+ *
+ * DaisyUI's variable names (override any):
+ *   --p / --pc   primary / primary-content (text on primary)
+ *   --s / --sc   secondary        --a / --ac   accent
+ *   --n / --nc   neutral
+ *   --b1 --b2 --b3   base surfaces (page/card/border)   --bc   base text
+ *   --in --su --wa --er   info / success / warning / error
+ *   --rounded-box --rounded-btn --rounded-badge   component shape (rem)
+ *
+ * The full stock defaults are documented in DaisyUI's source:
+ * https://github.com/saadeghi/daisyui/tree/v4.4.0/src/theming/themes.js
+ */
+
+/* =============================================================================
+ * LIGHT THEME — override only the lines you need.
+ * ============================================================================= */
+[data-theme="light"] {
+  /* Example: a warm-orange brand primary (replace with your own OKLCH triplet). */
+  /* --p: 70.5% 0.17 44;   */ /* primary            */
+  /* --pc: 98% 0.02 44;     */ /* primary-content    */
+
+  /* Example: tweak the page/card surfaces. */
+  /* --b1: 100% 0 0;        */ /* base-100 (card)    */
+  /* --b2: 96% 0 0;         */ /* base-200 (page)    */
+}
+
+/* =============================================================================
+ * DARK THEME — keep in sync with light; operators toggle at runtime.
+ * ============================================================================= */
+[data-theme="dark"] {
+  /* --p: 72% 0.15 44;  */
+  /* --pc: 20% 0.03 44; */
+}
+
+/* =============================================================================
+ * Per-theme logo swap (optional): drop multiple SVGs in this directory and
+ * select between them via the .brand-logo-img class the UI exposes.
+ * `content: url(...)` replaces the <img>'s source while preserving its sizing —
+ * works in modern Chromium / WebKit / Firefox.
+ * ============================================================================= */
+/*
+[data-theme="light"] .brand-logo-img { content: url('/branding/logo-light.svg'); }
+[data-theme="dark"]  .brand-logo-img { content: url('/branding/logo-dark.svg'); }
+*/

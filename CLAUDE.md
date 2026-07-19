@@ -44,6 +44,17 @@ printed once to stdout). Config: `helpdesk.yaml` (or `$HELPDESK_CONFIG`)
 plus `HELPDESK_*` env overrides — see `docs/configuration.md`. SMTP and the
 application URL live in PocketBase settings (dashboard), not the YAML.
 
+An optional operator **branding overlay** (`branding.dir`, env
+`HELPDESK_BRANDING_DIR`, empty by default) lets an install override the UI's app
+name, logo, and DaisyUI theme **without rebuilding**: `serveBranding` serves that
+host directory's `theme.css`/`logo.svg`/`branding.json` under `/branding/*` (the
+route is always registered and returns a silent empty `theme.css`/`{}`
+`branding.json` when unconfigured, so a stock install never 404s). `index.html`
+`<link>`s `/branding/theme.css`; `stores/branding.ts` fetches `branding.json`
+pre-mount; `BrandLogo.vue` prefers the overlay logo, else the built-in inline
+mark. `branding.example/` is the committed template. Mirrors the sibling
+`platform`/`access-control` apps' branding system.
+
 ## Architecture
 
 **Identity: two auth collections**, distinguished in rules by

@@ -69,7 +69,6 @@ onMounted(() => timer.load())
       <AppSidebar
         :sections="fieldSections"
         brand="Service Desk"
-        icon="🛠️"
         home="/staff/today"
         @change-password="showPassword = true"
         @edit-profile="showProfile = true"

@@ -16,6 +16,12 @@ type Config struct {
 	// DataDir is PocketBase's data directory (SQLite, uploads).
 	DataDir string
 
+	// BrandingDir is an optional operator branding overlay: a host directory
+	// whose files (theme.css, logo.svg, branding.json) the helpdesk serves under
+	// /branding/*, overriding the embedded app name, logo, and DaisyUI theme
+	// without a rebuild. Empty (the default) = embedded defaults only.
+	BrandingDir string
+
 	NATS NATSConfig
 }
 
@@ -44,6 +50,7 @@ func (n NATSConfig) Enabled() bool { return len(n.URLs) > 0 }
 func Load() (*Config, error) {
 	v := viper.New()
 	v.SetDefault("data_dir", "pb_data")
+	v.SetDefault("branding.dir", "")
 	v.SetDefault("nats.urls", []string{})
 	v.SetDefault("nats.creds_file", "")
 	v.SetDefault("nats.stream", "HELPDESK_EVENTS")
@@ -71,7 +78,8 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DataDir: v.GetString("data_dir"),
+		DataDir:     v.GetString("data_dir"),
+		BrandingDir: v.GetString("branding.dir"),
 		NATS: NATSConfig{
 			URLs:         v.GetStringSlice("nats.urls"),
 			CredsFile:    v.GetString("nats.creds_file"),
