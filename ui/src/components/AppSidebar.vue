@@ -96,11 +96,14 @@ function logout() {
 </script>
 
 <template>
-  <!-- min-h-full, not h-dvh: daisyUI's .drawer-side is already a 100dvh
-       container and the only scroller — a second full-height box inside it
-       overflows by a few pixels and grows a phantom scrollbar. -->
+  <!-- h-full = 100% of daisyUI's .drawer-side (itself 100dvh), which caps the
+       sidebar at the viewport so it never scrolls as a whole. Using its own height
+       (not min-h-full, which grows with content, nor an independent h-dvh, which
+       could overflow by a sub-pixel and grow a phantom scrollbar). The nav below is
+       the only scroller (flex-1 min-h-0), so the brand header and account footer
+       stay pinned. -->
   <aside
-    class="bg-base-100 min-h-full flex flex-col border-r border-base-300 transition-all duration-300 ease-in-out z-20 pad-safe-top"
+    class="bg-base-100 h-full flex flex-col border-r border-base-300 transition-all duration-300 ease-in-out z-20 pad-safe-top"
     :class="effectiveCompact ? 'w-20 min-w-[5rem]' : 'w-72 min-w-[18rem]'"
   >
     <!-- TOP: brand + collapse toggle -->
@@ -132,8 +135,8 @@ function logout() {
       <div class="divider my-0"></div>
     </div>
 
-    <!-- NAVIGATION -->
-    <nav class="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-2">
+    <!-- NAVIGATION (the only scroller; min-h-0 lets this flex child shrink and scroll) -->
+    <nav class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-2">
       <ul class="menu p-0 gap-1 w-full">
         <template v-for="(section, si) in visibleSections" :key="si">
           <li v-if="section.title && !effectiveCompact" class="menu-title px-2 pt-3 pb-1 text-[10px] uppercase tracking-widest opacity-50">
