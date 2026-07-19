@@ -19,6 +19,10 @@ cover containerized deployments. Every key has an env override with the
 # PocketBase data directory (SQLite database, uploads).
 data_dir: pb_data
 
+# Optional operator branding overlay (see "Branding overlay" below).
+branding:
+  dir: ""                        # host dir of theme.css / logo.svg / branding.json
+
 # NATS connection to the platform operator's hub account. Leave urls empty
 # to run without NATS (tickets then arrive only via portal/agent/webhook).
 nats:
@@ -28,6 +32,25 @@ nats:
   durable: helpdesk-ingest       # durable consumer name; stable across restarts
   notify_stream: HELPDESK_NOTIFICATIONS  # helpdesk-owned OUTBOUND event stream
 ```
+
+### Branding overlay
+
+Point `branding.dir` (env `HELPDESK_BRANDING_DIR`) at a host directory to
+override the app name, logo, and DaisyUI theme **without rebuilding**. The
+helpdesk serves that directory's files under `/branding/*`; `index.html`
+`<link>`s `/branding/theme.css` and the SPA fetches `/branding/branding.json`
+at boot. Empty/unset = embedded defaults, and the route still serves a silent
+empty `theme.css` / `{}` `branding.json` so a stock install never 404s
+(path traversal is rejected).
+
+| File | Shape | Effect |
+|---|---|---|
+| `branding.json` | `{ "appName": "...", "logo": "logo.svg" }` | app name (sidebar + browser tab) and logo file, served at `/branding/<logo>`. |
+| `theme.css` | DaisyUI `[data-theme=light\|dark]` OKLCH var overrides | recolors the UI; loaded after the bundled CSS. Override only what you need — the rest keeps the built-in theme. |
+| the logo (e.g. `logo.svg`) | an image | replaces the built-in mark; `.brand-logo-img` is a CSS hook for per-theme swaps. |
+
+Copy [`branding.example/`](../branding.example) to the host (e.g.
+`/etc/helpdesk/branding/`), add your `logo.svg`, and set `branding.dir`.
 
 ### NATS credentials
 

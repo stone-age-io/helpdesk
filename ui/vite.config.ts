@@ -19,6 +19,9 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/api': 'http://127.0.0.1:8090',
+      // Operator branding overlay (theme.css / branding.json / logo) is served
+      // by the helpdesk backend, so proxy it in dev too.
+      '/branding': 'http://127.0.0.1:8090',
     },
   },
 })

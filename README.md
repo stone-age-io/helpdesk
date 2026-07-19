@@ -70,6 +70,12 @@ prints its password **once**. Configuration is `helpdesk.yaml` +
 the application URL (ticket links in emails) are configured in the
 PocketBase dashboard, not the YAML.
 
+The UI is **rebrandable at runtime without a rebuild**: point `branding.dir`
+(env `HELPDESK_BRANDING_DIR`) at a host directory of `theme.css` / `logo.svg` /
+`branding.json` to override the app name, logo, and theme — see
+[docs/configuration.md](docs/configuration.md#branding-overlay) and the
+[`branding.example/`](branding.example) template.
+
 ```bash
 go test ./...
 ```
