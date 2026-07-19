@@ -43,9 +43,11 @@ type VisitInfo struct {
 	ScheduledAt string
 	// OldScheduledAt is set only for visit.rescheduled.
 	OldScheduledAt string
-	AssigneeName   string
-	Location       string
-	Notes          string
+	// CompletedAt is set only for visit.completed.
+	CompletedAt  string
+	AssigneeName string
+	Location     string
+	Notes        string
 }
 
 // TicketContext is the render payload every helpdesk event type shares.
@@ -129,6 +131,7 @@ func SampleContext() TicketContext {
 		Visit: &VisitInfo{
 			ScheduledAt:    "2026-07-14 14:00:00.000Z",
 			OldScheduledAt: "2026-07-12 09:00:00.000Z",
+			CompletedAt:    "2026-07-14 15:30:00.000Z",
 			AssigneeName:   "Sam Staff",
 			Location:       "Main St branch, rear entrance",
 			Notes:          "Bring spare motor",

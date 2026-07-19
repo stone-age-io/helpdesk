@@ -132,7 +132,14 @@ accepts both, and an outbound event can never be re-ingested as a ticket.
 
 - `customer.platform_org_id` is omitted when the customer isn't mapped.
 - `change` is present only for `ticket.status_changed`; `comment` only for
-  `ticket.commented`; `visit` only for the `visit.*` events.
+  `ticket.commented`; `visit` only for the `visit.*` events (`visit.scheduled`,
+  `visit.rescheduled`, `visit.canceled`, `visit.completed`).
+- The `visit` block carries `scheduled_at`, `assignee_name`, `location`, `notes`
+  as available, plus `old_scheduled_at` (only on `visit.rescheduled`) and
+  `completed_at` (only on `visit.completed`). Empty fields are omitted.
+- `visit.completed` is **NATS-only** — it publishes on this channel but is
+  email-disabled by default (see `docs/notifications.md`). It is the machine
+  signal that on-site work finished; the other visit events also email.
 - The consumer is MSP-internal, so staff identity (assignee) is included — the
   portal's roster-hiding does not apply here.
 

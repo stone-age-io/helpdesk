@@ -37,7 +37,7 @@ event regardless (an audit/metrics consumer generally wants every event).
 
 ## Events
 
-Seven event types, each one template row. "Fires when" is the exact
+Eight event types, each one template row. "Fires when" is the exact
 condition; visit events fire on **transitions**, not raw saves.
 
 | Event                    | Fires when                                                        | Default recipients      |
@@ -49,14 +49,23 @@ condition; visit events fire on **transitions**, not raw saves.
 | `visit.scheduled`        | a visit becomes `scheduled` (created scheduled, or requested→scheduled) | requester + assignee |
 | `visit.rescheduled`      | `scheduled_at` moves while the visit stays `scheduled`            | requester + assignee    |
 | `visit.canceled`         | a **scheduled** visit becomes `canceled`                          | requester + assignee    |
+| `visit.completed`        | a visit becomes `completed` (or is back-dated straight to it)     | **none — NATS-only**†   |
 
 \* On comments the author's own side is blanked (see Suppression). A staff
 comment therefore mails the requester; a requester comment mails the
 assignee.
 
-**Deliberately silent** (no event): completing a visit, canceling a bare
-`requested` visit (nothing was announced yet), and swapping a visit's
-technician without changing the time.
+† `visit.completed` ships **email-disabled and `publish_nats` enabled** (seeded
+by migration `1817000000`). Completion is already communicated to humans by the
+ticket's status/comments, so an inbox message would be noise — but the wire
+event is a "work done on site" signal for MSP-internal automation (billing /
+CMDB sync / SLA close-out). An operator can still enable email and add
+recipients from the editor; the compiled-in template renders a sensible message
+if they do.
+
+**Deliberately silent** (no event at all): canceling a bare `requested` visit
+(nothing was announced yet), and swapping a visit's technician without changing
+the time.
 
 For visit events the visit's **technician** (`assignee`) overrides the
 ticket's assignee in the payload — both the `{{.Visit.AssigneeName}}` field

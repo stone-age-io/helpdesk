@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent, TimeEntry, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import WorkCard from '@/components/WorkCard.vue'
@@ -21,6 +21,10 @@ const id = route.params.id as string
 const ticket = ref<Ticket | null>(null)
 const comments = ref<TicketComment[]>([])
 const events = ref<TicketEvent[]>([])
+// Visits + time are managed in the WorkCard rail; the timeline loads them
+// independently, read-only, purely to interleave them into the activity stream.
+const visits = ref<Visit[]>([])
+const timeEntries = ref<TimeEntry[]>([])
 const staff = ref<Staff[]>([])
 const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
@@ -78,10 +82,23 @@ const projectOptions = computed(() =>
 type TimelineItem =
   | { kind: 'comment'; key: string; created: string; comment: TicketComment }
   | { kind: 'event'; key: string; created: string; event: TicketEvent }
+  | { kind: 'visit'; key: string; created: string; visit: Visit }
+  | { kind: 'time'; key: string; created: string; time: TimeEntry }
+// A visit is one record, not a per-transition log, so it appears as a single
+// milestone placed at its most telling moment: when completed, its completion
+// time; when scheduled, its (possibly future) slot; otherwise when requested.
+// A scheduled visit therefore sorts to the tail as "upcoming".
+function visitTimelineAt(v: Visit): string {
+  if (v.status === 'completed') return v.completed_at || v.scheduled_at || v.created
+  if (v.scheduled_at) return v.scheduled_at
+  return v.created
+}
 const timeline = computed<TimelineItem[]>(() => {
   const items: TimelineItem[] = [
     ...comments.value.map((c) => ({ kind: 'comment' as const, key: 'c' + c.id, created: c.created, comment: c })),
     ...events.value.map((e) => ({ kind: 'event' as const, key: 'e' + e.id, created: e.created, event: e })),
+    ...visits.value.map((v) => ({ kind: 'visit' as const, key: 'v' + v.id, created: visitTimelineAt(v), visit: v })),
+    ...timeEntries.value.map((te) => ({ kind: 'time' as const, key: 't' + te.id, created: te.created, time: te })),
   ]
   return items.sort((a, b) => a.created.localeCompare(b.created))
 })
@@ -130,11 +147,39 @@ async function loadEvents() {
   }
 }
 
+async function loadVisits() {
+  // Expand the technician so the timeline can name who went (staff-side only;
+  // the portal deliberately hides it). Read-only here — the WorkCard owns edits.
+  try {
+    visits.value = await pb.collection('visits').getFullList<Visit>({
+      filter: `ticket = '${id}'`,
+      sort: 'created',
+      expand: 'assignee',
+    })
+  } catch {
+    // Optional context; the thread still renders without it.
+  }
+}
+
+async function loadTimeEntries() {
+  // Expand staff so a logged-time row names the agent even if they're inactive
+  // (the active-only staff list wouldn't resolve them).
+  try {
+    timeEntries.value = await pb.collection('time_entries').getFullList<TimeEntry>({
+      filter: `ticket = '${id}'`,
+      sort: 'created',
+      expand: 'staff',
+    })
+  } catch {
+    // Optional context.
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    await Promise.all([loadTicket(), loadComments(), loadEvents()])
+    await Promise.all([loadTicket(), loadComments(), loadEvents(), loadVisits(), loadTimeEntries()])
     staff.value = await pb.collection('staff').getFullList<Staff>({ sort: 'name', filter: 'active = true' })
     customers.value = await pb.collection('customers').getFullList<Customer>({ sort: 'name' })
     categories.value = await pb.collection('ticket_categories').getFullList<TicketCategory>({ sort: 'sort_order,name', filter: 'active = true' })
@@ -258,6 +303,34 @@ function actorName(e: TicketEvent): string {
 }
 const humanize = (v?: string) => (v || '').replace(/_/g, ' ')
 
+// Timeline visit + time rows (staff-side).
+const staffById = computed(() => new Map(staff.value.map((s) => [s.id, s])))
+function timeStaffName(te: TimeEntry): string {
+  return te.expand?.staff?.name || staffById.value.get(te.staff)?.name || 'Staff'
+}
+function visitTechName(v: Visit): string {
+  if (!v.assignee) return ''
+  return v.expand?.assignee?.name || staffById.value.get(v.assignee)?.name || ''
+}
+const visitGlyph = (status: string) =>
+  status === 'completed' ? '✅' : status === 'canceled' ? '✖️' : status === 'scheduled' ? '🗓️' : '📋'
+function fmtMinutes(m: number): string {
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  if (h > 0) return mm > 0 ? `${h}h ${mm}m` : `${h}h`
+  return `${mm}m`
+}
+function fmtDate(v?: string): string {
+  if (!v) return ''
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? '' : format(d, 'MMM d, HH:mm')
+}
+function fmtDay(v?: string): string {
+  if (!v) return ''
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? '' : format(d, 'MMM d')
+}
+
 // Live updates: another agent's reply, a status change, or a requester
 // comment lands without a manual refresh. Debounced to collapse bursts.
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
@@ -267,11 +340,15 @@ function scheduleReload() {
     loadTicket().catch(() => {})
     loadComments().catch(() => {})
     loadEvents().catch(() => {})
+    loadVisits().catch(() => {})
+    loadTimeEntries().catch(() => {})
   }, 500)
 }
 let unsubTicket: (() => void) | null = null
 let unsubComments: (() => void) | null = null
 let unsubEvents: (() => void) | null = null
+let unsubVisits: (() => void) | null = null
+let unsubTime: (() => void) | null = null
 
 onMounted(async () => {
   mq = window.matchMedia('(min-width: 1280px)')
@@ -281,6 +358,8 @@ onMounted(async () => {
     unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
     unsubComments = await pb.collection('ticket_comments').subscribe('*', scheduleReload)
     unsubEvents = await pb.collection('ticket_events').subscribe('*', scheduleReload)
+    unsubVisits = await pb.collection('visits').subscribe('*', scheduleReload)
+    unsubTime = await pb.collection('time_entries').subscribe('*', scheduleReload)
   } catch {
     // Realtime is progressive enhancement; the view works without it.
   }
@@ -292,6 +371,8 @@ onUnmounted(() => {
   unsubTicket?.()
   unsubComments?.()
   unsubEvents?.()
+  unsubVisits?.()
+  unsubTime?.()
 })
 </script>
 
@@ -399,7 +480,10 @@ onUnmounted(() => {
             </div>
 
             <!-- Audit event -->
-            <div v-else class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug">
+            <div
+              v-else-if="item.kind === 'event'"
+              class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug"
+            >
               <Avatar :record="actorRecord(item.event)" :name="actorName(item.event)" size="xs" />
               <span class="flex-1">
                 <span class="font-semibold text-base-content">{{ actorName(item.event) }}</span>
@@ -408,6 +492,31 @@ onUnmounted(() => {
                 →
                 <span class="font-medium text-base-content/80">{{ humanize(item.event.new_value) || '—' }}</span>
                 <span class="text-base-content/40"> · {{ formatDistanceToNow(new Date(item.event.created), { addSuffix: true }) }}</span>
+              </span>
+            </div>
+
+            <!-- Visit milestone -->
+            <div
+              v-else-if="item.kind === 'visit'"
+              class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug"
+            >
+              <span class="w-6 text-center text-sm shrink-0" aria-hidden="true">{{ visitGlyph(item.visit.status) }}</span>
+              <span class="flex-1">
+                <span class="font-semibold text-base-content">Site visit {{ item.visit.status }}</span>
+                <template v-if="fmtDate(visitTimelineAt(item.visit))"> · {{ fmtDate(visitTimelineAt(item.visit)) }}</template>
+                <template v-if="visitTechName(item.visit)"> · {{ visitTechName(item.visit) }}</template>
+                <span v-if="item.visit.location" class="text-base-content/50"> · 📍 {{ item.visit.location }}</span>
+              </span>
+            </div>
+
+            <!-- Logged time -->
+            <div v-else class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug">
+              <span class="w-6 text-center text-sm shrink-0" aria-hidden="true">⏱️</span>
+              <span class="flex-1">
+                <span class="font-semibold text-base-content">{{ timeStaffName(item.time) }}</span>
+                logged <span class="font-medium text-base-content/80">{{ fmtMinutes(item.time.minutes) }}</span>
+                <span v-if="item.time.note" class="text-base-content/50"> · {{ item.time.note }}</span>
+                <span class="text-base-content/40"> · {{ fmtDay(item.time.work_date) }}</span>
               </span>
             </div>
           </template>

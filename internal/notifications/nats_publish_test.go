@@ -168,6 +168,80 @@ func TestPublishStatusChangedCarriesChange(t *testing.T) {
 	}
 }
 
+// TestVisitCompletedSeededNATSOnly proves migration 1817 lands the template in
+// its NATS-only state: email off, wire channel on.
+func TestVisitCompletedSeededNATSOnly(t *testing.T) {
+	h := setupHarness(t)
+	rec, err := h.app.FindFirstRecordByFilter(
+		"notification_templates", "event_type = {:t}",
+		dbx.Params{"t": notifications.EventTypeVisitCompleted})
+	if err != nil {
+		t.Fatalf("visit.completed template not seeded: %v", err)
+	}
+	if rec.GetBool("enabled") {
+		t.Error("visit.completed should ship email-disabled")
+	}
+	if !rec.GetBool("publish_nats") {
+		t.Error("visit.completed should ship with publish_nats enabled")
+	}
+}
+
+// TestVisitCompletedPublishesNATSOnly drives a visit to completed and asserts it
+// publishes a rich envelope (with completed_at + technician) while mailing
+// nobody — the whole point of the NATS-only channel. No enablePublish call: the
+// seeded template already carries publish_nats=true.
+func TestVisitCompletedPublishesNATSOnly(t *testing.T) {
+	h := setupHarness(t)
+	fake := &fakePublisher{}
+	h.notifier.SetPublisher(fake)
+
+	ticket := h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	visit := h.createVisit(t, ticket, map[string]any{
+		"status": "scheduled", "assignee": h.agent.Id,
+		"scheduled_at": "2026-07-14 14:00:00.000Z",
+	})
+	h.drain(t) // discard the scheduled event (visit.scheduled has publish_nats off)
+
+	if got := fake.captured(); len(got) != 0 {
+		t.Fatalf("scheduling published %d messages; expected 0 before completion", len(got))
+	}
+
+	h.updateVisit(t, visit.Id, map[string]any{
+		"status":       "completed",
+		"completed_at": "2026-07-14 15:30:00.000Z",
+	})
+	mail := h.drain(t)
+
+	if len(mail) != 0 {
+		t.Errorf("visit.completed is NATS-only but mailed %v", mail)
+	}
+	msgs := fake.captured()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 visit.completed publish, got %d", len(msgs))
+	}
+	msg := msgs[0]
+	if want := "helpdesk." + h.customer.Id + ".events.visit.completed"; msg.subject != want {
+		t.Errorf("subject = %q, want %q", msg.subject, want)
+	}
+
+	var env notifications.EventEnvelope
+	if err := json.Unmarshal(msg.data, &env); err != nil {
+		t.Fatalf("envelope is not valid JSON: %v", err)
+	}
+	if env.EventType != notifications.EventTypeVisitCompleted {
+		t.Errorf("event_type = %q", env.EventType)
+	}
+	if env.Visit == nil {
+		t.Fatal("visit.completed envelope missing visit block")
+	}
+	if env.Visit.CompletedAt == "" {
+		t.Errorf("envelope missing completed_at: %+v", env.Visit)
+	}
+	if env.Visit.AssigneeName == "" {
+		t.Errorf("envelope missing technician name: %+v", env.Visit)
+	}
+}
+
 // TestPublishFailureDoesNotBlockEmail confirms a publish error is contained:
 // the email on the same event still goes out.
 func TestPublishFailureDoesNotBlockEmail(t *testing.T) {

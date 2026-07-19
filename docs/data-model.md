@@ -135,13 +135,17 @@ Rules:
 
 One row per workflow-field change: `ticket` (cascade), `field`, `old_value`,
 `new_value` (stored already human-readable), `actor_staff` / `actor_user`,
-`created`. Written by `internal/activity`.
+`created`. Written by `internal/activity`. Audited fields: `status`,
+`priority`, `assignee` plus the classification/grouping fields `category`,
+`type`, `project`, `location` — relation values resolve to a label at write
+time (category/location name, project `#N Title`).
 
 Rules: read `StaffRule || (RequesterRule && field = 'status' &&
 ticket.customer = @request.auth.customer)` — staff see the whole trail;
 requesters see only **status** transitions on their own tickets, for the
-portal progress timeline (amended by `1808000000`). Priority/assignee events
-never match (their values are staff names — the roster we hide), and the
+portal progress timeline (amended by `1808000000`). All other events —
+priority/assignee (staff names — the roster we hide) and the newer
+category/type/project/location — never match, and the
 actor relations stay staff-gated so an actor expand is dropped for a
 requester. No create/update/delete API rule — only the server hooks write
 here, via `app.Save`, which bypasses collection rules, so the trail can't be

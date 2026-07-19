@@ -88,8 +88,11 @@ an effort estimate). The portal create rule blocks requesters from setting
 `docs/data-model.md` covers it.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
-priority, assignee) writes a `ticket_events` row rendered as a staff-only
-timeline. Reads are staff-only (the trail names technicians); it has no
+priority, assignee, plus the classification/grouping fields category, type,
+project, location) writes a `ticket_events` row rendered as a staff-only
+timeline; relation values are resolved to labels at write time (category/
+location name, project `#N Title`). Reads are staff-only (the trail names
+technicians); it has no
 create/update API rule — the hooks write it server-side via `app.Save`
 (which bypasses collection rules), so it can't be forged or edited through
 the record API. The actor comes from request auth, or is set explicitly with

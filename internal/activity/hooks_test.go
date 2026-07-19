@@ -117,6 +117,69 @@ func TestActorAttribution(t *testing.T) {
 	}
 }
 
+func TestCategoryChangeResolvesName(t *testing.T) {
+	app, id := setup(t)
+	// A distinct name/key so it can't collide with the categories the migration
+	// seeds (both columns carry a unique index).
+	cat := seed(t, app, "ticket_categories", map[string]any{"name": "Audit Test Cat", "key": "audit-test-cat"})
+	ticket := reload(t, app, id)
+	ticket.Set("category", cat.Id)
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	evs := events(t, app, ticket.Id)
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if got := evs[0].GetString("field"); got != "category" {
+		t.Errorf("field: got %q, want category", got)
+	}
+	if got := evs[0].GetString("new_value"); got != "Audit Test Cat" {
+		t.Errorf("category new_value: got %q, want the category name", got)
+	}
+	if got := evs[0].GetString("old_value"); got != "None" {
+		t.Errorf("category old_value: got %q, want None", got)
+	}
+}
+
+func TestProjectChangeResolvesNumberTitle(t *testing.T) {
+	app, id := setup(t)
+	ticket := reload(t, app, id)
+	project := seed(t, app, "projects", map[string]any{
+		"customer": ticket.GetString("customer"), "number": 7, "title": "Downtown rollout",
+	})
+	ticket.Set("project", project.Id)
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	evs := events(t, app, ticket.Id)
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if got := evs[0].GetString("new_value"); got != "#7 Downtown rollout" {
+		t.Errorf("project new_value: got %q, want \"#7 Downtown rollout\"", got)
+	}
+}
+
+func TestTypeChangeLogged(t *testing.T) {
+	app, id := setup(t)
+	ticket := reload(t, app, id)
+	ticket.Set("type", "install")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	evs := events(t, app, ticket.Id)
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if got := evs[0].GetString("field"); got != "type" {
+		t.Errorf("field: got %q, want type", got)
+	}
+	if got := evs[0].GetString("new_value"); got != "install" {
+		t.Errorf("type new_value: got %q, want install", got)
+	}
+}
+
 func TestUnaudittedFieldNotLogged(t *testing.T) {
 	app, id := setup(t)
 	ticket := reload(t, app, id)

@@ -18,6 +18,7 @@ const (
 	EventTypeVisitScheduled      = "visit.scheduled"
 	EventTypeVisitRescheduled    = "visit.rescheduled"
 	EventTypeVisitCanceled       = "visit.canceled"
+	EventTypeVisitCompleted      = "visit.completed"
 )
 
 // Field references in the default templates must match
@@ -106,6 +107,25 @@ Notes: {{.Visit.Notes}}
 View the ticket: {{.Ticket.URL}}
 {{end}}`
 
+// The visit.completed template ships email-disabled (NATS-only by default —
+// completion is already communicated by the ticket's status/comments, so it is
+// noise in an inbox but a valuable "work done on site" signal on the wire).
+// The subject/body are still provided so an operator who opts email back on
+// gets a sensible message rather than a blank one.
+const DefaultVisitCompletedSubject = `[#{{.Ticket.Number}}] site visit completed{{if .Visit.CompletedAt}} — {{formatTime .Visit.CompletedAt}}{{end}}`
+
+const DefaultVisitCompletedBody = `The site visit for ticket #{{.Ticket.Number}} ({{.Customer}}) has been completed.
+
+{{if .Visit.CompletedAt}}Completed:  {{formatTime .Visit.CompletedAt}}
+{{end}}Technician: {{.Visit.AssigneeName}}
+{{if .Visit.Location}}Where:      {{.Visit.Location}}
+{{end}}Ticket:     {{.Ticket.Title}}
+{{if .Visit.Notes}}
+Notes: {{.Visit.Notes}}
+{{end}}{{if .Ticket.URL}}
+View the ticket: {{.Ticket.URL}}
+{{end}}`
+
 // Defaults returns the compiled-in default subject and body for the given
 // event type. ok is false when the event type is unknown — callers (the
 // migration seeder and the GET-defaults handler) treat that as "nothing to
@@ -126,6 +146,8 @@ func Defaults(eventType string) (subject, body string, ok bool) {
 		return DefaultVisitRescheduledSubject, DefaultVisitRescheduledBody, true
 	case EventTypeVisitCanceled:
 		return DefaultVisitCanceledSubject, DefaultVisitCanceledBody, true
+	case EventTypeVisitCompleted:
+		return DefaultVisitCompletedSubject, DefaultVisitCompletedBody, true
 	}
 	return "", "", false
 }
@@ -147,6 +169,8 @@ func DefaultName(eventType string) string {
 		return "Site visit rescheduled"
 	case EventTypeVisitCanceled:
 		return "Site visit canceled"
+	case EventTypeVisitCompleted:
+		return "Site visit completed"
 	}
 	return eventType
 }
@@ -163,6 +187,7 @@ func SeededEventTypes() []string {
 		EventTypeVisitScheduled,
 		EventTypeVisitRescheduled,
 		EventTypeVisitCanceled,
+		EventTypeVisitCompleted,
 	}
 }
 
@@ -208,6 +233,11 @@ func DefaultRecipients(eventType string) Recipients {
 		// Visit lifecycle events address whoever is affected on both sides:
 		// the requester expecting the tech and the tech being dispatched.
 		return Recipients{Requester: true, Assignee: true, Extras: []string{}}
+	case EventTypeVisitCompleted:
+		// NATS-only: nobody is emailed by default (the template also ships
+		// email-disabled). Completion is communicated by the ticket's
+		// status/comments; the wire event is for MSP-internal automation.
+		return Recipients{Extras: []string{}}
 	}
 	// Conservative default for unrecognized event types: address nobody.
 	// Operators must explicitly opt in to a recipient class.

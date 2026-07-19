@@ -80,6 +80,7 @@ type CommentWire struct {
 type VisitWire struct {
 	ScheduledAt    string `json:"scheduled_at,omitempty"`
 	OldScheduledAt string `json:"old_scheduled_at,omitempty"`
+	CompletedAt    string `json:"completed_at,omitempty"`
 	AssigneeName   string `json:"assignee_name,omitempty"`
 	Location       string `json:"location,omitempty"`
 	Notes          string `json:"notes,omitempty"`
@@ -126,6 +127,7 @@ func (c TicketContext) toEnvelope(eventType, occurredAt string) EventEnvelope {
 		env.Visit = &VisitWire{
 			ScheduledAt:    c.Visit.ScheduledAt,
 			OldScheduledAt: c.Visit.OldScheduledAt,
+			CompletedAt:    c.Visit.CompletedAt,
 			AssigneeName:   c.Visit.AssigneeName,
 			Location:       c.Visit.Location,
 			Notes:          c.Visit.Notes,
@@ -153,14 +155,20 @@ func SampleEnvelope(eventType string) (subject string, env EventEnvelope, ok boo
 	ctx := SampleContext()
 	isVisit := eventType == EventTypeVisitScheduled ||
 		eventType == EventTypeVisitRescheduled ||
-		eventType == EventTypeVisitCanceled
+		eventType == EventTypeVisitCanceled ||
+		eventType == EventTypeVisitCompleted
 	if eventType != EventTypeTicketCommented {
 		ctx.Comment = nil
 	}
 	if !isVisit {
 		ctx.Visit = nil
-	} else if eventType != EventTypeVisitRescheduled {
-		ctx.Visit.OldScheduledAt = "" // only a reschedule reports the prior time
+	} else {
+		if eventType != EventTypeVisitRescheduled {
+			ctx.Visit.OldScheduledAt = "" // only a reschedule reports the prior time
+		}
+		if eventType != EventTypeVisitCompleted {
+			ctx.Visit.CompletedAt = "" // only a completion reports the completed time
+		}
 	}
 	// A placeholder tenant token, matching the subject hint on the editor
 	// toggle — the real second token is the ticket's customer id.

@@ -6,6 +6,7 @@
 package activity
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/pocketbase/pocketbase"
@@ -21,9 +22,13 @@ const (
 )
 
 // auditedFields are the workflow fields whose changes are worth a timeline
-// entry. Title/body edits are deliberately excluded — too noisy, no workflow
-// meaning.
-var auditedFields = []string{"status", "priority", "assignee"}
+// entry: the lifecycle trio (status, priority, assignee) plus the
+// classification/grouping decisions (category, type, project, location) that
+// are staff actions with real workflow meaning. Title/body edits are
+// deliberately excluded — too noisy, no workflow meaning. The portal read rule
+// (migration 1808000000) still scopes requesters to `field = 'status'`, so the
+// newer fields never reach the portal timeline.
+var auditedFields = []string{"status", "priority", "assignee", "category", "type", "project", "location"}
 
 // SetActor attributes a programmatic ticket change to a specific identity so
 // the audit hook can name it — e.g. the requester whose comment auto-reopened
@@ -77,17 +82,44 @@ func logEvent(app core.App, ticket *core.Record, field, old, now string) {
 }
 
 // displayValue turns a stored value into something the timeline can show
-// verbatim: an assignee id becomes a staff name (empty → "Unassigned");
-// status and priority are already their own labels.
+// verbatim. Relation ids resolve to a human label — assignee → staff name,
+// category → category name, location → location name, project → "#N Title";
+// status, priority and type are already their own enum labels. An empty
+// relation reads as "Unassigned" for the assignee (its long-standing wording)
+// and "None" for the newer classification/grouping fields. A dangling id that
+// no longer resolves falls back to the raw value.
 func displayValue(app core.App, field, val string) string {
-	if field != "assignee" {
-		return val
+	switch field {
+	case "assignee":
+		if val == "" {
+			return "Unassigned"
+		}
+		if s, err := app.FindRecordById("staff", val); err == nil {
+			return s.GetString("name")
+		}
+	case "category":
+		if val == "" {
+			return "None"
+		}
+		if c, err := app.FindRecordById("ticket_categories", val); err == nil {
+			return c.GetString("name")
+		}
+	case "location":
+		if val == "" {
+			return "None"
+		}
+		if l, err := app.FindRecordById("locations", val); err == nil {
+			return l.GetString("name")
+		}
+	case "project":
+		if val == "" {
+			return "None"
+		}
+		if p, err := app.FindRecordById("projects", val); err == nil {
+			return fmt.Sprintf("#%d %s", p.GetInt("number"), p.GetString("title"))
+		}
 	}
-	if val == "" {
-		return "Unassigned"
-	}
-	if s, err := app.FindRecordById("staff", val); err == nil {
-		return s.GetString("name")
-	}
+	// status, priority, type — already human-readable; and the fall-through for
+	// a relation whose lookup failed.
 	return val
 }

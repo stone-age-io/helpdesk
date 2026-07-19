@@ -44,10 +44,12 @@ func quietRequested(r *http.Request) bool {
 //     ticket.assigned (assignee diff, when newly set/changed)
 //   - ticket_comments create → ticket.commented (public comments only)
 //   - visits create          → visit.scheduled (only when created scheduled;
-//     a `requested` visit has no time or tech to announce yet)
+//     a `requested` visit has no time or tech to announce yet),
+//     visit.completed (a back-dated visit created straight as completed)
 //   - visits update          → visit.scheduled (became scheduled),
 //     visit.rescheduled (time moved while scheduled),
-//     visit.canceled (was scheduled — canceling a bare request is silent)
+//     visit.canceled (was scheduled — canceling a bare request is silent),
+//     visit.completed (became completed — NATS-only by default)
 //
 // All fire from After*Success hooks, so an email never precedes its commit.
 // The notifier itself is async + nil-safe; hooks never fail the write.
@@ -118,12 +120,17 @@ func RegisterHooks(app core.App, n *Notifier) {
 	app.OnRecordAfterCreateSuccess("visits").BindFunc(func(e *core.RecordEvent) error {
 		// The guard hook (internal/visits) runs pre-save, so status is final
 		// here. A visit created directly as scheduled announces itself; a
-		// `requested` one waits for the dispatcher.
-		if e.Record.GetString("status") != "scheduled" {
-			return e.Next()
-		}
-		if ctx, ok := buildVisitContext(e.App, e.Record); ok {
-			n.Send(EventTypeVisitScheduled, ctx)
+		// `requested` one waits for the dispatcher; a back-dated visit created
+		// straight as completed still emits the NATS-only completion signal.
+		switch e.Record.GetString("status") {
+		case "scheduled":
+			if ctx, ok := buildVisitContext(e.App, e.Record); ok {
+				n.Send(EventTypeVisitScheduled, ctx)
+			}
+		case "completed":
+			if ctx, ok := buildVisitContext(e.App, e.Record); ok {
+				n.Send(EventTypeVisitCompleted, ctx)
+			}
 		}
 		return e.Next()
 	})
@@ -145,10 +152,14 @@ func RegisterHooks(app core.App, n *Notifier) {
 			n.Send(EventTypeVisitRescheduled, ctx)
 		case now == "canceled" && old == "scheduled":
 			n.Send(EventTypeVisitCanceled, ctx)
+		case now == "completed" && old != "completed":
+			// visit.completed is NATS-only by default (its template ships
+			// email-disabled): no inbox noise, but a "work done on site" signal
+			// for MSP-internal automation (billing / CMDB / SLA close-out).
+			n.Send(EventTypeVisitCompleted, ctx)
 		}
-		// Everything else is silent: completion is communicated by the
-		// ticket's status/comments, and a tech swap without a time change is
-		// an accepted gap (nobody is emailed).
+		// Everything else is silent: a tech swap without a time change is an
+		// accepted gap (nobody is emailed, nothing published).
 		return e.Next()
 	})
 }
@@ -164,6 +175,7 @@ func buildVisitContext(app core.App, visit *core.Record) (TicketContext, bool) {
 	ctx := buildTicketContext(app, ticket)
 	ctx.Visit = &VisitInfo{
 		ScheduledAt: visit.GetString("scheduled_at"),
+		CompletedAt: visit.GetString("completed_at"),
 		Location:    visit.GetString("location"),
 		Notes:       visit.GetString("notes"),
 	}

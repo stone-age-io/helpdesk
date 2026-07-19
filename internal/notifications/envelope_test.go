@@ -8,19 +8,21 @@ import "testing"
 // ticket.created event.
 func TestSampleEnvelopePerEventBlocks(t *testing.T) {
 	cases := []struct {
-		et       string
-		change   bool
-		comment  bool
-		visit    bool
-		oldSched bool
+		et        string
+		change    bool
+		comment   bool
+		visit     bool
+		oldSched  bool
+		completed bool
 	}{
-		{EventTypeTicketCreated, false, false, false, false},
-		{EventTypeTicketAssigned, false, false, false, false},
-		{EventTypeTicketStatusChanged, true, false, false, false},
-		{EventTypeTicketCommented, false, true, false, false},
-		{EventTypeVisitScheduled, false, false, true, false},
-		{EventTypeVisitRescheduled, false, false, true, true},
-		{EventTypeVisitCanceled, false, false, true, false},
+		{EventTypeTicketCreated, false, false, false, false, false},
+		{EventTypeTicketAssigned, false, false, false, false, false},
+		{EventTypeTicketStatusChanged, true, false, false, false, false},
+		{EventTypeTicketCommented, false, true, false, false, false},
+		{EventTypeVisitScheduled, false, false, true, false, false},
+		{EventTypeVisitRescheduled, false, false, true, true, false},
+		{EventTypeVisitCanceled, false, false, true, false, false},
+		{EventTypeVisitCompleted, false, false, true, false, true},
 	}
 	for _, c := range cases {
 		subject, env, ok := SampleEnvelope(c.et)
@@ -45,6 +47,9 @@ func TestSampleEnvelopePerEventBlocks(t *testing.T) {
 		if c.visit {
 			if got := env.Visit.OldScheduledAt != ""; got != c.oldSched {
 				t.Errorf("%s: old_scheduled_at present = %v, want %v", c.et, got, c.oldSched)
+			}
+			if got := env.Visit.CompletedAt != ""; got != c.completed {
+				t.Errorf("%s: completed_at present = %v, want %v", c.et, got, c.completed)
 			}
 		}
 	}

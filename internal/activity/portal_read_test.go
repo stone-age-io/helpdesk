@@ -45,6 +45,9 @@ func TestRequesterReadsOnlyOwnStatusEvents(t *testing.T) {
 	assigneeEv := seed(t, app, "ticket_events", map[string]any{
 		"ticket": ticketA.Id, "field": "assignee", "old_value": "", "new_value": "Sam Staff", "actor_staff": agent.Id,
 	})
+	categoryEv := seed(t, app, "ticket_events", map[string]any{
+		"ticket": ticketA.Id, "field": "category", "old_value": "None", "new_value": "Network", "actor_staff": agent.Id,
+	})
 
 	col, err := app.FindCollectionByNameOrId("ticket_events")
 	if err != nil {
@@ -71,6 +74,9 @@ func TestRequesterReadsOnlyOwnStatusEvents(t *testing.T) {
 	}
 	if can(reqA, assigneeEv) {
 		t.Error("requester must NOT read assignee events (would leak the staff roster)")
+	}
+	if can(reqA, categoryEv) {
+		t.Error("requester must NOT read category events — the portal timeline is status-only")
 	}
 
 	// Another customer's requester: nothing, not even the status event.
