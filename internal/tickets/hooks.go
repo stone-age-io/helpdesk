@@ -53,9 +53,11 @@ func Register(app *pocketbase.PocketBase) {
 	// Public comments drive the conversation state. A requester replying on a
 	// resolved/closed ticket reopens it (if they still have a problem, it isn't
 	// done) and, either way, puts the ball back with staff. A public staff reply
-	// puts it in the requester's court (awaiting_requester = true). Internal
-	// notes change nothing. The reopen is silent (Suppress): the comment itself
-	// already emailed staff, so a second status-change mail would be noise.
+	// puts it in the requester's court (awaiting_requester = true) ONLY when the
+	// author explicitly asked for a reply (requests_reply) — a plain status
+	// update shouldn't nag the customer. Internal notes change nothing. The
+	// reopen is silent (Suppress): the comment itself already emailed staff, so a
+	// second status-change mail would be noise.
 	app.OnRecordAfterCreateSuccess("ticket_comments").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetBool("internal") {
 			return e.Next()
@@ -66,7 +68,7 @@ func Register(app *pocketbase.PocketBase) {
 		}
 		if userID := e.Record.GetString("author_user"); userID != "" {
 			handleRequesterReply(e.App, ticket, userID)
-		} else if e.Record.GetString("author_staff") != "" {
+		} else if e.Record.GetString("author_staff") != "" && e.Record.GetBool("requests_reply") {
 			markAwaitingRequester(e.App, ticket)
 		}
 		return e.Next()
@@ -97,10 +99,15 @@ func handleRequesterReply(app core.App, ticket *core.Record, userID string) {
 	}
 }
 
-// markAwaitingRequester flags that staff are waiting on the requester. A public
+// markAwaitingRequester flags that staff are waiting on the requester. Install
+// tickets are excluded — proactive field work isn't a reply-driven conversation
+// (its status is tracked by visits/project, not a customer answer). A public
 // note on an already-resolved/closed ticket doesn't ask for anything, and a
 // no-op when the flag is already set avoids a redundant write.
 func markAwaitingRequester(app core.App, ticket *core.Record) {
+	if ticket.GetString("type") == "install" {
+		return
+	}
 	if st := ticket.GetString("status"); st == "resolved" || st == "closed" {
 		return
 	}

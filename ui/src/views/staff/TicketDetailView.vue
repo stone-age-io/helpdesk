@@ -36,6 +36,9 @@ const error = ref('')
 
 const newComment = ref('')
 const internalNote = ref(false)
+// Public replies only: tick to put the ball in the requester's court
+// ("needs your reply" in the portal). A plain update leaves it unticked.
+const requestReply = ref(false)
 const commentFiles = ref<File[]>([])
 const posting = ref(false)
 // Mobile only: the composer collapses to a slim sticky bar so a long thread
@@ -269,10 +272,13 @@ async function postComment() {
       author_staff: auth.record?.id,
       body: newComment.value.trim(),
       internal: internalNote.value,
+      // Only a public reply can request one; an internal note never does.
+      requests_reply: !internalNote.value && requestReply.value,
       attachments: commentFiles.value,
     })
     newComment.value = ''
     internalNote.value = false
+    requestReply.value = false
     commentFiles.value = []
     // Reclaim the reading area on mobile once the reply is in.
     if (!isDesktop.value) composerOpen.value = false
@@ -556,11 +562,17 @@ onUnmounted(() => {
                 :disabled="posting"
               ></textarea>
               <FileInput v-model:files="commentFiles" :disabled="posting" />
-              <div class="flex justify-between items-center">
-                <label class="label cursor-pointer gap-2">
-                  <input v-model="internalNote" type="checkbox" class="checkbox checkbox-sm checkbox-warning" :disabled="posting" />
-                  <span class="label-text text-sm">Internal note (hidden from requester)</span>
-                </label>
+              <div class="flex justify-between items-center gap-2 flex-wrap">
+                <div class="flex items-center gap-3 flex-wrap">
+                  <label class="label cursor-pointer gap-2 py-0">
+                    <input v-model="internalNote" type="checkbox" class="checkbox checkbox-sm checkbox-warning" :disabled="posting" />
+                    <span class="label-text text-sm">Internal note (hidden from requester)</span>
+                  </label>
+                  <label v-if="!internalNote" class="label cursor-pointer gap-2 py-0">
+                    <input v-model="requestReply" type="checkbox" class="checkbox checkbox-sm checkbox-info" :disabled="posting" />
+                    <span class="label-text text-sm">Request a reply</span>
+                  </label>
+                </div>
                 <button class="btn btn-primary btn-sm" :disabled="posting || !newComment.trim()" @click="postComment">
                   <span v-if="posting" class="loading loading-spinner loading-xs"></span>
                   Post

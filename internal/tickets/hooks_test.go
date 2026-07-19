@@ -161,7 +161,7 @@ func TestCommentOnOpenTicketStaysOpen(t *testing.T) {
 	}
 }
 
-func TestPublicStaffCommentSetsAwaitingRequester(t *testing.T) {
+func TestStaffReplyRequestingReplySetsAwaitingRequester(t *testing.T) {
 	app := testutil.SetupApp(t)
 	Register(app)
 	customer := seedCustomer(t, app, "Acme")
@@ -171,9 +171,45 @@ func TestPublicStaffCommentSetsAwaitingRequester(t *testing.T) {
 	if awaitingOf(t, app, ticket.Id) {
 		t.Fatal("new ticket should not be awaiting the requester")
 	}
-	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id, "requests_reply": true})
 	if !awaitingOf(t, app, ticket.Id) {
-		t.Error("public staff comment should mark the ticket awaiting the requester")
+		t.Error("a staff comment that requests a reply should mark the ticket awaiting the requester")
+	}
+}
+
+func TestPlainStaffCommentDoesNotAwaitRequester(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	agent := seedStaff(t, app)
+
+	ticket := seedTicket(t, app, customer, "in_progress")
+	// A staff update without ticking "request a reply" is just an FYI.
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	if awaitingOf(t, app, ticket.Id) {
+		t.Error("a plain staff update should not mark the ticket awaiting the requester")
+	}
+}
+
+func TestInstallTicketNeverAwaitsRequester(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	agent := seedStaff(t, app)
+
+	col, _ := app.FindCollectionByNameOrId("tickets")
+	ticket := core.NewRecord(col)
+	ticket.Set("customer", customer.Id)
+	ticket.Set("title", "camera install")
+	ticket.Set("type", "install")
+	ticket.Set("status", "in_progress")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("save install ticket: %v", err)
+	}
+	// Even an explicit request-a-reply doesn't flag proactive field work.
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id, "requests_reply": true})
+	if awaitingOf(t, app, ticket.Id) {
+		t.Error("install tickets are excluded from the needs-reply flag")
 	}
 }
 
@@ -197,7 +233,7 @@ func TestStaffCommentOnResolvedDoesNotAwaitRequester(t *testing.T) {
 	agent := seedStaff(t, app)
 
 	ticket := seedTicket(t, app, customer, "resolved")
-	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id, "requests_reply": true})
 	if awaitingOf(t, app, ticket.Id) {
 		t.Error("a public note on a resolved ticket should not await a reply")
 	}
@@ -211,9 +247,9 @@ func TestRequesterReplyClearsAwaitingRequester(t *testing.T) {
 	agent := seedStaff(t, app)
 
 	ticket := seedTicket(t, app, customer, "in_progress")
-	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id, "requests_reply": true})
 	if !awaitingOf(t, app, ticket.Id) {
-		t.Fatal("precondition: staff comment should set the flag")
+		t.Fatal("precondition: staff comment requesting a reply should set the flag")
 	}
 	addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
 	if awaitingOf(t, app, ticket.Id) {
@@ -231,9 +267,9 @@ func TestResolvingClearsAwaitingRequester(t *testing.T) {
 	agent := seedStaff(t, app)
 
 	ticket := seedTicket(t, app, customer, "in_progress")
-	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id})
+	addComment(t, app, ticket, map[string]any{"author_staff": agent.Id, "requests_reply": true})
 	if !awaitingOf(t, app, ticket.Id) {
-		t.Fatal("precondition: staff comment should set the flag")
+		t.Fatal("precondition: staff comment requesting a reply should set the flag")
 	}
 	// Staff resolves the ticket — the pre-save hook should clear the flag.
 	rec, err := app.FindRecordById("tickets", ticket.Id)

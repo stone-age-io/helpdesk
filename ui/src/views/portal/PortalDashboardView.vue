@@ -69,24 +69,14 @@ onUnmounted(() => {
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
     <template v-else>
-      <!-- Leads the page: what actually needs the requester to act. Hidden at
-           zero so it's a signal, not chrome. -->
-      <router-link
-        v-if="needsReply > 0"
-        to="/portal/tickets?awaiting=1"
-        class="alert alert-info shadow-sm flex-row items-center justify-between hover:brightness-95 transition"
-      >
-        <span class="flex items-center gap-2">
-          <span aria-hidden="true">⏳</span>
-          <span class="font-medium">
-            {{ needsReply }} ticket{{ needsReply === 1 ? '' : 's' }} need{{ needsReply === 1 ? 's' : '' }} your reply
-          </span>
-        </span>
-        <span class="text-sm whitespace-nowrap">View →</span>
-      </router-link>
-
-      <!-- Each tile links to the tickets view pre-filtered to what it counts. -->
+      <!-- Each tile links to the tickets view pre-filtered to what it counts.
+           "Needs reply" is a peer tile alongside the status counts — present but
+           no longer a lead banner. -->
       <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 w-full">
+        <router-link to="/portal/tickets?awaiting=1" class="stat hover:bg-base-200 transition-colors">
+          <div class="stat-title">Needs reply</div>
+          <div class="stat-value text-warning">{{ needsReply }}</div>
+        </router-link>
         <router-link to="/portal/tickets?status=open" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Open</div>
           <div class="stat-value text-info">{{ counts.open }}</div>
