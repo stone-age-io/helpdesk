@@ -113,6 +113,9 @@ export interface Ticket extends BaseRecord {
   // is free text: dispatch hints, or the unmatched-code fallback from intake.
   location?: string
   location_note?: string
+  // Derived (server-maintained): the last public comment was staff's and the
+  // ticket is still open, i.e. the requester's reply is what's holding it up.
+  awaiting_requester?: boolean
 }
 
 export interface TicketComment extends BaseRecord {

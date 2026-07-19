@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
 import type { Ticket, TicketPriority, TicketStatus } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
@@ -13,6 +14,7 @@ import { formatDistanceToNow } from 'date-fns'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const toast = useToastStore()
 
 // The collection rules already scope this list to the requester's customer;
 // we page and filter server-side so a long-lived company's history stays fast.
@@ -39,12 +41,16 @@ const status = ref<'active' | TicketStatus | ''>((q('status') as any) || 'active
 const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const search = ref('')
 const mineOnly = ref(false)
+// Tickets whose last public reply was from support — the requester's court.
+// Seedable from the dashboard "needs your reply" tile via ?awaiting=1.
+const awaitingOnly = ref(q('awaiting') === '1')
 
 function buildFilter(): string {
   const parts: string[] = []
   if (status.value === 'active') parts.push(`status != 'resolved' && status != 'closed'`)
   else if (status.value) parts.push(`status = '${status.value}'`)
   if (priority.value) parts.push(`priority = '${priority.value}'`)
+  if (awaitingOnly.value) parts.push(`awaiting_requester = true`)
   if (mineOnly.value && auth.record?.id) parts.push(`requester = '${auth.record.id}'`)
   if (search.value.trim()) {
     const raw = search.value.trim().replace(/'/g, "\\'")
@@ -71,7 +77,7 @@ async function load(quiet = false) {
   }
 }
 
-watch([status, priority, mineOnly], () => {
+watch([status, priority, mineOnly, awaitingOnly], () => {
   page.value = 1
   load()
 })
@@ -94,7 +100,6 @@ function csvEscape(v: unknown): string {
 const exporting = ref(false)
 async function exportCsv() {
   exporting.value = true
-  error.value = ''
   try {
     const rows = await pb.collection('tickets').getFullList<Ticket>({ filter: buildFilter(), sort: '-created' })
     const header = ['number', 'title', 'status', 'priority', 'created', 'updated']
@@ -108,8 +113,10 @@ async function exportCsv() {
     a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
+    // Toast, not the inline alert — a finished download shouldn't replace the list.
+    toast.success(`Exported ${rows.length} ticket${rows.length === 1 ? '' : 's'}`)
   } catch (err: any) {
-    error.value = err?.message || 'Export failed'
+    toast.error(err?.message || 'Export failed')
   } finally {
     exporting.value = false
   }
@@ -155,6 +162,9 @@ onUnmounted(() => {
         <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
       </select>
       <div class="flex gap-2">
+        <button class="btn btn-sm flex-1 sm:flex-none" :class="awaitingOnly ? 'btn-primary' : 'btn-ghost'" @click="awaitingOnly = !awaitingOnly">
+          Needs my reply
+        </button>
         <button class="btn btn-sm flex-1 sm:flex-none" :class="mineOnly ? 'btn-primary' : 'btn-ghost'" @click="mineOnly = !mineOnly">
           Created by me
         </button>
@@ -177,13 +187,19 @@ onUnmounted(() => {
       <template #cell-number="{ value }">
         <span class="font-mono text-sm">{{ value }}</span>
       </template>
-      <template #cell-title="{ value }">
-        <span class="block max-w-md truncate font-medium text-sm">{{ value }}</span>
+      <template #cell-title="{ value, item }">
+        <span class="flex items-center gap-2 max-w-md">
+          <span class="truncate font-medium text-sm">{{ value }}</span>
+          <span v-if="item.awaiting_requester" class="badge-soft badge-soft-info shrink-0 whitespace-nowrap">Needs reply</span>
+        </span>
       </template>
       <template #card-number="{ item }">
-        <div class="text-sm font-bold truncate">
-          <span class="font-mono text-base-content/60">#{{ item.number }}</span>
-          {{ item.title }}
+        <div class="flex items-start gap-2">
+          <div class="text-sm font-bold truncate flex-1">
+            <span class="font-mono text-base-content/60">#{{ item.number }}</span>
+            {{ item.title }}
+          </div>
+          <span v-if="item.awaiting_requester" class="badge-soft badge-soft-info shrink-0 whitespace-nowrap">Needs reply</span>
         </div>
       </template>
       <template #cell-status="{ value }"><TicketBadges :status="value" /></template>

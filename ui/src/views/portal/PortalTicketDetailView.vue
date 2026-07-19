@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
 import type { Ticket, TicketComment, TicketEvent, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
@@ -15,6 +16,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const toast = useToastStore()
 const id = route.params.id as string
 
 const ticket = ref<Ticket | null>(null)
@@ -105,10 +107,15 @@ async function load() {
   }
 }
 
+// A resolved/closed ticket reopens when the requester replies — surface that
+// intent before they post, and confirm it after.
+const isClosed = computed(() => ticket.value?.status === 'resolved' || ticket.value?.status === 'closed')
+
 async function postComment() {
   if (!newComment.value.trim()) return
   posting.value = true
   error.value = ''
+  const wasClosed = isClosed.value
   try {
     await pb.collection('ticket_comments').create({
       ticket: id,
@@ -121,8 +128,13 @@ async function postComment() {
     // Replying on a resolved/closed ticket reopens it server-side; refresh
     // the header so the requester sees the status flip back to open.
     await Promise.all([loadTicket(), loadComments(), loadStatusEvents()])
+    // Confirm the send — and call out the reopen when it happened, since the
+    // status flip is otherwise silent.
+    if (wasClosed && !isClosed.value) toast.success('Reply sent — ticket reopened')
+    else toast.success('Reply sent')
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
+    toast.error('Could not send your reply')
   } finally {
     posting.value = false
   }
@@ -142,12 +154,7 @@ function scheduleReload() {
 }
 let unsubTicket: (() => void) | null = null
 let unsubComments: (() => void) | null = null
-
-const visitBadge: Record<string, string> = {
-  requested: 'badge-soft-warning',
-  scheduled: 'badge-soft-info',
-  completed: 'badge-soft-success',
-}
+let unsubVisits: (() => void) | null = null
 
 // Comment identity, portal-side. A staff reply's author record isn't readable
 // here (we hide the technician), so it shows as a neutral "Support" — never
@@ -169,11 +176,67 @@ function authorRecord(c: TicketComment): Record<string, any> | null {
   return c.expand?.author_user || null
 }
 
+// One chronological story, requester-safe: comments (as cards) interleaved with
+// status milestones and site-visit milestones (as slim inline rows). The
+// progress stepper stays as the at-a-glance summary; this is the detail. What
+// feeds it is exactly what the rules already allow a requester to read — status
+// events only (never priority/assignee/category/…), non-canceled visits with no
+// technician, non-internal comments. Nothing new is fetched or exposed.
+type TimelineItem =
+  | { kind: 'comment'; key: string; at: string; comment: TicketComment }
+  | { kind: 'status'; key: string; at: string; event: TicketEvent }
+  | { kind: 'visit'; key: string; at: string; visit: Visit }
+
+// A visit is one record, not a per-transition log, so it appears as a single
+// milestone at its most telling moment: completion time when completed, its
+// (possibly future) slot when scheduled, else when requested — so an upcoming
+// visit sorts to the tail as "coming up".
+function visitAt(v: Visit): string {
+  if (v.status === 'completed') return v.completed_at || v.scheduled_at || v.created
+  if (v.scheduled_at) return v.scheduled_at
+  return v.created
+}
+
+const timeline = computed<TimelineItem[]>(() => {
+  const items: TimelineItem[] = [
+    ...comments.value.map((c) => ({ kind: 'comment' as const, key: 'c' + c.id, at: c.created, comment: c })),
+    ...statusEvents.value.map((e) => ({ kind: 'status' as const, key: 's' + e.id, at: e.created, event: e })),
+    ...visits.value.map((v) => ({ kind: 'visit' as const, key: 'v' + v.id, at: visitAt(v), visit: v })),
+  ]
+  return items.sort((a, b) => a.at.localeCompare(b.at))
+})
+
+const STATUS_TEXT: Record<string, string> = {
+  open: 'Open',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  resolved: 'Resolved',
+  closed: 'Closed',
+}
+const statusText = (s?: string) => STATUS_TEXT[s || ''] || (s || '').replace(/_/g, ' ')
+const visitGlyph = (status: string) =>
+  status === 'completed' ? '✅' : status === 'scheduled' ? '🗓️' : '📋'
+// Requester-facing visit line: current state + its relevant time, never a tech.
+function visitLine(v: Visit): string {
+  if (v.status === 'completed') {
+    const at = v.completed_at || v.scheduled_at
+    return at ? `On-site visit completed — ${format(new Date(at), 'MMM d, HH:mm')}` : 'On-site visit completed'
+  }
+  if (v.status === 'scheduled') {
+    return v.scheduled_at
+      ? `Site visit scheduled — ${format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm')}`
+      : 'Site visit scheduled'
+  }
+  return 'On-site visit requested — scheduling in progress'
+}
+
 onMounted(async () => {
   await load()
   try {
     unsubTicket = await pb.collection('tickets').subscribe(id, scheduleReload)
     unsubComments = await pb.collection('ticket_comments').subscribe('*', scheduleReload)
+    // So a scheduled/completed visit weaves into the thread without a refresh.
+    unsubVisits = await pb.collection('visits').subscribe('*', scheduleReload)
   } catch {
     // Realtime is progressive enhancement; the view works without it.
   }
@@ -183,6 +246,7 @@ onUnmounted(() => {
   clearTimeout(reloadTimer)
   unsubTicket?.()
   unsubComments?.()
+  unsubVisits?.()
 })
 </script>
 
@@ -250,65 +314,75 @@ onUnmounted(() => {
           </div>
         </details>
 
-        <!-- Mobile: site visits grouped with the status panel under the header,
-             not stranded at the bottom. Desktop shows them in the rail. -->
-        <div v-if="visits.length > 0" class="xl:hidden card bg-base-100 shadow-sm">
-          <div class="card-body py-4 px-4 space-y-2">
-            <h2 class="font-semibold text-sm">Site Visits</h2>
-            <ul class="space-y-2">
-              <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
-                <div class="flex items-center gap-2">
-                  <template v-if="v.status === 'requested'">
-                    <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
-                  </template>
-                  <template v-else>
-                    <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
-                  </template>
-                  <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
-                </div>
-                <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
-              </li>
-            </ul>
-          </div>
-        </div>
-
         <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-        <!-- Conversation -->
+        <!-- Unified thread: replies as cards, status + visit milestones as slim
+             inline rows. The stepper in the rail is the summary; this is the
+             chronological detail. -->
         <div class="space-y-2">
-          <div v-for="c in comments" :key="c.id" class="card bg-base-100 shadow-sm">
-            <div class="card-body py-3 px-4">
-              <div class="flex items-start gap-2.5">
-                <!-- Staff replies get a neutral support glyph (no technician
-                     avatar); requesters get their own avatar. -->
-                <div v-if="isSupport(c)" class="avatar placeholder shrink-0">
-                  <div class="w-8 rounded-full bg-primary/15 text-primary"><span class="text-sm">🛟</span></div>
-                </div>
-                <Avatar v-else :record="authorRecord(c)" :name="authorLabel(c)" size="sm" />
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
-                    <span class="font-semibold text-base-content">{{ authorLabel(c) }}</span>
-                    <span v-if="isSupport(c)" class="badge-soft badge-soft-neutral">support</span>
-                    <span>{{ format(new Date(c.created), 'MMM d, yyyy HH:mm') }}</span>
+          <template v-for="item in timeline" :key="item.key">
+            <!-- Reply -->
+            <div v-if="item.kind === 'comment'" class="card bg-base-100 shadow-sm">
+              <div class="card-body py-3 px-4">
+                <div class="flex items-start gap-2.5">
+                  <!-- Staff replies get a neutral support glyph (no technician
+                       avatar); requesters get their own avatar. -->
+                  <div v-if="isSupport(item.comment)" class="avatar placeholder shrink-0">
+                    <div class="w-8 rounded-full bg-primary/15 text-primary"><span class="text-sm">🛟</span></div>
                   </div>
-                  <p class="whitespace-pre-wrap text-sm mt-0.5">{{ c.body }}</p>
-                  <AttachmentList :record="c" :files="c.attachments" />
+                  <Avatar v-else :record="authorRecord(item.comment)" :name="authorLabel(item.comment)" size="sm" />
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
+                      <span class="font-semibold text-base-content">{{ authorLabel(item.comment) }}</span>
+                      <span v-if="isSupport(item.comment)" class="badge-soft badge-soft-neutral">support</span>
+                      <span>{{ format(new Date(item.comment.created), 'MMM d, yyyy HH:mm') }}</span>
+                    </div>
+                    <p class="whitespace-pre-wrap text-sm mt-0.5">{{ item.comment.body }}</p>
+                    <AttachmentList :record="item.comment" :files="item.comment.attachments" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <p v-if="comments.length === 0" class="text-sm text-base-content/50 px-1">No replies yet.</p>
+
+            <!-- Status milestone -->
+            <div v-else-if="item.kind === 'status'" class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug">
+              <span class="w-6 text-center text-sm shrink-0" aria-hidden="true">🔄</span>
+              <span class="flex-1">
+                Status changed to
+                <span class="font-semibold text-base-content">{{ statusText(item.event.new_value) }}</span>
+                <span class="text-base-content/40"> · {{ format(new Date(item.event.created), 'MMM d, HH:mm') }}</span>
+              </span>
+            </div>
+
+            <!-- Visit milestone (no technician, portal-side) -->
+            <div v-else class="flex items-center gap-2 px-2 text-xs text-base-content/60 leading-snug">
+              <span class="w-6 text-center text-sm shrink-0" aria-hidden="true">{{ visitGlyph(item.visit.status) }}</span>
+              <span class="flex-1">
+                <span class="font-medium text-base-content/80">{{ visitLine(item.visit) }}</span>
+                <span v-if="item.visit.location" class="text-base-content/50"> · 📍 {{ item.visit.location }}</span>
+              </span>
+            </div>
+          </template>
+          <p v-if="timeline.length === 0" class="text-sm text-base-content/50 px-1">No activity yet.</p>
         </div>
 
         <!-- Composer. Sticky at the viewport bottom on mobile so replying is
              always in reach; static on desktop. -->
         <div class="card bg-base-100 shadow-sm sticky bottom-0 z-20 shadow-lg xl:static xl:z-auto xl:shadow-sm">
           <div class="card-body py-3 px-4 space-y-2">
+            <p v-if="ticket.awaiting_requester" class="text-xs text-info font-medium flex items-center gap-1.5">
+              <span aria-hidden="true">⏳</span>
+              Support is waiting on your reply.
+            </p>
+            <p v-else-if="isClosed" class="text-xs text-warning flex items-center gap-1.5">
+              <span aria-hidden="true">↩️</span>
+              This ticket is {{ ticket.status }}. Replying will reopen it.
+            </p>
             <textarea
               v-model="newComment"
               rows="3"
               class="textarea textarea-bordered w-full"
-              placeholder="Add a reply…"
+              :placeholder="isClosed ? 'Reply to reopen this ticket…' : 'Add a reply…'"
               :disabled="posting"
             ></textarea>
             <FileInput v-model:files="commentFiles" :disabled="posting" />
@@ -358,31 +432,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Progress stepper (desktop; mobile shows it in the collapsible above) -->
+        <!-- Progress stepper (desktop; mobile shows it in the collapsible above).
+             Site visits are no longer a separate card — they're woven into the
+             thread as milestones. -->
         <div class="card bg-base-100 shadow-sm hidden xl:block">
           <div class="card-body py-4 px-4">
             <TicketProgress :ticket="ticket" :status-events="statusEvents" />
-          </div>
-        </div>
-
-        <!-- Site visits (desktop; mobile shows them in the meta group above) -->
-        <div v-if="visits.length > 0" class="card bg-base-100 shadow-sm hidden xl:block">
-          <div class="card-body py-4 px-4 space-y-2">
-            <h2 class="font-semibold text-sm">Site Visits</h2>
-            <ul class="space-y-2">
-              <li v-for="v in visits" :key="v.id" class="text-sm space-y-0.5">
-                <div class="flex items-center gap-2">
-                  <template v-if="v.status === 'requested'">
-                    <span class="italic text-base-content/70">On-site visit requested — scheduling in progress</span>
-                  </template>
-                  <template v-else>
-                    <span class="font-medium whitespace-nowrap">{{ v.scheduled_at ? format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm') : '' }}</span>
-                  </template>
-                  <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
-                </div>
-                <div v-if="v.location" class="text-xs text-base-content/60">📍 {{ v.location }}</div>
-              </li>
-            </ul>
           </div>
         </div>
       </div>

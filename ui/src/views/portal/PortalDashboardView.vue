@@ -7,6 +7,9 @@ import TicketListRow from '@/components/TicketListRow.vue'
 // Collection rules scope every query here to the requester's own customer —
 // this is the staff dashboard recipe with nothing staff-only in it.
 const counts = ref({ open: 0, in_progress: 0, waiting: 0, resolved: 0 })
+// Cross-status: tickets whose last public reply was support's — the ones
+// actually waiting on this requester. Leads the page when > 0.
+const needsReply = ref(0)
 const recent = ref<Ticket[]>([])
 const loading = ref(true)
 
@@ -20,13 +23,15 @@ async function countOf(filter: string): Promise<number> {
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
-    const [open, inProgress, waiting, resolved] = await Promise.all([
+    const [open, inProgress, waiting, resolved, reply] = await Promise.all([
       countOf(`status = 'open'`),
       countOf(`status = 'in_progress'`),
       countOf(`status = 'waiting'`),
       countOf(`status = 'resolved'`),
+      countOf(`awaiting_requester = true`),
     ])
     counts.value = { open, in_progress: inProgress, waiting, resolved }
+    needsReply.value = reply
     recent.value = (await pb.collection('tickets').getList<Ticket>(1, 8, { sort: '-created' })).items
   } finally {
     if (!quiet) loading.value = false
@@ -64,6 +69,22 @@ onUnmounted(() => {
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
     <template v-else>
+      <!-- Leads the page: what actually needs the requester to act. Hidden at
+           zero so it's a signal, not chrome. -->
+      <router-link
+        v-if="needsReply > 0"
+        to="/portal/tickets?awaiting=1"
+        class="alert alert-info shadow-sm flex-row items-center justify-between hover:brightness-95 transition"
+      >
+        <span class="flex items-center gap-2">
+          <span aria-hidden="true">⏳</span>
+          <span class="font-medium">
+            {{ needsReply }} ticket{{ needsReply === 1 ? '' : 's' }} need{{ needsReply === 1 ? 's' : '' }} your reply
+          </span>
+        </span>
+        <span class="text-sm whitespace-nowrap">View →</span>
+      </router-link>
+
       <!-- Each tile links to the tickets view pre-filtered to what it counts. -->
       <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 w-full">
         <router-link to="/portal/tickets?status=open" class="stat hover:bg-base-200 transition-colors">

@@ -70,7 +70,13 @@ sequential `number` (unique index is the collision backstop) and defaults
 status/priority/source. Requesters interact via comments; ticket field
 updates are staff-only by rule. A public requester comment on a
 `resolved`/`closed` ticket **auto-reopens** it — silently, since the comment
-itself already emailed staff. Tickets and comments carry **attachments**
+itself already emailed staff. The same comment hooks maintain
+`awaiting_requester` (migration `1818000000`), a derived boolean = "last public
+comment was staff's and the ticket is still open" — set true on a public staff
+comment, cleared on a requester reply or on resolve/close (pre-save). It's a
+cheap-to-query cache (not a new source of truth) that powers the portal's
+"needs your reply" prompt, list chip, and dashboard tile. Tickets and comments
+carry **attachments**
 (≤6 files, 10 MB each); PB serves files only to callers who can view the
 owning record, so attachments on internal comments stay staff-only.
 Classification (migration `1806000000`): an optional `category` (admin-managed

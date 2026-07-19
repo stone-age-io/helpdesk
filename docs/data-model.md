@@ -80,6 +80,11 @@ unmatched-code fallback from machine intake). All added/changed `1812000000`.
 `1815000000`; compared against the logged `time_entries` total per ticket and
 summed per project at read time — see `projects`). Distinct from
 `visits.duration_minutes` (a *calendar block*, not an *effort estimate*).
+`awaiting_requester` (bool, added `1818000000`) — a derived flag maintained by
+`internal/tickets`: true when the last public comment was staff's and the ticket
+is still open (set on a public staff comment, cleared on a requester reply or on
+resolve/close). A queryable cache backing the portal's "needs your reply"
+prompt / list chip / dashboard tile; not a source of truth.
 
 Rules:
 
