@@ -79,9 +79,22 @@ mark. `branding.example/` is the committed template. Mirrors the sibling
 **Ticket lifecycle** (`internal/tickets`): a create hook assigns the next
 sequential `number` (unique index is the collision backstop) and defaults
 status/priority/source. Requesters interact via comments; ticket field
-updates are staff-only by rule. A public requester comment on a
-`resolved`/`closed` ticket **auto-reopens** it — silently, since the comment
-itself already emailed staff. The same comment hooks maintain
+updates are staff-only by rule. Status is a **two-stage terminal**:
+`resolved` is a grace window — a public requester comment **auto-reopens** it
+(silently, since the comment already emailed staff) — and `closed` is final:
+requesters can't comment on a closed ticket (create rule, migration
+`1822000000`; the portal shows "open a new ticket" instead) and a reply never
+reopens it. Entering `resolved` stamps a nullable **`resolved_at`** (migration
+`1821000000`, cleared when it leaves — mirrors visits' `completed_at`); a daily
+cron (`AutoCloseResolved`, `cmd/helpdesk` cron `auto_close_resolved`) promotes
+tickets left resolved past `auto_close_resolved_days` (config, default 7; `0`
+disables) to `closed`, suppressing the mail (administrative, not a "we closed
+your ticket" message) while still writing the status `ticket_events` row. Both
+`resolved` and `closed` count as inactive everywhere ("active" queries are
+`status != 'resolved' && status != 'closed'`), so the two-stage split didn't
+touch the queues. `waiting` stays an agent-set "blocked on a third party"
+status, distinct from the `awaiting_requester` nudge. The same comment hooks
+maintain
 `awaiting_requester` (migration `1818000000`), a cheap-to-query boolean that
 powers the portal's "needs your reply" prompt, list chip, and dashboard tile.
 It is **staff-explicit, not inferred**: a public staff comment sets it only when
@@ -169,16 +182,26 @@ rationale.
 **Time tracking** (`internal/timeentries`, `internal/timers`): labor is a
 `time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket
 is the canonical ledger, and `GET /tickets/{id}/time-total` exposes only the
-sum, gated per-customer by `show_time_to_requester`. Agents either log minutes
+sum, gated per-customer by `show_time_to_requester` (staff get the full total;
+a requester gets the **billable-only** sum). Agents either log minutes
 by hand or run a **start/stop timer**: one open `time_sessions` row per agent
 (unique index on `staff`; `started_at` server-stamped by the create hook),
 resolved into a normal `time_entries` row by `POST
 /api/helpdesk/timers/{id}/stop` (rounds elapsed to 5 min unless given a
 `minutes` override; `complete_visit` also flips the attached visit to
-`completed`, atomically). The timer is UX only — *not* a second ledger, and
-minute precision is deliberately loose. Staff drive it from the ticket Time
-card, the visit drawer, or the mobile-first visit **work view**
-(`/staff/visits/:id/work`: Arrive → live timer → Complete).
+`completed`, atomically; `non_billable` marks the resulting entry). The timer
+is UX only — *not* a second ledger, and minute precision is deliberately loose.
+Staff drive it from the ticket Time card, the visit drawer, or the mobile-first
+visit **work view** (`/staff/visits/:id/work`: Arrive → live timer → Complete).
+Each entry carries a **`non_billable`** flag (migration `1820000000`): stored as
+the exception so the bool's zero value means billable — no backfill, no
+defaulting hook, safe for every writer. Billability lives on the *labor*, not
+the ticket (one ticket mixes billable work and non-billable rework/goodwill).
+Reports split billable vs. non-billable (write-off rate); the timer stop route
+and every log form carry it; a per-row toggle (`BillableTag.vue`) fixes a
+mis-flag in place. Deliberately **not** built: rates/dollar amounts (minutes
+only — billing math stays in accounting) and a NATS `time.logged` event (the
+field is envelope-ready when a PSA consumer exists).
 
 **Outbound email + events** (`internal/notifications`, lifted from kiosk's
 notifier):

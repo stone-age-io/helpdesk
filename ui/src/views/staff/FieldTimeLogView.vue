@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { TimeEntry } from '@/types'
+import BillableTag from '@/components/BillableTag.vue'
 import { format, startOfMonth, startOfWeek } from 'date-fns'
 
 const auth = useAuthStore()
@@ -99,6 +100,7 @@ onMounted(load)
           <li v-for="e in g.items" :key="e.id" class="flex items-center gap-2 p-2 text-sm">
             <span class="font-mono text-base-content/50 shrink-0">#{{ e.expand?.ticket?.number ?? '—' }}</span>
             <span class="flex-1 truncate" :title="e.note">{{ e.note || e.expand?.ticket?.title || '' }}</span>
+            <BillableTag :entry="e" />
             <span class="font-mono whitespace-nowrap">{{ fmt(e.minutes) }}</span>
           </li>
         </ul>

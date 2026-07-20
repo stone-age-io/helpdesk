@@ -29,6 +29,7 @@ const error = ref('')
 const completing = ref(false)
 const editMinutes = ref<number | null>(null)
 const editNote = ref('')
+const editNonBillable = ref(false)
 const done = ref(false)
 
 const visitId = computed(() => route.params.id as string)
@@ -92,6 +93,7 @@ function beginComplete() {
   // Prefill the rounded elapsed; forgot to start on time? Just edit it.
   editMinutes.value = Math.max(1, Math.round(timer.elapsedSeconds / 60 / 5) * 5)
   editNote.value = timer.active?.note || ''
+  editNonBillable.value = false
   error.value = ''
   completing.value = true
 }
@@ -103,6 +105,7 @@ async function confirmComplete() {
       minutes: editMinutes.value || undefined,
       note: editNote.value.trim(),
       completeVisit: true,
+      nonBillable: editNonBillable.value,
     })
     completing.value = false
     done.value = true
@@ -164,6 +167,7 @@ async function onPhoto(e: Event) {
 const manualOpen = ref(false)
 const manualMinutes = ref<number | null>(null)
 const manualNote = ref('')
+const manualNonBillable = ref(false)
 const manualBusy = ref(false)
 async function logManual(complete: boolean) {
   if (!visit.value || !manualMinutes.value) return
@@ -177,6 +181,7 @@ async function logManual(complete: boolean) {
       work_date: new Date().toISOString(),
       note: manualNote.value.trim(),
       visit: visit.value.id,
+      non_billable: manualNonBillable.value,
     })
     if (complete) {
       // Completion is a silent transition (no visit notification); the guard
@@ -187,6 +192,7 @@ async function logManual(complete: boolean) {
     manualOpen.value = false
     manualMinutes.value = null
     manualNote.value = ''
+    manualNonBillable.value = false
     await load()
   } catch (e: any) {
     error.value = e?.message || 'Failed to log time'
@@ -308,6 +314,10 @@ onMounted(load)
               <span class="text-base-content/60">Note (optional)</span>
               <textarea v-model="editNote" rows="2" class="textarea textarea-bordered mt-1 w-full" :disabled="timer.busy"></textarea>
             </label>
+            <label class="flex items-center gap-2 text-sm cursor-pointer text-base-content/70">
+              <input v-model="editNonBillable" type="checkbox" class="checkbox checkbox-sm" :disabled="timer.busy" />
+              Non-billable (rework, goodwill)
+            </label>
             <button class="btn btn-success btn-lg w-full" :disabled="timer.busy" @click="confirmComplete">
               <span v-if="timer.busy" class="loading loading-spinner loading-sm"></span>
               Log {{ editMinutes || 0 }} min & complete
@@ -334,6 +344,10 @@ onMounted(load)
             <MinuteChips v-model="manualMinutes" :disabled="manualBusy" />
             <input v-model.number="manualMinutes" type="number" min="1" placeholder="minutes" class="input input-bordered input-sm w-full" :disabled="manualBusy" />
             <textarea v-model="manualNote" rows="2" placeholder="Note (optional)" class="textarea textarea-bordered textarea-sm w-full" :disabled="manualBusy"></textarea>
+            <label class="flex items-center gap-2 text-sm cursor-pointer text-base-content/70">
+              <input v-model="manualNonBillable" type="checkbox" class="checkbox checkbox-sm" :disabled="manualBusy" />
+              Non-billable (rework, goodwill)
+            </label>
             <button class="btn btn-success w-full" :disabled="manualBusy || !manualMinutes" @click="logManual(true)">
               <span v-if="manualBusy" class="loading loading-spinner loading-sm"></span>
               Log {{ manualMinutes || 0 }} min &amp; complete

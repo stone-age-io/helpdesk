@@ -15,6 +15,7 @@ const confirming = ref(false)
 const editMinutes = ref<number | null>(null)
 const editNote = ref('')
 const completeVisit = ref(false)
+const nonBillable = ref(false)
 const error = ref('')
 
 const onVisit = computed(() => !!timer.active?.visit)
@@ -35,6 +36,7 @@ function beginStop() {
   editMinutes.value = Math.max(1, Math.round(timer.elapsedSeconds / 60 / 5) * 5)
   editNote.value = timer.active?.note || ''
   completeVisit.value = false
+  nonBillable.value = false
   error.value = ''
   confirming.value = true
 }
@@ -46,6 +48,7 @@ async function confirmStop() {
       minutes: editMinutes.value || undefined,
       note: editNote.value.trim(),
       completeVisit: onVisit.value && completeVisit.value,
+      nonBillable: nonBillable.value,
     })
     confirming.value = false
   } catch (e: any) {
@@ -91,6 +94,10 @@ function openTicket() {
       <label v-if="onVisit" class="flex items-center gap-1 text-xs cursor-pointer">
         <input v-model="completeVisit" type="checkbox" class="checkbox checkbox-xs" :disabled="timer.busy" />
         complete visit
+      </label>
+      <label class="flex items-center gap-1 text-xs cursor-pointer">
+        <input v-model="nonBillable" type="checkbox" class="checkbox checkbox-xs" :disabled="timer.busy" />
+        non-billable
       </label>
       <button class="btn btn-sm btn-success" :disabled="timer.busy" @click="confirmStop">
         <span v-if="timer.busy" class="loading loading-spinner loading-xs"></span>

@@ -23,6 +23,11 @@ data_dir: pb_data
 branding:
   dir: ""                        # host dir of theme.css / logo.svg / branding.json
 
+# Auto-close tickets left `resolved` (untouched) this many days, via a daily
+# cron. 0 disables it (tickets then close only when staff close them by hand).
+# The window is the grace period in which a requester reply reopens the ticket.
+auto_close_resolved_days: 7      # env HELPDESK_AUTO_CLOSE_RESOLVED_DAYS
+
 # NATS connection to the platform operator's hub account. Leave urls empty
 # to run without NATS (tickets then arrive only via portal/agent/webhook).
 nats:

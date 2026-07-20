@@ -116,6 +116,9 @@ export interface Ticket extends BaseRecord {
   // Derived (server-maintained): the last public comment was staff's and the
   // ticket is still open, i.e. the requester's reply is what's holding it up.
   awaiting_requester?: boolean
+  // When the ticket entered `resolved` (cleared when it leaves). Drives the
+  // auto-close cron; nil unless currently resolved.
+  resolved_at?: string
 }
 
 export interface TicketComment extends BaseRecord {
@@ -145,6 +148,10 @@ export interface TimeEntry extends BaseRecord {
   // Optional on-site session this labor belongs to. Empty = desk work. The
   // ticket stays the canonical ledger; this is an added dimension.
   visit?: string
+  // Labor not to be invoiced (rework, goodwill). Stored as the exception so the
+  // default (unset = false) means billable; reports split on it and the
+  // customer-facing time total excludes it.
+  non_billable?: boolean
 }
 
 // A running timer: at most one open row per agent (unique index on staff, see

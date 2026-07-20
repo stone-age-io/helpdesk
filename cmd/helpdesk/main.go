@@ -98,6 +98,20 @@ func main() {
 		}
 	})
 
+	// Daily auto-close: promote tickets left `resolved` (the grace window)
+	// untouched past the configured horizon to `closed`. Disabled when the
+	// config is 0. Staggered a few minutes off the retention pass; PB's Cron is
+	// process-local, so a missed fire is caught by the next live tick.
+	if days := cfg.AutoCloseResolvedDays; days > 0 {
+		app.Cron().Add("auto_close_resolved", "30 3 * * *", func() {
+			if closed, err := tickets.AutoCloseResolved(app, days); err != nil {
+				log.Printf("auto-close resolved: %v", err)
+			} else if closed > 0 {
+				log.Printf("auto-close resolved: closed %d ticket(s) resolved > %d days", closed, days)
+			}
+		})
+	}
+
 	// NATS resources brought up only when actually serving (not for
 	// migrate/superuser subcommands) and torn down on terminate.
 	var (

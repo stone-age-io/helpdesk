@@ -22,6 +22,12 @@ type Config struct {
 	// without a rebuild. Empty (the default) = embedded defaults only.
 	BrandingDir string
 
+	// AutoCloseResolvedDays promotes tickets left `resolved` (untouched) this
+	// many days to `closed` via a daily cron. 0 disables it (tickets then only
+	// close when staff close them by hand). Default 7 — the grace window in
+	// which a requester reply reopens the ticket before it's finalized.
+	AutoCloseResolvedDays int
+
 	NATS NATSConfig
 }
 
@@ -51,6 +57,7 @@ func Load() (*Config, error) {
 	v := viper.New()
 	v.SetDefault("data_dir", "pb_data")
 	v.SetDefault("branding.dir", "")
+	v.SetDefault("auto_close_resolved_days", 7)
 	v.SetDefault("nats.urls", []string{})
 	v.SetDefault("nats.creds_file", "")
 	v.SetDefault("nats.stream", "HELPDESK_EVENTS")
@@ -78,8 +85,9 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DataDir:     v.GetString("data_dir"),
-		BrandingDir: v.GetString("branding.dir"),
+		DataDir:               v.GetString("data_dir"),
+		BrandingDir:           v.GetString("branding.dir"),
+		AutoCloseResolvedDays: v.GetInt("auto_close_resolved_days"),
 		NATS: NATSConfig{
 			URLs:         v.GetStringSlice("nats.urls"),
 			CredsFile:    v.GetString("nats.creds_file"),

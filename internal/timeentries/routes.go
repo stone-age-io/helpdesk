@@ -3,11 +3,13 @@
 //	GET /api/helpdesk/tickets/{id}/time-total  →  { "minutes": N }
 //
 // Staff always see it (they have the full per-entry breakdown via the
-// collection API anyway). A requester sees it only for their own customer's
-// ticket AND only when that customer has customers.show_time_to_requester
-// enabled — an opt-in, since exposing hours is a billing-model choice. Only the
-// SUM leaves the server here; the per-entry rows (staff names, candid notes)
-// never do.
+// collection API anyway) and get the FULL total. A requester sees it only for
+// their own customer's ticket AND only when that customer has
+// customers.show_time_to_requester enabled — an opt-in, since exposing hours is
+// a billing-model choice; and the number they see is BILLABLE-ONLY (excludes
+// entries flagged non_billable), so the customer-facing figure matches what
+// they'd be invoiced, not internal rework/goodwill. Only the SUM leaves the
+// server here; the per-entry rows (staff names, candid notes) never do.
 package timeentries
 
 import (
@@ -38,7 +40,10 @@ func handleTimeTotal(re *core.RequestEvent) error {
 	if !AllowTimeTotal(re.App, re.Auth, ticket) {
 		return re.ForbiddenError("time totals not available", nil)
 	}
-	total, err := SumMinutes(re.App, ticket.Id)
+	// Requesters see billable-only (their invoiceable time); staff see the full
+	// total (they have the breakdown anyway).
+	billableOnly := re.Auth.Collection().Name == authz.RequesterCollection
+	total, err := SumMinutes(re.App, ticket.Id, billableOnly)
 	if err != nil {
 		return re.InternalServerError("sum time failed", err)
 	}
@@ -66,14 +71,18 @@ func AllowTimeTotal(app core.App, auth *core.Record, ticket *core.Record) bool {
 }
 
 // SumMinutes totals time_entries.minutes for a ticket. The aggregate is the
-// only thing this package ever exposes.
-func SumMinutes(app core.App, ticketID string) (int, error) {
+// only thing this package ever exposes. With billableOnly, entries flagged
+// non_billable are excluded — the customer-facing figure.
+func SumMinutes(app core.App, ticketID string, billableOnly bool) (int, error) {
 	entries, err := app.FindRecordsByFilter("time_entries", "ticket = {:t}", "", 0, 0, dbx.Params{"t": ticketID})
 	if err != nil {
 		return 0, err
 	}
 	total := 0
 	for _, r := range entries {
+		if billableOnly && r.GetBool("non_billable") {
+			continue
+		}
 		total += r.GetInt("minutes")
 	}
 	return total, nil
