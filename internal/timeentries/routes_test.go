@@ -52,12 +52,39 @@ func graph(t *testing.T, app core.App, showTime bool) (ticket, staffRec, reqA, r
 func TestSumMinutes(t *testing.T) {
 	app := testutil.SetupApp(t)
 	ticket, _, _, _ := graph(t, app, false)
-	got, err := timeentries.SumMinutes(app, ticket.Id)
+	got, err := timeentries.SumMinutes(app, ticket.Id, false)
 	if err != nil {
 		t.Fatalf("SumMinutes: %v", err)
 	}
 	if got != 120 {
 		t.Errorf("SumMinutes: got %d, want 120", got)
+	}
+}
+
+// billableOnly excludes entries flagged non_billable; the full total keeps
+// counting them. The customer-facing figure is the billable one.
+func TestSumMinutesBillableOnly(t *testing.T) {
+	app := testutil.SetupApp(t)
+	ticket, staffRec, _, _ := graph(t, app, false) // 30 + 90 billable already seeded
+	seed(t, app, "time_entries", map[string]any{
+		"ticket": ticket.Id, "staff": staffRec.Id, "minutes": 45,
+		"work_date": "2026-07-14 11:00:00.000Z", "non_billable": true,
+	})
+
+	full, err := timeentries.SumMinutes(app, ticket.Id, false)
+	if err != nil {
+		t.Fatalf("SumMinutes full: %v", err)
+	}
+	if full != 165 {
+		t.Errorf("full total: got %d, want 165", full)
+	}
+
+	billable, err := timeentries.SumMinutes(app, ticket.Id, true)
+	if err != nil {
+		t.Fatalf("SumMinutes billable: %v", err)
+	}
+	if billable != 120 {
+		t.Errorf("billable total: got %d, want 120", billable)
 	}
 }
 

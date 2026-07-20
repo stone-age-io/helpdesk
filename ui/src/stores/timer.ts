@@ -76,7 +76,7 @@ export const useTimerStore = defineStore('timer', () => {
   // stop resolves the timer into a TimeEntry (server-side, atomic) and clears
   // local state. minutes omitted → the server rounds the elapsed time.
   async function stop(
-    opts: { minutes?: number; note?: string; completeVisit?: boolean } = {},
+    opts: { minutes?: number; note?: string; completeVisit?: boolean; nonBillable?: boolean } = {},
   ): Promise<TimeEntry | null> {
     if (!active.value) return null
     busy.value = true
@@ -85,6 +85,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (opts.minutes && opts.minutes > 0) body.minutes = opts.minutes
     if (opts.note !== undefined) body.note = opts.note
     if (opts.completeVisit) body.complete_visit = true
+    if (opts.nonBillable) body.non_billable = true
     try {
       const entry = await pb.send(`/api/helpdesk/timers/${id}/stop`, {
         method: 'POST',

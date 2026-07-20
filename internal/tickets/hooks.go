@@ -7,6 +7,7 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/stone-age-io/helpdesk/internal/activity"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
@@ -34,19 +35,22 @@ func Register(app *pocketbase.PocketBase) {
 		if e.Record.GetString("type") == "" {
 			e.Record.Set("type", "issue")
 		}
+		syncResolvedAt(e.Record)
 		return e.Next()
 	})
 
 	// Resolving or closing a ticket clears the "waiting on requester" flag — the
 	// ball is no longer in anyone's court. Pre-save so it rides the same write
 	// as the status change (no extra round-trip); setting it true is driven by
-	// staff comments below.
+	// staff comments below. The same hook keeps `resolved_at` in step with the
+	// status so the auto-close cron has a trustworthy age.
 	app.OnRecordUpdate("tickets").BindFunc(func(e *core.RecordEvent) error {
 		if now := e.Record.GetString("status"); now == "resolved" || now == "closed" {
 			if e.Record.Original().GetString("status") != now {
 				e.Record.Set("awaiting_requester", false)
 			}
 		}
+		syncResolvedAt(e.Record)
 		return e.Next()
 	})
 
@@ -75,12 +79,14 @@ func Register(app *pocketbase.PocketBase) {
 	})
 }
 
-// handleRequesterReply reopens a done ticket and clears awaiting_requester in a
-// single save. Best-effort: a failed follow-up must not fail the comment write.
+// handleRequesterReply reopens a resolved ticket and clears awaiting_requester
+// in a single save. Only `resolved` reopens — `closed` is final, and the create
+// rule (migration 1822000000) blocks requesters from commenting on a closed
+// ticket at all, so a closed reply never reaches this hook. Best-effort: a
+// failed follow-up must not fail the comment write.
 func handleRequesterReply(app core.App, ticket *core.Record, userID string) {
 	changed := false
-	switch ticket.GetString("status") {
-	case "resolved", "closed":
+	if ticket.GetString("status") == "resolved" {
 		ticket.Set("status", "open")
 		notifications.Suppress(ticket)
 		// Attribute the reopen to the requester whose comment triggered it so
@@ -117,6 +123,21 @@ func markAwaitingRequester(app core.App, ticket *core.Record) {
 	ticket.Set("awaiting_requester", true)
 	if err := app.Save(ticket); err != nil {
 		slog.Warn("set awaiting_requester failed", "ticket", ticket.Id, "err", err)
+	}
+}
+
+// syncResolvedAt keeps resolved_at in step with status: stamped when the ticket
+// is resolved (preserving a caller-supplied value so it can be back-dated),
+// cleared otherwise — including on close, so `resolved_at` only ever measures
+// the current resolved spell. Mirrors the visits completed_at guard; the
+// auto-close cron reads it.
+func syncResolvedAt(ticket *core.Record) {
+	if ticket.GetString("status") == "resolved" {
+		if ticket.GetDateTime("resolved_at").IsZero() {
+			ticket.Set("resolved_at", types.NowDateTime())
+		}
+	} else {
+		ticket.Set("resolved_at", "")
 	}
 }
 

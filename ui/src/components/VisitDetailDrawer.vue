@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTimerStore } from '@/stores/timer'
 import type { Staff, TimeEntry, Visit } from '@/types'
 import VisitScheduleForm from '@/components/VisitScheduleForm.vue'
+import BillableTag from '@/components/BillableTag.vue'
 import { format } from 'date-fns'
 
 const props = defineProps<{ visitId: string | null; staff: Staff[] }>()
@@ -29,10 +30,12 @@ const saving = ref(false)
 // on-site time capture before confirming.
 const mode = ref<'' | 'reschedule' | 'complete'>('')
 const completeMinutes = ref<number | null>(null)
+const completeNonBillable = ref(false)
 
 // Log-time-to-this-visit form.
 const logMinutes = ref<number | null>(null)
 const logNote = ref('')
+const logNonBillable = ref(false)
 
 const statusClass: Record<string, string> = {
   requested: 'badge-soft-warning',
@@ -124,9 +127,11 @@ async function confirmComplete() {
         minutes: completeMinutes.value,
         work_date: new Date().toISOString(),
         visit: visit.value.id,
+        non_billable: completeNonBillable.value,
       })
     }
     completeMinutes.value = null
+    completeNonBillable.value = false
     await load()
     emit('changed')
   } catch (err: any) {
@@ -148,9 +153,11 @@ async function logTime() {
       work_date: new Date().toISOString(),
       visit: visit.value.id,
       note: logNote.value.trim(),
+      non_billable: logNonBillable.value,
     })
     logMinutes.value = null
     logNote.value = ''
+    logNonBillable.value = false
     await load()
     emit('changed')
   } catch (err: any) {
@@ -264,6 +271,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 Confirm complete
               </button>
             </div>
+            <label v-if="completeMinutes && completeMinutes > 0" class="flex items-center gap-2 text-xs cursor-pointer text-base-content/70">
+              <input v-model="completeNonBillable" type="checkbox" class="checkbox checkbox-xs" :disabled="saving" />
+              Non-billable
+            </label>
           </div>
 
           <!-- Action buttons (read view) -->
@@ -296,6 +307,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               <li v-for="e in entries" :key="e.id" class="flex items-center justify-between text-sm gap-2">
                 <span class="text-base-content/70 whitespace-nowrap">{{ format(new Date(e.work_date), 'MMM d') }}</span>
                 <span class="flex-1 truncate" :title="e.note">{{ e.note || e.expand?.staff?.name || '' }}</span>
+                <BillableTag :entry="e" :editable="e.staff === auth.record?.id || auth.isAdmin" @changed="load" />
                 <span class="font-mono whitespace-nowrap">{{ fmtMinutes(e.minutes) }}</span>
                 <button v-if="e.staff === auth.record?.id || auth.isAdmin" class="btn btn-ghost btn-xs text-error" @click="removeEntry(e)">✕</button>
               </li>
@@ -306,6 +318,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               <input v-model="logNote" type="text" placeholder="note" class="input input-bordered input-sm flex-1 min-w-0" :disabled="saving" />
               <button class="btn btn-sm btn-primary shrink-0" :disabled="saving || !logMinutes" @click="logTime">Log</button>
             </div>
+            <label class="flex items-center gap-2 text-xs cursor-pointer text-base-content/70">
+              <input v-model="logNonBillable" type="checkbox" class="checkbox checkbox-xs" :disabled="saving" />
+              Non-billable
+            </label>
           </div>
 
           <button class="btn btn-ghost btn-sm w-full" @click="openTicket">Open ticket →</button>

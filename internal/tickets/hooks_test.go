@@ -104,12 +104,25 @@ func TestRequesterCommentReopensResolvedTicket(t *testing.T) {
 	customer := seedCustomer(t, app, "Acme")
 	requester := seedRequester(t, app, customer)
 
-	for _, status := range []string{"resolved", "closed"} {
-		ticket := seedTicket(t, app, customer, status)
-		addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
-		if got := statusOf(t, app, ticket.Id); got != "open" {
-			t.Errorf("%s ticket: requester comment should reopen to open, got %q", status, got)
-		}
+	ticket := seedTicket(t, app, customer, "resolved")
+	addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
+	if got := statusOf(t, app, ticket.Id); got != "open" {
+		t.Errorf("resolved ticket: requester comment should reopen to open, got %q", got)
+	}
+}
+
+// A closed ticket is final: even a requester comment (the create rule normally
+// blocks it in the API, but a direct save bypasses rules) must not reopen it.
+func TestRequesterCommentDoesNotReopenClosedTicket(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	requester := seedRequester(t, app, customer)
+
+	ticket := seedTicket(t, app, customer, "closed")
+	addComment(t, app, ticket, map[string]any{"author_user": requester.Id})
+	if got := statusOf(t, app, ticket.Id); got != "closed" {
+		t.Errorf("closed ticket: requester comment must NOT reopen, got %q", got)
 	}
 }
 
@@ -334,5 +347,99 @@ func TestTicketNumberPreservedWhenSet(t *testing.T) {
 	}
 	if got := rec.GetString("status"); got != "waiting" {
 		t.Errorf("status overwritten: got %q, want waiting", got)
+	}
+}
+
+func resolvedAtOf(t *testing.T, app core.App, id string) string {
+	t.Helper()
+	rec, err := app.FindRecordById("tickets", id)
+	if err != nil {
+		t.Fatalf("reload ticket: %v", err)
+	}
+	return rec.GetString("resolved_at")
+}
+
+func TestResolvedAtStampedAndCleared(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+
+	// Open → no resolved_at.
+	ticket := seedTicket(t, app, customer, "open")
+	if got := resolvedAtOf(t, app, ticket.Id); got != "" {
+		t.Errorf("open ticket should have no resolved_at, got %q", got)
+	}
+
+	// → resolved stamps it.
+	ticket.Set("status", "resolved")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got := resolvedAtOf(t, app, ticket.Id); got == "" {
+		t.Error("resolving should stamp resolved_at")
+	}
+
+	// → closed clears it (resolved_at only measures the current resolved spell).
+	ticket.Set("status", "closed")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if got := resolvedAtOf(t, app, ticket.Id); got != "" {
+		t.Errorf("closing should clear resolved_at, got %q", got)
+	}
+}
+
+func TestAutoCloseResolved(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+
+	// Stale: resolved long ago → should auto-close.
+	stale := seedTicket(t, app, customer, "resolved")
+	stale.Set("resolved_at", "2020-01-01 00:00:00.000Z")
+	if err := app.Save(stale); err != nil {
+		t.Fatalf("backdate stale: %v", err)
+	}
+	// Recent: resolved just now (create hook stamped it) → should stay resolved.
+	recent := seedTicket(t, app, customer, "resolved")
+	// Active and already-closed tickets are never touched.
+	open := seedTicket(t, app, customer, "open")
+
+	closed, err := AutoCloseResolved(app, 7)
+	if err != nil {
+		t.Fatalf("AutoCloseResolved: %v", err)
+	}
+	if closed != 1 {
+		t.Errorf("expected 1 auto-closed, got %d", closed)
+	}
+	if got := statusOf(t, app, stale.Id); got != "closed" {
+		t.Errorf("stale resolved ticket should be closed, got %q", got)
+	}
+	if got := resolvedAtOf(t, app, stale.Id); got != "" {
+		t.Errorf("auto-closed ticket should have resolved_at cleared, got %q", got)
+	}
+	if got := statusOf(t, app, recent.Id); got != "resolved" {
+		t.Errorf("recently resolved ticket should stay resolved, got %q", got)
+	}
+	if got := statusOf(t, app, open.Id); got != "open" {
+		t.Errorf("open ticket must be untouched, got %q", got)
+	}
+}
+
+func TestAutoCloseDisabledIsNoOp(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+
+	stale := seedTicket(t, app, customer, "resolved")
+	stale.Set("resolved_at", "2020-01-01 00:00:00.000Z")
+	if err := app.Save(stale); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	if n, err := AutoCloseResolved(app, 0); err != nil || n != 0 {
+		t.Errorf("days=0 must be a no-op: got n=%d err=%v", n, err)
+	}
+	if got := statusOf(t, app, stale.Id); got != "resolved" {
+		t.Errorf("days=0 must leave tickets resolved, got %q", got)
 	}
 }

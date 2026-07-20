@@ -108,8 +108,24 @@ func TestStopCreatesEntryAndDeletesSession(t *testing.T) {
 	if got := entry.GetString("note"); got != "wired the panel" {
 		t.Errorf("session note not carried onto entry: %q", got)
 	}
+	if entry.GetBool("non_billable") {
+		t.Error("entry should default to billable when NonBillable is not set")
+	}
 	if _, err := app.FindRecordById("time_sessions", session.Id); err == nil {
 		t.Error("session should be deleted after stop")
+	}
+}
+
+func TestStopMarksNonBillable(t *testing.T) {
+	app, f := setup(t)
+	session := seedRecord(t, app, "time_sessions", map[string]any{"staff": f.staff.Id, "ticket": f.ticket.Id})
+
+	entry, err := Stop(app, session, StopOpts{Minutes: 20, NonBillable: true})
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if !entry.GetBool("non_billable") {
+		t.Error("entry should carry NonBillable through to the ledger row")
 	}
 }
 

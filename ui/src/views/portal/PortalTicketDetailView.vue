@@ -107,15 +107,18 @@ async function load() {
   }
 }
 
-// A resolved/closed ticket reopens when the requester replies — surface that
-// intent before they post, and confirm it after.
-const isClosed = computed(() => ticket.value?.status === 'resolved' || ticket.value?.status === 'closed')
+// Two-stage lifecycle: a `resolved` ticket is in its grace window — a requester
+// reply reopens it (surface that intent, and confirm it after). A `closed`
+// ticket is final: no reply box, a follow-up is a new ticket (the server rule
+// blocks the comment either way).
+const isResolved = computed(() => ticket.value?.status === 'resolved')
+const isFinalClosed = computed(() => ticket.value?.status === 'closed')
 
 async function postComment() {
   if (!newComment.value.trim()) return
   posting.value = true
   error.value = ''
-  const wasClosed = isClosed.value
+  const wasResolved = isResolved.value
   try {
     await pb.collection('ticket_comments').create({
       ticket: id,
@@ -130,7 +133,7 @@ async function postComment() {
     await Promise.all([loadTicket(), loadComments(), loadStatusEvents()])
     // Confirm the send — and call out the reopen when it happened, since the
     // status flip is otherwise silent.
-    if (wasClosed && !isClosed.value) toast.success('Reply sent — ticket reopened')
+    if (wasResolved && !isResolved.value) toast.success('Reply sent — ticket reopened')
     else toast.success('Reply sent')
   } catch (err: any) {
     error.value = err?.message || 'Failed to post comment'
@@ -369,20 +372,28 @@ onUnmounted(() => {
         <!-- Composer. Sticky at the viewport bottom on mobile so replying is
              always in reach; static on desktop. -->
         <div class="card bg-base-100 shadow-sm sticky bottom-0 z-20 shadow-lg xl:static xl:z-auto xl:shadow-sm">
-          <div class="card-body py-3 px-4 space-y-2">
+          <!-- Closed is final: no reply box; a follow-up is a new ticket. -->
+          <div v-if="isFinalClosed" class="card-body py-3 px-4">
+            <p class="text-sm text-base-content/70 flex items-center gap-1.5">
+              <span aria-hidden="true">🔒</span>
+              This ticket is closed. To follow up, please
+              <RouterLink :to="{ name: 'portal-ticket-new' }" class="link link-primary">open a new ticket</RouterLink>.
+            </p>
+          </div>
+          <div v-else class="card-body py-3 px-4 space-y-2">
             <p v-if="ticket.awaiting_requester" class="text-xs text-info font-medium flex items-center gap-1.5">
               <span aria-hidden="true">⏳</span>
               Support is waiting on your reply.
             </p>
-            <p v-else-if="isClosed" class="text-xs text-warning flex items-center gap-1.5">
+            <p v-else-if="isResolved" class="text-xs text-warning flex items-center gap-1.5">
               <span aria-hidden="true">↩️</span>
-              This ticket is {{ ticket.status }}. Replying will reopen it.
+              This ticket is resolved. Replying will reopen it.
             </p>
             <textarea
               v-model="newComment"
               rows="3"
               class="textarea textarea-bordered w-full"
-              :placeholder="isClosed ? 'Reply to reopen this ticket…' : 'Add a reply…'"
+              :placeholder="isResolved ? 'Reply to reopen this ticket…' : 'Add a reply…'"
               :disabled="posting"
             ></textarea>
             <FileInput v-model:files="commentFiles" :disabled="posting" />

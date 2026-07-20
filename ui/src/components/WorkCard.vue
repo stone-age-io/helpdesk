@@ -19,6 +19,7 @@ import type { Staff, TimeEntry, Visit, VisitStatus } from '@/types'
 import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import MinutesInput from '@/components/MinutesInput.vue'
+import BillableTag from '@/components/BillableTag.vue'
 import { format } from 'date-fns'
 
 const props = defineProps<{ ticketId: string; staff: Staff[]; estimatedMinutes?: number | null }>()
@@ -38,6 +39,7 @@ const logMode = ref<'timer' | 'manual'>('manual')
 const logTarget = ref('') // '' = desk work, else a visit id
 const logMinutes = ref<number | null>(null)
 const logNote = ref('')
+const logNonBillable = ref(false)
 
 // Add-visit form (progressive: request now, or schedule now).
 const nvLocation = ref('')
@@ -158,6 +160,7 @@ function openLogTime(target = '') {
   logTarget.value = target
   logMinutes.value = null
   logNote.value = ''
+  logNonBillable.value = false
   error.value = ''
   panel.value = 'time'
 }
@@ -200,6 +203,7 @@ async function logManual() {
       work_date: new Date().toISOString(),
       note: logNote.value.trim(),
       visit: logTarget.value || null,
+      non_billable: logNonBillable.value,
     })
     closePanel()
     await load()
@@ -324,14 +328,20 @@ onUnmounted(() => {
         <!-- Stacks on phones (number+unit, then a real note textarea, then a
              full-width Log); collapses back to one inline row on sm+. -->
         <div v-else class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-1 min-w-0">
-          <MinutesInput v-model="logMinutes" size="sm" placeholder="min" :disabled="saving" class="shrink-0" />
-          <textarea
-            v-model="logNote"
-            rows="2"
-            placeholder="Note — what you did"
-            class="textarea textarea-bordered textarea-sm w-full flex-1 min-w-0 resize-none"
-            :disabled="saving"
-          ></textarea>
+          <MinutesInput v-model="logMinutes" size="sm" :disabled="saving" class="shrink-0" />
+          <div class="flex flex-1 flex-col gap-1 min-w-0">
+            <textarea
+              v-model="logNote"
+              rows="2"
+              placeholder="Note — what you did"
+              class="textarea textarea-bordered textarea-sm w-full min-w-0 resize-none"
+              :disabled="saving"
+            ></textarea>
+            <label class="flex items-center gap-2 text-xs cursor-pointer text-base-content/70">
+              <input v-model="logNonBillable" type="checkbox" class="checkbox checkbox-xs" :disabled="saving" />
+              Non-billable (rework, goodwill — excluded from the customer's total)
+            </label>
+          </div>
           <button class="btn btn-sm btn-primary shrink-0 w-full sm:w-auto" :disabled="saving || !logMinutes" @click="logManual">Log</button>
         </div>
       </div>
@@ -382,6 +392,7 @@ onUnmounted(() => {
               <li v-for="e in entriesByVisit.get(v.id)" :key="e.id" class="flex items-center gap-2 text-sm">
                 <span class="text-base-content/60 whitespace-nowrap">{{ format(new Date(e.work_date), 'MMM d') }}</span>
                 <span class="flex-1 truncate" :title="e.note">{{ e.note || e.expand?.staff?.name || '' }}</span>
+                <BillableTag :entry="e" :editable="e.staff === auth.record?.id || auth.isAdmin" @changed="load" />
                 <span class="font-mono whitespace-nowrap">{{ fmt(e.minutes) }}</span>
                 <button
                   v-if="e.staff === auth.record?.id || auth.isAdmin"
@@ -416,6 +427,7 @@ onUnmounted(() => {
             <li v-for="e in deskEntries" :key="e.id" class="flex items-center gap-2 text-sm">
               <span class="text-base-content/60 whitespace-nowrap">{{ format(new Date(e.work_date), 'MMM d') }}</span>
               <span class="flex-1 truncate" :title="e.note">{{ e.note || e.expand?.staff?.name || '' }}</span>
+              <BillableTag :entry="e" :editable="e.staff === auth.record?.id || auth.isAdmin" @changed="load" />
               <span class="font-mono whitespace-nowrap">{{ fmt(e.minutes) }}</span>
               <button
                 v-if="e.staff === auth.record?.id || auth.isAdmin"

@@ -109,6 +109,7 @@ async function loadOptions() {
 interface Row {
   label: string
   minutes: number
+  billableMinutes: number // subset of minutes NOT flagged non_billable
   fieldMinutes: number // subset of minutes attributed to an on-site visit
   visits: number
 }
@@ -116,12 +117,13 @@ function group(keyer: (fromEntry: boolean, rec: any) => string): Row[] {
   const map = new Map<string, Row>()
   const row = (label: string) => {
     const k = label || '—'
-    if (!map.has(k)) map.set(k, { label: k, minutes: 0, fieldMinutes: 0, visits: 0 })
+    if (!map.has(k)) map.set(k, { label: k, minutes: 0, billableMinutes: 0, fieldMinutes: 0, visits: 0 })
     return map.get(k)!
   }
   for (const e of entries.value) {
     const r = row(keyer(true, e))
     r.minutes += e.minutes
+    if (!e.non_billable) r.billableMinutes += e.minutes
     if (e.visit) r.fieldMinutes += e.minutes
   }
   for (const v of doneVisits.value) row(keyer(false, v)).visits += 1
@@ -143,6 +145,7 @@ const byCustomer = computed(() =>
 interface LocRow {
   label: string
   minutes: number
+  billableMinutes: number
   visits: number
   tickets: number
   installs: number
@@ -151,10 +154,14 @@ const byLocation = computed<LocRow[]>(() => {
   const map = new Map<string, LocRow>()
   const row = (label: string) => {
     const k = label || '—'
-    if (!map.has(k)) map.set(k, { label: k, minutes: 0, visits: 0, tickets: 0, installs: 0 })
+    if (!map.has(k)) map.set(k, { label: k, minutes: 0, billableMinutes: 0, visits: 0, tickets: 0, installs: 0 })
     return map.get(k)!
   }
-  for (const e of entries.value) row(e.expand?.ticket?.expand?.location?.name || '').minutes += e.minutes
+  for (const e of entries.value) {
+    const r = row(e.expand?.ticket?.expand?.location?.name || '')
+    r.minutes += e.minutes
+    if (!e.non_billable) r.billableMinutes += e.minutes
+  }
   for (const v of doneVisits.value) row(v.expand?.ticket?.expand?.location?.name || '').visits += 1
   for (const t of tickets.value) {
     const r = row(t.expand?.location?.name || '')
@@ -167,6 +174,15 @@ const byLocation = computed<LocRow[]>(() => {
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
 const totalFieldMinutes = computed(() =>
   entries.value.filter((e) => e.visit).reduce((s, e) => s + e.minutes, 0),
+)
+// Billable split: the invoiceable share vs. rework/goodwill written off. The
+// write-off rate is the utilization number an MSP watches.
+const totalNonBillableMinutes = computed(() =>
+  entries.value.filter((e) => e.non_billable).reduce((s, e) => s + e.minutes, 0),
+)
+const totalBillableMinutes = computed(() => totalMinutes.value - totalNonBillableMinutes.value)
+const billablePct = computed(() =>
+  totalMinutes.value ? Math.round((totalBillableMinutes.value / totalMinutes.value) * 100) : 0,
 )
 const totalVisits = computed(() => doneVisits.value.length)
 const totalTickets = computed(() => tickets.value.length)
@@ -235,22 +251,22 @@ const reports = computed<Report[]>(() => [
     key: 'staff',
     title: 'By staff / technician',
     filename: 'by-staff',
-    header: ['name', 'minutes', 'field_minutes', 'visits'],
-    rows: () => byPerson.value.map((r) => [r.label === '—' ? '(unattributed)' : r.label, r.minutes, r.fieldMinutes, r.visits]),
+    header: ['name', 'minutes', 'billable_minutes', 'field_minutes', 'visits'],
+    rows: () => byPerson.value.map((r) => [r.label === '—' ? '(unattributed)' : r.label, r.minutes, r.billableMinutes, r.fieldMinutes, r.visits]),
   },
   {
     key: 'customer',
     title: 'By customer',
     filename: 'by-customer',
-    header: ['customer', 'minutes', 'field_minutes', 'visits'],
-    rows: () => byCustomer.value.map((r) => [r.label === '—' ? '(none)' : r.label, r.minutes, r.fieldMinutes, r.visits]),
+    header: ['customer', 'minutes', 'billable_minutes', 'field_minutes', 'visits'],
+    rows: () => byCustomer.value.map((r) => [r.label === '—' ? '(none)' : r.label, r.minutes, r.billableMinutes, r.fieldMinutes, r.visits]),
   },
   {
     key: 'location',
     title: 'By location',
     filename: 'by-location',
-    header: ['location', 'tickets', 'installs', 'minutes', 'visits'],
-    rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.installs, r.minutes, r.visits]),
+    header: ['location', 'tickets', 'installs', 'minutes', 'billable_minutes', 'visits'],
+    rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.installs, r.minutes, r.billableMinutes, r.visits]),
   },
   {
     key: 'category',
@@ -283,6 +299,8 @@ function exportAll() {
   if (locationName.value) lines.push(`Location,${csvEscape(locationName.value)}`)
   lines.push('', 'Totals', 'metric,value',
     `time_minutes,${totalMinutes.value}`,
+    `billable_minutes,${totalBillableMinutes.value}`,
+    `non_billable_minutes,${totalNonBillableMinutes.value}`,
     `field_minutes,${totalFieldMinutes.value}`,
     `visits_completed,${totalVisits.value}`,
     `tickets_created,${totalTickets.value}`, '')
@@ -296,7 +314,7 @@ function exportAll() {
 
 // Detail exports: the underlying time and visit rows, not the rollups.
 function exportTime() {
-  const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'on_site', 'note'].join(',')]
+  const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'billable', 'on_site', 'note'].join(',')]
   for (const e of entries.value) {
     lines.push(
       [
@@ -305,6 +323,7 @@ function exportTime() {
         e.expand?.ticket?.expand?.customer?.name || '',
         e.expand?.ticket?.number ?? '',
         e.minutes,
+        e.non_billable ? 'no' : 'yes',
         e.visit ? 'yes' : '',
         e.note || '',
       ]
@@ -398,6 +417,13 @@ onMounted(() => {
           <div v-if="totalFieldMinutes > 0" class="stat-desc">{{ fmtHours(totalFieldMinutes) }} on-site</div>
         </div>
         <div class="stat">
+          <div class="stat-title">Billable</div>
+          <div class="stat-value text-2xl tabular-nums">{{ fmtHours(totalBillableMinutes) }}</div>
+          <div class="stat-desc">
+            {{ billablePct }}% billable<template v-if="totalNonBillableMinutes > 0"> · {{ fmtHours(totalNonBillableMinutes) }} written off</template>
+          </div>
+        </div>
+        <div class="stat">
           <div class="stat-title">Visits completed</div>
           <div class="stat-value text-2xl tabular-nums">{{ totalVisits }}</div>
         </div>
@@ -417,15 +443,16 @@ onMounted(() => {
             </div>
             <div class="overflow-x-auto">
               <table class="table table-sm">
-                <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
+                <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
                 <tbody>
                   <tr v-for="r in byPerson" :key="r.label">
                     <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'Unattributed' : r.label }}</td>
                     <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
                     <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
                     <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
                   </tr>
-                  <tr v-if="byPerson.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
+                  <tr v-if="byPerson.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -441,15 +468,16 @@ onMounted(() => {
             </div>
             <div class="overflow-x-auto">
               <table class="table table-sm">
-                <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
+                <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
                 <tbody>
                   <tr v-for="r in byCustomer" :key="r.label">
                     <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'None' : r.label }}</td>
                     <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
                     <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
                     <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
                   </tr>
-                  <tr v-if="byCustomer.length === 0"><td colspan="4" class="text-base-content/50">No activity in range.</td></tr>
+                  <tr v-if="byCustomer.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -466,16 +494,17 @@ onMounted(() => {
           </div>
           <div class="overflow-x-auto">
             <table class="table table-sm">
-              <thead><tr><th>Location</th><th class="text-right">Tickets</th><th class="text-right">Installs</th><th class="text-right">Time</th><th class="text-right">Visits</th></tr></thead>
+              <thead><tr><th>Location</th><th class="text-right">Tickets</th><th class="text-right">Installs</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Visits</th></tr></thead>
               <tbody>
                 <tr v-for="r in byLocation" :key="r.label">
                   <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No location' : r.label }}</td>
                   <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
                   <td class="text-right font-mono tabular-nums">{{ r.installs || '—' }}</td>
                   <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                  <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
                   <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
                 </tr>
-                <tr v-if="byLocation.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
+                <tr v-if="byLocation.length === 0"><td colspan="6" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
             </table>
           </div>

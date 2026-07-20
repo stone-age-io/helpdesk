@@ -57,9 +57,12 @@ or rotate it through `POST /api/helpdesk/customers/{id}/webhook-token`.
 `show_time_to_requester` is a per-customer opt-in (default off) that lets the
 portal show the **aggregate** time logged on that customer's tickets — never
 the per-entry rows. It gates the `GET /api/helpdesk/tickets/{id}/time-total`
-route (`internal/timeentries`): staff always get the total, a requester only
-for their own customer's ticket and only when the flag is on. Off by default
-because exposing hours is an MSP billing-model choice and hard to walk back.
+route (`internal/timeentries`): staff always get the full total, a requester
+only for their own customer's ticket and only when the flag is on — and the
+requester's figure is **billable-only** (entries flagged `non_billable` are
+excluded), so what the customer sees matches what they'd be invoiced. Off by
+default because exposing hours is an MSP billing-model choice and hard to walk
+back.
 
 ### `tickets` — the unit of work
 
@@ -85,7 +88,20 @@ summed per project at read time — see `projects`). Distinct from
 dashboard tile. Staff-explicit: set only when a public staff comment ticks
 *Request a reply* (`ticket_comments.requests_reply`, `1819000000`), cleared on a
 requester reply or on resolve/close. `install` tickets are excluded. Not a
-source of truth.
+source of truth. `resolved_at` (datetime, optional, added `1821000000`) — stamped
+by the `internal/tickets` guard when the ticket enters `resolved`, cleared when
+it leaves (mirrors visits' `completed_at`); it gives the auto-close cron a
+trustworthy age. Nil unless currently resolved.
+
+**Two-stage terminal.** `resolved` and `closed` are *not* synonyms: `resolved`
+is a grace window (a requester comment reopens it), `closed` is final (requesters
+can't comment — see `ticket_comments` below — and a reply never reopens). A daily
+cron (`tickets.AutoCloseResolved`, wired in `cmd/helpdesk`) promotes tickets left
+`resolved` past `auto_close_resolved_days` (config, default 7; `0` disables) to
+`closed`, suppressing the mail. Both still read as inactive in every "active"
+query (`status != 'resolved' && status != 'closed'`), so the split left the
+queues untouched. `waiting` remains an agent-set "blocked on a third party"
+status, orthogonal to `awaiting_requester`.
 
 Rules:
 
@@ -134,7 +150,10 @@ Rules:
   the record's view rule).
 - **create** — staff set `author_staff` = themselves; a requester sets
   `author_user` = themselves, on their own company's ticket, and cannot set
-  `internal` (guarded with `:isset`).
+  `internal` (guarded with `:isset`). A requester also **can't comment on a
+  `closed` ticket** (`@request.body.ticket.status != 'closed'`, amended by
+  `1822000000`) — closed is final, a follow-up is a new ticket. Staff can still
+  comment on closed tickets (their branch is unguarded).
 - **update/delete** — `AdminRule`.
 
 ### `ticket_events` — the audit trail (added `1805000000`)
@@ -160,7 +179,8 @@ forged through the API.
 ### `time_entries` — labor log
 
 `ticket` (cascade), `staff` (required), `minutes` (int ≥ 1), `work_date`,
-`note`, `visit` (→ visits, optional — added `1809000000`).
+`note`, `visit` (→ visits, optional — added `1809000000`), `non_billable`
+(bool, default false — added `1820000000`).
 
 The ticket is the **canonical labor ledger**: `ticket` is required, so the
 ticket total is always `sum(minutes)` filtered by ticket. `visit` is an
@@ -168,6 +188,16 @@ optional *dimension* on an entry — presence marks it as on-site/field time and
 enables per-visit and field-vs-desk subtotals with no rollup machinery. No
 cascade on the visit FK: deleting a visit never deletes labor (the entry keeps
 its ticket; the dangling visit ref resolves to nothing).
+
+`non_billable` marks labor not to be invoiced (rework, goodwill). It is stored
+as the **exception** rather than a `billable` flag on purpose: a PocketBase bool
+has no unset state, so its zero value is false — naming it `non_billable` makes
+the default (unset) mean *billable*, which needs no backfill, no defaulting
+hook, and no per-writer discipline (every writer, including a raw API create, is
+safe by construction). Billability is a property of the *labor*, not the
+*ticket* — one ticket routinely mixes billable work with non-billable rework.
+Reports split on it (billable = total − non_billable, plus a write-off rate) and
+the customer-facing time total (below) excludes it.
 
 Rules: read `StaffRule` (staff-only, all ops). Create requires `staff` =
 self; update/delete is own-entry-or-admin. Requesters never see time entries.

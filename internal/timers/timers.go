@@ -44,6 +44,7 @@ type StopOpts struct {
 	Minutes       int    // explicit override; <= 0 means compute from elapsed
 	Note          string // overrides the session note when non-empty
 	CompleteVisit bool   // also mark the session's visit completed, if any
+	NonBillable   bool   // mark the resulting entry as non-billable (default billable)
 }
 
 // Stop resolves an open timer into a time_entries row and deletes the session,
@@ -79,6 +80,7 @@ func Stop(app core.App, session *core.Record, opts StopOpts) (*core.Record, erro
 		entry.Set("minutes", minutes)
 		entry.Set("work_date", types.NowDateTime())
 		entry.Set("note", note)
+		entry.Set("non_billable", opts.NonBillable)
 		if visitID != "" {
 			entry.Set("visit", visitID)
 		}
@@ -115,6 +117,7 @@ type stopRequest struct {
 	Minutes       int    `json:"minutes"`
 	Note          string `json:"note"`
 	CompleteVisit bool   `json:"complete_visit"`
+	NonBillable   bool   `json:"non_billable"`
 }
 
 func handleStop(re *core.RequestEvent) error {
@@ -136,6 +139,7 @@ func handleStop(re *core.RequestEvent) error {
 		Minutes:       body.Minutes,
 		Note:          body.Note,
 		CompleteVisit: body.CompleteVisit,
+		NonBillable:   body.NonBillable,
 	})
 	if err != nil {
 		return re.InternalServerError("stop timer failed", err)

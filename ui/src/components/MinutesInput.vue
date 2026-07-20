@@ -16,7 +16,7 @@ const props = withDefaults(
     // Floor applied to any positive entry (minutes). Matches the DB Min:1.
     min?: number
   }>(),
-  { modelValue: null, size: 'sm', placeholder: 'min', disabled: false, min: 1 },
+  { modelValue: null, size: 'sm', disabled: false, min: 1 },
 )
 const emit = defineEmits<{ 'update:modelValue': [number | null] }>()
 
@@ -68,6 +68,11 @@ const hint = computed(() => {
   if (unit.value === 'min') return `= ${Math.round((m / 60) * 100) / 100} hr`
   return `= ${m} min`
 })
+
+// Placeholder defaults to the active unit so it tracks the min↔hr toggle
+// (the field is empty exactly when the unit label matters most); an explicit
+// placeholder (e.g. "estimate") overrides.
+const effectivePlaceholder = computed(() => props.placeholder ?? unit.value)
 </script>
 
 <template>
@@ -79,7 +84,7 @@ const hint = computed(() => {
         min="0"
         step="any"
         inputmode="decimal"
-        :placeholder="placeholder"
+        :placeholder="effectivePlaceholder"
         :disabled="disabled"
         class="input input-bordered join-item w-20"
         :class="size === 'xs' ? 'input-xs' : 'input-sm'"
