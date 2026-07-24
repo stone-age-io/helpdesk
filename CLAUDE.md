@@ -273,9 +273,27 @@ publishes.
 `webhook_token` (hidden field; admin-only reveal/rotate route at
 `POST /api/helpdesk/customers/{id}/webhook-token[?rotate=1]` — minted on
 first reveal). Idempotent via `dedupe_key` (200 + `duplicate:true`).
-`requester_email` matches only within the token's customer. This route is
-the future email-provider (Postmark/Mailgun) integration point. Wire
+`requester_email` matches only within the token's customer. Wire
 contract for both intakes: `docs/protocol.md`.
+
+**Email ingestion** (`internal/inbound/email.go` + `postmark.go`,
+`internal/customers`): inbound email via an email-parsing **provider** (Postmark
+first), not IMAP/SMTP — the provider receives forwarded mail, parses the MIME,
+and POSTs clean JSON to `POST /api/helpdesk/inbound/email/{provider}` (registered
+only when `inbound.secret` is set; Basic-auth + optional IP allowlist). The
+helpdesk holds **no mailbox credentials**. A provider-agnostic core
+(`NormalizedInbound` + `IngestEmail`) does all the work; the adapter (`postmark.go`)
+only maps the wire format, so SES/CloudMailin is a drop-in sibling file. A reply
+carrying the `[#N]` subject token (already in every notification subject) becomes
+a public `ticket_comment` — the existing comment hook then auto-reopens a resolved
+ticket for free; a `closed` ticket spawns a new one instead. Otherwise it's a new
+ticket (`source = email`, added to the select). The sender resolves to a customer
+by exact `users.email`, else `customers.email_domain` (new field, unique, never a
+public provider — guarded in `internal/customers`); unresolvable senders are
+acked-and-dropped (no catch-all). Idempotency rides the email `Message-ID`
+(`tickets.dedupe_key` and the hidden `ticket_comments.source_message_id`, both
+migration `1823000000`). DKIM is log-only in v1. Full design:
+`docs/email-ingestion.md`.
 
 **UI** (`ui/`): Vue 3 + Vite + Pinia + Tailwind + daisyUI (custom light/dark
 theme + soft badges, `ui/tailwind.config.js` + `.badge-soft*` in
@@ -312,7 +330,8 @@ with a `redirect` query).
 
 ## Out of scope (v1, deliberate)
 
-Native SMTP inbound, request/reply NATS service, SLA timers/escalation,
-knowledge base, canned responses, CSAT, ticket merge/split, magic links,
-multi-MSP hosting (one helpdesk instance per MSP), calendar sync for
+Native SMTP/IMAP inbound (email arrives via a parsing **provider** webhook
+instead — see **Email ingestion** above), request/reply NATS service, SLA
+timers/escalation, knowledge base, canned responses, CSAT, ticket merge/split,
+magic links, multi-MSP hosting (one helpdesk instance per MSP), calendar sync for
 visits. See `docs/plan.md` for the full plan this repo implements.

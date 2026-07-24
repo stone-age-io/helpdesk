@@ -204,3 +204,46 @@ unlinked).
 `code`) and sets the ticket's `location` relation; an unresolved code stays as
 free text in `location_note` (same behavior, and same customer scoping, as the
 NATS intake).
+
+## HTTP inbound (email provider)
+
+```
+POST /api/helpdesk/inbound/email/{provider}   # {provider} = postmark
+Authorization: Basic <base64(user:secret)>
+Content-Type: application/json
+```
+
+A distinct intake for **email**: an email-parsing provider (Postmark to start)
+receives forwarded mail, parses the MIME, and posts its own JSON here. The route
+exists only when `inbound.secret` is configured; the caller authenticates with
+that secret via Basic auth (optionally IP-pinned to `inbound.allowed_ips`).
+Unlike the token webhook, the tenant is **not** in the URL — it is resolved from
+the sender. The full design (forwarding, threading, resolution ladder,
+provider-agnostic core) is in [`email-ingestion.md`](email-ingestion.md); the
+wire contract:
+
+- The provider's payload is provider-specific (a thin adapter maps it to an
+  internal `NormalizedInbound`). For Postmark the fields read are `MessageID`,
+  `FromFull`, `Subject`, `StrippedTextReply`/`TextBody`, `Attachments`, and
+  `Headers`.
+- **Threading:** a `[#N]` token in the subject routes a reply onto ticket N as a
+  public comment (reopening it if `resolved`; a `closed` ticket instead spawns a
+  new one). No token ⇒ a new ticket, `source = email`.
+- **Tenant:** the sender resolves to a customer by exact `users.email`, else by
+  `customers.email_domain` (never a shared provider like gmail.com). Unresolvable
+  ⇒ the message is acked and dropped, not funneled to a catch-all.
+- **Idempotency:** the email `Message-ID` dedupes both paths (`tickets.dedupe_key`
+  and the hidden `ticket_comments.source_message_id`, each unique).
+
+### Responses
+
+Every intentionally-handled or intentionally-dropped message returns **2xx**, so
+the provider stops retrying:
+
+- `200` `{"status": "created|commented|duplicate", "id": "...", "number": 17}` —
+  ticket created, reply threaded, or a redelivery deduped.
+- `200` `{"status": "ignored", "reason": "..."}` — deliberately dropped
+  (unresolved tenant, spam, or an auto-reply/loop).
+- `401` — missing/invalid Basic-auth secret. `403` — caller IP not allowed.
+- `422` — undecodable JSON body.
+- `500` — genuine server fault (the provider should retry).
