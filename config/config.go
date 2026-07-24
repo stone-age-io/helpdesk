@@ -28,8 +28,32 @@ type Config struct {
 	// which a requester reply reopens the ticket before it's finalized.
 	AutoCloseResolvedDays int
 
-	NATS NATSConfig
+	NATS    NATSConfig
+	Inbound InboundConfig
 }
+
+// InboundConfig authenticates the email-provider webhook (Postmark to start).
+// Empty Secret disables email ingestion — the app serves without it, exactly
+// as it does without NATS. There is deliberately no reply-domain or
+// default-customer knob: replies thread on the [#N] subject token (the operator
+// sets the PocketBase sender address to the forwarded intake mailbox), and mail
+// that can't be attributed to a known tenant is rejected, not funneled to a
+// catch-all. See docs/email-ingestion.md.
+type InboundConfig struct {
+	// Secret is the Basic-auth password the provider presents on the webhook
+	// URL. Empty ⇒ the email route is not registered.
+	Secret string
+	// AllowedIPs optionally restricts the webhook to the provider's published
+	// egress ranges. Empty ⇒ no IP restriction (secret alone gates it).
+	AllowedIPs []string
+	// ReplyTo is a stored-only escape hatch for installs whose outbound sender
+	// address differs from the intake mailbox. Unwired in v1 (threading works
+	// off the sender address); documented for when a deployment needs it.
+	ReplyTo string
+}
+
+// Enabled reports whether email ingestion should be wired.
+func (i InboundConfig) Enabled() bool { return i.Secret != "" }
 
 // NATSConfig connects the helpdesk to the platform operator's hub account.
 // Auth is a Stone-Age.io-issued .creds file for a nats_user scoped to
@@ -63,6 +87,9 @@ func Load() (*Config, error) {
 	v.SetDefault("nats.stream", "HELPDESK_EVENTS")
 	v.SetDefault("nats.durable", "helpdesk-ingest")
 	v.SetDefault("nats.notify_stream", "HELPDESK_NOTIFICATIONS")
+	v.SetDefault("inbound.secret", "")
+	v.SetDefault("inbound.allowed_ips", []string{})
+	v.SetDefault("inbound.reply_to", "")
 
 	v.SetEnvPrefix("HELPDESK")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -94,6 +121,11 @@ func Load() (*Config, error) {
 			Stream:       v.GetString("nats.stream"),
 			Durable:      v.GetString("nats.durable"),
 			NotifyStream: v.GetString("nats.notify_stream"),
+		},
+		Inbound: InboundConfig{
+			Secret:     v.GetString("inbound.secret"),
+			AllowedIPs: v.GetStringSlice("inbound.allowed_ips"),
+			ReplyTo:    v.GetString("inbound.reply_to"),
 		},
 	}
 
