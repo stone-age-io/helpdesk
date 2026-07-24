@@ -10,9 +10,10 @@ IMAP/SMTP and holds no mailbox credentials.** The provider owns the mail plumbin
 the helpdesk owns a stateless HTTP handler.
 
 Status: **implemented** (2026-07-23, `feat/email-ingestion`). Postmark adapter
-first; attachments (step 7) intentionally deferred. Package layout as built:
-`internal/inbound/email.go` (core), `internal/inbound/postmark.go` (adapter),
-`internal/customers/hooks.go` (domain guard), migration `1823000000`.
+first; **text-only** — attachments are a deliberate non-goal (see Out of scope).
+Package layout as built: `internal/inbound/email.go` (core),
+`internal/inbound/postmark.go` (adapter), `internal/customers/hooks.go` (domain
+guard), migration `1823000000`.
 
 ## Why this shape
 
@@ -72,8 +73,8 @@ exactly like the existing `POST /api/helpdesk/inbound/{token}` webhook.
 
 ### `NormalizedInbound`
 
-The one struct every adapter produces. Deliberately post-parse — quoted history
-already stripped, attachments already extracted — so the core never touches MIME.
+The one struct every adapter produces. Deliberately post-parse and text-only —
+quoted history already stripped — so the core never touches MIME or attachments.
 
 ```go
 type NormalizedInbound struct {
@@ -85,7 +86,6 @@ type NormalizedInbound struct {
     ReplyToken  string             // ticket number parsed from the [#N] subject
                                    // token; "" if none. (A plus-hash reply address
                                    // is a documented future upgrade — see Threading.)
-    Attachments []Attachment       // name, content-type, bytes (already decoded)
     Headers     map[string]string  // lower-cased; for the loop guard
     SpamScore   float64            // provider-scored; SpamFlag folds it in
     SpamFlag    bool
@@ -184,17 +184,15 @@ For a reply to reach the provider at all, the **PocketBase sender address must b
 intake mailbox** (the one forwarded to Postmark), so replies return there by default
 with no `Reply-To` (see [Outbound coupling](#outbound-coupling)).
 
-### Body, attachments
+### Body
 
-- **Body:** prefer the provider's stripped-reply field (Postmark `StrippedTextReply`)
-  so quoted history is gone without heuristics. Fall back to `TextBody`. (If we ever
-  use a provider without stripping, the grug fallback is the Zendesk delimiter trick:
-  append `##- reply above this line -##` to outbound and cut there on inbound.)
-- **Attachments:** map provider attachments onto the ticket/comment `attachments`
-  field, honoring the existing limits (≤6 files, 10 MB each). `CreateTicket` gains an
-  optional attachments argument; the comment writer sets them the same way. PB serves
-  files only to callers who can view the owning record, so an internal comment's files
-  stay staff-only — unchanged.
+Prefer the provider's stripped-reply field (Postmark `StrippedTextReply`) so quoted
+history is gone without heuristics. Fall back to `TextBody`. (If we ever use a
+provider without stripping, the grug fallback is the Zendesk delimiter trick: append
+`##- reply above this line -##` to outbound and cut there on inbound.)
+
+Ingestion is **text-only** — attachments are dropped, not stored (see Out of scope
+for why).
 
 ## Thin Postmark adapter (`internal/inbound/postmark.go`)
 
@@ -213,7 +211,6 @@ The *only* Postmark-aware code. It:
    | `FromFull.{Email,Name}`              | `From`                   |
    | `Subject`                            | `Subject`                |
    | `StrippedTextReply` \|\| `TextBody`  | `Body`                   |
-   | `Attachments[]`                      | `Attachments` (base64-decoded) |
    | `Headers[]`                          | `Headers` (lower-cased)  |
    | `X-Spam-Status` / `X-Spam-Score`     | `SpamFlag` / `SpamScore` |
 
@@ -352,6 +349,17 @@ The seam is `NormalizedInbound` + `Ingest`. A new provider is one file:
 
 ## Out of scope (v1)
 
+- **Attachments — a deliberate non-goal, not merely deferred.** Inbound mail is
+  dominated by *inline* images: corporate signatures embed a logo plus social icons
+  as `Content-Disposition: inline` parts (referenced by `cid:` in the HTML), so a
+  single email routinely carries 3–4 of them, recurring on every reply. Attaching
+  Postmark's `Attachments[]` naively would bury (or, under the ≤6-per-record cap,
+  crowd out) the one screenshot that matters, on the very first email. Telling a
+  signature logo from a real screenshot needs fuzzy heuristics (inline/CID flags also
+  catch *pasted* screenshots; size thresholds are unreliable) — not grug. Text-only is
+  cleaner *and* simpler: we already ingest the plain-text part, which has no image
+  references, so there is no junk and nothing to filter. Files belong on the portal,
+  where the requester attaches them deliberately; staff can point an emailer there.
 - Per-customer inbound addresses (would sharpen tenant routing, but requires
   distributing addresses customers won't reliably use — the shared `support@` +
   resolution ladder is the grug default).

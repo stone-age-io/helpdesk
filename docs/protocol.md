@@ -224,8 +224,8 @@ wire contract:
 
 - The provider's payload is provider-specific (a thin adapter maps it to an
   internal `NormalizedInbound`). For Postmark the fields read are `MessageID`,
-  `FromFull`, `Subject`, `StrippedTextReply`/`TextBody`, `Attachments`, and
-  `Headers`.
+  `FromFull`, `Subject`, `StrippedTextReply`/`TextBody`, and `Headers`. Ingestion
+  is text-only; attachments are ignored (a non-goal — see `email-ingestion.md`).
 - **Threading:** a `[#N]` token in the subject routes a reply onto ticket N as a
   public comment (reopening it if `resolved`; a `closed` ticket instead spawns a
   new one). No token ⇒ a new ticket, `source = email`.

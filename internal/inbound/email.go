@@ -37,28 +37,20 @@ type Addr struct {
 	Name  string
 }
 
-// Attachment is a decoded mail attachment (bytes already base64-decoded by the
-// adapter). Carried through for the optional attachment step; unused in v1's
-// create path.
-type Attachment struct {
-	Name        string
-	ContentType string
-	Content     []byte
-}
-
 // NormalizedInbound is the one shape every provider adapter produces. It is
-// deliberately post-parse: quoted history already stripped, attachments already
-// decoded, so the core never touches MIME.
+// deliberately post-parse and TEXT-ONLY: we take the plain-text body and never
+// touch MIME or attachments. Email attachments are a non-goal — inbound mail is
+// dominated by inline signature images, which would bury real files under the
+// per-record attachment cap; files belong on the portal. See docs/email-ingestion.md.
 type NormalizedInbound struct {
-	MessageID   string
-	From        Addr
-	Subject     string
-	Body        string // best plain text: provider's stripped reply, else full body
-	ReplyToken  string // optional threading override; empty ⇒ core derives it from the [#N] subject tag
-	Attachments []Attachment
-	Headers     map[string]string // lower-cased keys
-	DKIMPass    bool              // provider verdict — LOGGED, not enforced (v1)
-	SpamFlag    bool              // provider spam verdict
+	MessageID  string
+	From       Addr
+	Subject    string
+	Body       string            // best plain text: provider's stripped reply, else full body
+	ReplyToken string            // optional threading override; empty ⇒ core derives it from the [#N] subject tag
+	Headers    map[string]string // lower-cased keys
+	DKIMPass   bool              // provider verdict — LOGGED, not enforced (v1)
+	SpamFlag   bool              // provider spam verdict
 }
 
 // Result is what IngestEmail decided; the adapter turns it into a response.

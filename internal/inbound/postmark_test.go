@@ -13,9 +13,6 @@ const postmarkFixture = `{
   "Subject": "Re: [#42] printer on fire",
   "TextBody": "still broken\n\nOn Tue, staff wrote:\n> did you try restarting?",
   "StrippedTextReply": "still broken",
-  "Attachments": [
-    { "Name": "shot.png", "ContentType": "image/png", "Content": "aGVsbG8=" }
-  ],
   "Headers": [
     { "Name": "X-Spam-Status", "Value": "No" },
     { "Name": "Authentication-Results", "Value": "mx.example; dkim=pass header.d=acme.example" },
@@ -45,9 +42,6 @@ func TestPostmarkNormalize(t *testing.T) {
 	}
 	if n.SpamFlag {
 		t.Error("SpamFlag should be false for X-Spam-Status: No")
-	}
-	if len(n.Attachments) != 1 || string(n.Attachments[0].Content) != "hello" {
-		t.Errorf("attachment not decoded: %+v", n.Attachments)
 	}
 	// The core derives the thread token from Subject; the adapter leaves it blank.
 	if got := ParseTicketToken(n.Subject); got != "42" {

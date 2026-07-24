@@ -8,7 +8,6 @@ package inbound
 
 import (
 	"crypto/subtle"
-	"encoding/base64"
 	"net"
 	"net/http"
 	"strings"
@@ -72,12 +71,7 @@ type postmarkInbound struct {
 	Subject           string `json:"Subject"`
 	TextBody          string `json:"TextBody"`
 	StrippedTextReply string `json:"StrippedTextReply"`
-	Attachments       []struct {
-		Name        string `json:"Name"`
-		ContentType string `json:"ContentType"`
-		Content     string `json:"Content"` // base64
-	} `json:"Attachments"`
-	Headers []struct {
+	Headers           []struct {
 		Name  string `json:"Name"`
 		Value string `json:"Value"`
 	} `json:"Headers"`
@@ -114,22 +108,14 @@ func (p postmarkInbound) normalize() NormalizedInbound {
 	authResults := strings.ToLower(headers["authentication-results"])
 	spam := strings.HasPrefix(strings.ToLower(strings.TrimSpace(headers["x-spam-status"])), "yes")
 
-	var atts []Attachment
-	for _, a := range p.Attachments {
-		if raw, err := base64.StdEncoding.DecodeString(a.Content); err == nil {
-			atts = append(atts, Attachment{Name: a.Name, ContentType: a.ContentType, Content: raw})
-		}
-	}
-
 	return NormalizedInbound{
-		MessageID:   strings.TrimSpace(msgID),
-		From:        Addr{Email: strings.TrimSpace(email), Name: strings.TrimSpace(p.FromFull.Name)},
-		Subject:     p.Subject,
-		Body:        body,
-		Attachments: atts,
-		Headers:     headers,
-		DKIMPass:    !strings.Contains(authResults, "dkim=fail"),
-		SpamFlag:    spam,
+		MessageID: strings.TrimSpace(msgID),
+		From:      Addr{Email: strings.TrimSpace(email), Name: strings.TrimSpace(p.FromFull.Name)},
+		Subject:   p.Subject,
+		Body:      body,
+		Headers:   headers,
+		DKIMPass:  !strings.Contains(authResults, "dkim=fail"),
+		SpamFlag:  spam,
 	}
 }
 

@@ -292,8 +292,9 @@ by exact `users.email`, else `customers.email_domain` (new field, unique, never 
 public provider — guarded in `internal/customers`); unresolvable senders are
 acked-and-dropped (no catch-all). Idempotency rides the email `Message-ID`
 (`tickets.dedupe_key` and the hidden `ticket_comments.source_message_id`, both
-migration `1823000000`). DKIM is log-only in v1. Full design:
-`docs/email-ingestion.md`.
+migration `1823000000`). DKIM is log-only in v1, and ingestion is **text-only** —
+attachments are a deliberate non-goal (inline signature images would swamp the
+per-record file cap). Full design: `docs/email-ingestion.md`.
 
 **UI** (`ui/`): Vue 3 + Vite + Pinia + Tailwind + daisyUI (custom light/dark
 theme + soft badges, `ui/tailwind.config.js` + `.badge-soft*` in

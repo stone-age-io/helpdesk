@@ -47,8 +47,11 @@ staff roster and pickers.
 
 `name` (unique), `active`, `platform_org_id` (unique when set — maps a
 customer to the NATS subject org token), `webhook_token` (hidden; the inbound
-webhook secret), `notes`, `show_time_to_requester` (bool, default false —
-added `1810000000`).
+webhook secret), `email_domain` (optional, unique when set, added `1823000000` —
+the customer's own mail domain, used to route inbound email from an unregistered
+sender to this tenant; normalized and blocked from shared providers like
+gmail.com by `internal/customers`), `notes`, `show_time_to_requester` (bool,
+default false — added `1810000000`).
 
 Rules: read `StaffRule`; create/update/delete `AdminRule`. `webhook_token` is
 a hidden field — it never leaves the server via the record API; staff reveal
@@ -70,9 +73,10 @@ back.
 `title`, `body`, `status` (`open` | `in_progress` | `waiting` | `resolved` |
 `closed`), `priority` (`low` | `normal` | `high` | `urgent`), `assignee`
 (→ staff), `requester` (→ users, optional — machine tickets have none),
-`source` (`portal` | `agent` | `nats` | `webhook`), `origin_subject` (the
-full hub-side NATS subject, provenance for machine tickets), `dedupe_key`
-(unique when set — ingestion idempotency), `attachments` (≤6 files),
+`source` (`portal` | `agent` | `nats` | `webhook` | `email`; `email` added
+`1823000000`), `origin_subject` (the full hub-side NATS subject, provenance for
+machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
+carries the inbound email `Message-ID`), `attachments` (≤6 files),
 `category` (→ ticket_categories, optional — see below), `type` (`issue` |
 `install`, default `issue` via the create hook — reactive vs. planned work),
 `project` (→ projects, optional — groups install/reactive work), `asset`
@@ -140,7 +144,10 @@ create/update/delete `AdminRule`.
 
 `ticket` (required, cascade-delete), `author_staff` **or** `author_user`
 (exactly one, matching the author's class), `body`, `internal` (bool —
-staff-only working notes), `attachments` (≤6 files).
+staff-only working notes), `attachments` (≤6 files), `source_message_id`
+(hidden text, unique when set, added `1823000000` — the inbound email
+`Message-ID`, so a redelivered reply can't post a duplicate comment; empty for
+UI/portal comments).
 
 Rules:
 
@@ -311,6 +318,9 @@ These unique indexes are load-bearing, not just performance:
   webhook retries; a duplicate key is acked/answered without a second ticket.
 - `customers.platform_org_id` (partial) — one customer per platform org.
 - `customers.webhook_token` (partial) — token uniquely selects a customer.
+- `customers.email_domain` (partial, `!= ''`) — a mail domain maps to one tenant.
+- `ticket_comments.source_message_id` (partial, `!= ''`) — an inbound email
+  `Message-ID` posts at most one comment (redelivery idempotency).
 - `ticket_categories.name` / `.key` — categories are distinct; `key` is the
   stable filter/payload handle.
 - `locations` (customer, code) partial (`code != ''`) — a location code is
