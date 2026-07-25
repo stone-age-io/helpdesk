@@ -22,6 +22,7 @@ import (
 	"github.com/stone-age-io/helpdesk/config"
 	"github.com/stone-age-io/helpdesk/internal/activity"
 	"github.com/stone-age-io/helpdesk/internal/authfix"
+	"github.com/stone-age-io/helpdesk/internal/customers"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
 	"github.com/stone-age-io/helpdesk/internal/natsx"
@@ -66,6 +67,7 @@ func main() {
 	visits.Register(app)
 	timers.Register(app)
 	activity.Register(app)
+	customers.Register(app)
 	authfix.EnforceEmailVisibility(app)
 
 	// Outbound email: ticket lifecycle hooks → templated sends. The notifier
@@ -122,6 +124,7 @@ func main() {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		notifications.RegisterRoutes(e)
 		inbound.Register(e)
+		inbound.RegisterEmail(e, cfg.Inbound.Secret, cfg.Inbound.AllowedIPs)
 		timeentries.RegisterRoutes(e)
 		timers.RegisterRoutes(e)
 

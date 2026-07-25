@@ -3,7 +3,7 @@
 Two configuration surfaces, deliberately split:
 
 1. **`helpdesk.yaml` + `HELPDESK_*` env** — infrastructure the process
-   needs before PocketBase is up (data dir, NATS).
+   needs before PocketBase is up (data dir, NATS, inbound-email webhook).
 2. **PocketBase settings** (dashboard at `/_`, → Settings) — operator
    concerns stored in the database: SMTP, application URL, OAuth2.
 
@@ -36,6 +36,13 @@ nats:
   stream: HELPDESK_EVENTS        # helpdesk-owned inbox stream (hub account)
   durable: helpdesk-ingest       # durable consumer name; stable across restarts
   notify_stream: HELPDESK_NOTIFICATIONS  # helpdesk-owned OUTBOUND event stream
+
+# Inbound email via an email-parsing provider (Postmark). Leave secret empty
+# to disable — mail then arrives only via portal/agent/webhook/NATS.
+inbound:
+  secret: ""                     # webhook Basic-auth password; empty ⇒ disabled
+  allowed_ips: []                # optional: restrict to the provider's egress ranges (IPs or CIDRs)
+  # reply_to: ""                 # escape hatch; unset ⇒ the PB sender address is the intake mailbox
 ```
 
 ### Branding overlay
@@ -81,6 +88,27 @@ Per-customer mapping: set `customers.platform_org_id` (SPA → customer
 detail) to the customer's platform organization id. Events for unmapped
 orgs are logged and dropped (acked).
 
+### Inbound email
+
+An email-parsing provider (Postmark to start) receives mail, parses the MIME,
+and `POST`s clean JSON to `POST /api/helpdesk/inbound/email/postmark`; the route
+is registered only when `inbound.secret` is set. The provider authenticates with
+that secret via HTTP Basic auth on the webhook URL; `inbound.allowed_ips` can
+additionally pin the caller to the provider's published egress ranges. The
+helpdesk holds **no mailbox credentials** — only this webhook secret.
+
+Routing and threading are covered in full by
+[`docs/email-ingestion.md`](email-ingestion.md); the operator-facing essentials:
+
+- **Forward** your public address (e.g. `support@…`) into the provider's inbound
+  address, and set `customers.email_domain` (Directory → customer) for customers
+  who email from their own domain so cold senders resolve to the right tenant. A
+  sender the helpdesk can't attribute to a known customer is rejected (acked, not
+  queued) — there is no catch-all.
+- **Threading** is by the `[#N]` token already in every notification subject, so
+  the PocketBase **sender address (below) must be that same forwarded intake
+  mailbox** — a reply then returns there and lands on ticket N as a comment.
+
 ## PocketBase settings (dashboard → Settings)
 
 - **Application URL** — used to build the ticket deep links
@@ -90,7 +118,9 @@ orgs are logged and dropped (acked).
   name/address stamped on notifications. With SMTP unconfigured PocketBase
   falls back to `sendmail`, and without that binary sends fail — failures
   are recorded per-recipient in the send log (SPA → Notifications) and
-  never affect the originating write.
+  never affect the originating write. When inbound email is enabled, set the
+  **sender address to the forwarded intake mailbox** so requester replies thread
+  back onto the ticket (see Inbound email above).
 - **OAuth2** — optional Microsoft/Google login for the `users` (requester)
   collection; password auth works out of the box.
 

@@ -49,6 +49,11 @@ type Payload struct {
 	// locations row for this customer, falling back to location_note on a miss.
 	Location     string `json:"location,omitempty"`
 	LocationCode string `json:"location_code,omitempty"`
+	// Source is the ticket provenance to stamp. Not wire-bound (json:"-") — it's
+	// set by the server-side caller: the HTTP webhook leaves it empty (defaults
+	// to "webhook"), the email adapter sets "email". Keeps CreateTicket the one
+	// projection for every non-portal intake.
+	Source string `json:"-"`
 }
 
 // Register binds both routes.
@@ -125,12 +130,17 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 		priority = "normal"
 	}
 
+	source := p.Source
+	if source == "" {
+		source = "webhook"
+	}
+
 	rec := core.NewRecord(col)
 	rec.Set("customer", customer.Id)
 	rec.Set("title", title)
 	rec.Set("body", p.Body)
 	rec.Set("priority", priority)
-	rec.Set("source", "webhook")
+	rec.Set("source", source)
 	rec.Set("asset", strings.TrimSpace(p.Asset))
 	// A location code resolves to the structured relation; free-text Location is
 	// the note. An unresolved code is kept as a breadcrumb in the note.
