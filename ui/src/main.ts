@@ -24,3 +24,14 @@ brandingStore
     document.title = brandingStore.appName
     app.mount('#app')
   })
+
+// PWA install support: the service worker (ui/public/sw.js) is a deliberate
+// no-op — it exists only to satisfy the browser's install criteria, so there
+// is no offline cache to go stale. Skipped in dev.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch(err => console.error('SW registration failed:', err))
+  })
+}

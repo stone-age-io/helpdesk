@@ -55,6 +55,17 @@ pre-mount; `BrandLogo.vue` prefers the overlay logo, else the built-in inline
 mark. `branding.example/` is the committed template. Mirrors the sibling
 `platform`/`access-control` apps' branding system.
 
+The SPA is also an **installable PWA**, same shape as the platform app:
+`ui/public/` holds `manifest.json`, the two icons (the Stone-Age mark in the
+helpdesk indigo), and a deliberately **no-op `sw.js`** — the service worker
+exists only to satisfy the browser's install criteria, so there is no offline
+cache to go stale (an app whose whole job is live ticket state should not serve
+yesterday's queue). `main.ts` registers it in PROD only; `index.html` carries the
+manifest / theme-color / apple-touch-icon tags. Vite copies `ui/public/` into
+`internal/webui/public`, and `serveSPA`'s file lookup serves them at the root.
+Unlike the theme and app name, the manifest is **not** brandable — it's a static
+file, so an operator overlay can't rename the installed app.
+
 ## Architecture
 
 **Identity: two auth collections**, distinguished in rules by

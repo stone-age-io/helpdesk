@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Service Desk</title>
+    <!-- PWA: installable shell (manifest + no-op service worker registered in
+         main.ts). Matches the sibling platform app's setup. -->
+    <link rel="icon" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#4F46E5" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <!-- Optional operator branding overlay; served with a silent empty fallback,
          so it's harmless when no overlay is configured. Loaded after the bundled
          DaisyUI CSS so its [data-theme] var overrides win by cascade order. -->
