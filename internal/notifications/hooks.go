@@ -20,6 +20,11 @@ const suppressField = "_suppressNotify"
 // message already sent another way — e.g. the requester comment that
 // auto-reopens a resolved ticket (internal/tickets): the comment email
 // already tells staff, so a second "status changed" mail would be noise.
+//
+// Honoured by EVERY hook below — ticket create/update, comment create, and
+// visit create/update. It originally guarded only the ticket-update hook,
+// which was a trap: internal/demoseed marks each of its writes and would
+// otherwise have mailed a notification per seeded ticket and comment.
 func Suppress(r *core.Record) { r.SetRaw(suppressField, true) }
 
 func suppressed(r *core.Record) bool { return r.GetBool(suppressField) }
@@ -55,6 +60,9 @@ func quietRequested(r *http.Request) bool {
 // The notifier itself is async + nil-safe; hooks never fail the write.
 func RegisterHooks(app core.App, n *Notifier) {
 	app.OnRecordAfterCreateSuccess("tickets").BindFunc(func(e *core.RecordEvent) error {
+		if suppressed(e.Record) {
+			return e.Next() // see Suppress
+		}
 		n.Send(EventTypeTicketCreated, buildTicketContext(e.App, e.Record))
 		return e.Next()
 	})
@@ -88,6 +96,9 @@ func RegisterHooks(app core.App, n *Notifier) {
 	})
 
 	app.OnRecordAfterCreateSuccess("ticket_comments").BindFunc(func(e *core.RecordEvent) error {
+		if suppressed(e.Record) {
+			return e.Next() // see Suppress
+		}
 		if e.Record.GetBool("internal") {
 			return e.Next() // staff-only working notes never leave the app
 		}
@@ -118,6 +129,9 @@ func RegisterHooks(app core.App, n *Notifier) {
 	})
 
 	app.OnRecordAfterCreateSuccess("visits").BindFunc(func(e *core.RecordEvent) error {
+		if suppressed(e.Record) {
+			return e.Next() // see Suppress
+		}
 		// The guard hook (internal/visits) runs pre-save, so status is final
 		// here. A visit created directly as scheduled announces itself; a
 		// `requested` one waits for the dispatcher; a back-dated visit created
@@ -136,6 +150,9 @@ func RegisterHooks(app core.App, n *Notifier) {
 	})
 
 	app.OnRecordAfterUpdateSuccess("visits").BindFunc(func(e *core.RecordEvent) error {
+		if suppressed(e.Record) {
+			return e.Next() // see Suppress
+		}
 		orig := e.Record.Original()
 		old, now := orig.GetString("status"), e.Record.GetString("status")
 		ctx, ok := buildVisitContext(e.App, e.Record)

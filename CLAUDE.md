@@ -223,6 +223,24 @@ SchemaBuilder is deliberately not ported while `MetadataEditor` /
 zero value means "in service" (the `non_billable` idiom); a seeder maps
 `retired = !active`.
 
+**Demo seeding** (`internal/demoseed`): `./helpdesk seed-demo --confirm [--tickets N]`
+fills a showcase instance — 8 customers, type taxonomies with real
+`metadata_schema`s, a location hierarchy, 40 things, and a backdated ticket
+history with comments, visits, and a billable/non-billable time ledger.
+Idempotent (natural keys + a fixed-seed PRNG) and self-healing per child record.
+
+In-process Go rather than an HTTP script for one decisive reason: **PocketBase's
+autodate overwrites `created` on save and ignores it on update**, so no external
+client can produce a demo whose ages look real — every ticket lands minutes old
+and the queue's Age column and ticket-volume report both read flat. `app.DB()`
+lets the seeder rewrite the column directly. Two consequences worth knowing:
+generation must spend *all* the randomness before any writing (writing is
+conditional, so RNG use there would diverge between runs and defeat the dedupe
+keys), and transitions must re-fetch the record between steps or every audit row
+diffs against the original `open`. The subcommand relies on the record hooks
+being bound outside `OnServe`, so seeded tickets get their number and audit trail
+from production code paths; mail is held back by `notifications.Suppress`.
+
 **Time tracking** (`internal/timeentries`, `internal/timers`): labor is a
 `time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket
 is the canonical ledger, and `GET /tickets/{id}/time-total` exposes only the

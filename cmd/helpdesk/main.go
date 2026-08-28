@@ -23,6 +23,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/activity"
 	"github.com/stone-age-io/helpdesk/internal/authfix"
 	"github.com/stone-age-io/helpdesk/internal/customers"
+	"github.com/stone-age-io/helpdesk/internal/demoseed"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
 	"github.com/stone-age-io/helpdesk/internal/natsx"
@@ -61,6 +62,12 @@ func main() {
 		Automigrate:  true,
 		TemplateLang: migratecmd.TemplateLangGo,
 	})
+
+	// `helpdesk seed-demo --confirm` fills a showcase instance. Registered here
+	// rather than in OnServe because it is a one-shot subcommand, and it relies
+	// on the record hooks below being bound the same way — a seeded ticket gets
+	// its sequential number and audit trail exactly as a real one does.
+	demoseed.RegisterCommand(app)
 
 	tickets.Register(app)
 	projects.Register(app)
