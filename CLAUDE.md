@@ -71,7 +71,10 @@ file, so an operator overlay can't rename the installed app.
 **Identity: two auth collections**, distinguished in rules by
 `@request.auth.collectionName` (constants in `internal/authz`):
 
-- `staff` — agents/admins (`role` select). Cross-customer. `AdminRule`
+- `staff` — agents/admins/field techs (`role` select: `agent` | `admin` |
+  `field`, the last added by `1816000000` and **UI-steering only, not a
+  permission boundary** — it picks the mobile on-site shell). Cross-customer.
+  `AdminRule`
   gates management surfaces.
 - `users` — requesters, repurposed default PB collection with a required
   `customer` relation. `AuthRule: active = true && customer != ''`. A
@@ -280,13 +283,17 @@ field is envelope-ready when a PSA consumer exists).
 notifier):
 DB-stored templates (`notification_templates`) rendered with
 `text/template` + a small FuncMap (`formatTime`, `statusLabel`,
-`pluralize`). Seven event types: `ticket.created`, `ticket.assigned`,
+`pluralize`). Eight event types: `ticket.created`, `ticket.assigned`,
 `ticket.commented`, `ticket.status_changed`, `visit.scheduled`,
-`visit.rescheduled`, `visit.canceled`. Visit events fire on *transitions*,
-not raw saves: scheduled = became scheduled (create or update),
+`visit.rescheduled`, `visit.canceled`, `visit.completed`. Visit events fire on
+*transitions*, not raw saves: scheduled = became scheduled (create or update),
 rescheduled = time moved while scheduled, canceled = was scheduled
-(canceling a bare `requested` visit is silent, as is completion and a
-tech swap without a time change). The visit's technician overrides the
+(canceling a bare `requested` visit is silent, as is a tech swap without a time
+change). `visit.completed` (migration `1817000000`) is the one event seeded
+**email-disabled and `publish_nats` enabled**: completion is already visible to
+humans through the ticket's status and comments, so mail would be noise, but
+"work done on site" is exactly the signal MSP-internal automation wants.
+The visit's technician overrides the
 ticket assignee in the payload so the person dispatched gets the mail.
 Recipients
 are a per-template JSON spec `{requester, assignee, all_staff, extras}`;
@@ -419,10 +426,19 @@ project views.
   tickets/comments/visits fires email — tests that save those records and
   assert on mail must drain with `WaitInFlight`.
 
-## Out of scope (v1, deliberate)
+## Out of scope (deliberate)
 
 Native SMTP/IMAP inbound (email arrives via a parsing **provider** webhook
 instead — see **Email ingestion** above), request/reply NATS service, SLA
 timers/escalation, knowledge base, canned responses, CSAT, ticket merge/split,
 magic links, multi-MSP hosting (one helpdesk instance per MSP), calendar sync for
-visits. See `docs/plan.md` for the full plan this repo implements.
+visits. Also: rates or dollar amounts anywhere (minutes only — billing math
+stays in accounting), a ledger lock on invoiced time, and **live sync of
+things/locations from the platform**, which is architecturally closed rather
+than merely unbuilt (see **Things / types**).
+
+`docs/plan.md` is the original v1 plan and is kept for its rationale, not as a
+description of the app — the same is true of `docs/service-delivery-plan.md` and
+`docs/nats-notifications-plan.md`. Each carries a status banner saying where
+reality has moved past it. For current behaviour use this file plus
+`docs/data-model.md`.

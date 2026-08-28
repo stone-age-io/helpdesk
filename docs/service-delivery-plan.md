@@ -1,9 +1,19 @@
 # Service-delivery expansion plan
 
-This document plans the expansion of `helpdesk` from a reactive service-ticket
-app into a **service-delivery** app that also handles proactive
-project / installation / field work. It backs the implementation the way
-`docs/plan.md` backed the original build.
+Status: **implemented** (migrations `1812000000`–`1815000000`). This document
+plans the expansion of `helpdesk` from a reactive service-ticket app into a
+**service-delivery** app that also handles proactive project / installation /
+field work. It backs the implementation the way `docs/plan.md` backed the
+original build, and is kept for its rationale — especially the "grouping layer
+above the ledger" decision and the tripwire for splitting projects into their
+own sibling app.
+
+One non-goal below has since been **partly reversed**: "CMDB / asset catalog".
+Migration `1824000000` added `things`, `thing_types` and `location_types`. The
+objection recorded here was to an *authored* catalog someone would have to keep
+true by hand; what shipped is a curated **mirror** of the platform's `things`,
+joined by `(customer, code)`, whose source of truth lives upstream. The rest of
+that list still stands. See [data-model.md](data-model.md).
 
 ## Why grow helpdesk instead of a new app
 

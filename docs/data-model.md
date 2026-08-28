@@ -23,12 +23,21 @@ Requests are attributed to one of two auth collections, distinguished in
 rules by `@request.auth.collectionName`.
 
 - **`staff`** — agents and admins, cross-customer. Fields: `name`, `role`
-  (`agent` | `admin`), `active`, `avatar` (single image, optional —
+  (`agent` | `admin` | `field` — the third value added by `1816000000`),
+  `active`, `avatar` (single image, optional —
   migration `1807000000`). `AuthRule: active = true`. Any staff member
   can read the roster (needed for assignee pickers); only admins
   create/delete. A staff member may self-update profile fields (`name`,
   `avatar`) but cannot change their own `role` or `active` (blocked by an
   `:isset` body guard).
+
+  `field` is **not a permission boundary** — a field agent is ordinary staff,
+  cross-customer, subject to every rule an `agent` is, and `AdminRule` still
+  gates the admin surfaces. It exists only so the SPA can pick a mobile,
+  on-site shell (landing on today's visits) instead of the desk app. Contrast
+  the `staff` / `users` split, which is a real boundary because requesters have
+  a fundamentally different scope. If a future need makes `field` restrictive,
+  that's a rule change, not a role rename.
 - **`users`** — requesters (the repurposed default PB collection), scoped to
   one customer. Fields: `customer` (relation, **required**), `active`,
   `avatar` (single image, optional). `AuthRule: active = true && customer != ''`.
@@ -421,8 +430,17 @@ These unique indexes are load-bearing, not just performance:
   `Message-ID` posts at most one comment (redelivery idempotency).
 - `ticket_categories.name` / `.key` — categories are distinct; `key` is the
   stable filter/payload handle.
-- `locations` (customer, code) partial (`code != ''`) — a location code is
-  unique within a customer (the machine-intake join key); different customers
-  may reuse a code.
+- `locations` (customer, code), `things` (customer, code), and
+  `thing_types` / `location_types` (customer, code) — all partial on
+  `code != ''`. A code is unique **within a customer** (it's the machine-intake
+  and export→seed join key); two tenants both calling a reader `RDR-01` is
+  correct. The partial predicate is what keeps a blank code legal, and blanks
+  must stay legal: SQLite treats `''` as a value rather than NULL, and the
+  catalog is deliberately a superset of the platform's — it covers gear that
+  was never onboarded and therefore has no code.
+- `time_sessions.staff` — one running timer per agent, enforced by the DB
+  rather than by the stop route. This is what makes "start a timer" idempotent.
 - `projects.number` — the collision backstop for the project-number hook.
 - `notification_dedupe` (event, ref, UTC-day) — one send per event/ref/day.
+- `notification_templates.event_type` and `customers.name` — one row per event,
+  one company per name.

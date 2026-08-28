@@ -1,5 +1,30 @@
 # Helpdesk v1 — Implementation Plan
 
+Status: **implemented, and since superseded in scope.** This is the original v1
+plan and is kept as the record of *why* the foundations are shaped the way they
+are — the standalone-sibling decision, subject-based provenance, no pb-tenancy.
+It is **not** a description of the app as it stands.
+
+Reality has moved past it in several places; where they disagree, the current
+docs win:
+
+- The app grew a **service-delivery layer** — projects, locations, things and
+  their types — planned separately in
+  [service-delivery-plan.md](service-delivery-plan.md) and described in
+  [data-model.md](data-model.md).
+- "Native SMTP inbound out of scope" still holds literally, but **email
+  ingestion shipped** via a parsing provider's webhook — see
+  [email-ingestion.md](email-ingestion.md).
+- Notifications gained an eighth event and a **second channel** (NATS publish)
+  — see [notifications.md](notifications.md) and
+  [nats-notifications-plan.md](nats-notifications-plan.md).
+- Tickets gained a two-stage `resolved` → `closed` lifecycle with auto-close, a
+  billable/non-billable time ledger, start/stop timers, effort estimates, and
+  an `awaiting_requester` nudge.
+
+For what the app actually does today, start at [`CLAUDE.md`](../CLAUDE.md) and
+[data-model.md](data-model.md).
+
 ## Context
 
 A helpdesk/service-ticket application for the stone-age.io ecosystem: 816tech (the platform operator / MSP) runs it to support customer organizations. The unique capability is **machine-generated tickets**: things/rule-router publish events inside a customer org's NATS account on `helpdesk.>`, and the platform's managed-org export/import (shipped in platform commit `45ca1e3`) delivers them into the operator hub account as `helpdesk.{platformOrgId}.>` with unforgeable subject-based provenance. The helpdesk consumes that stream and turns events into work: tickets, comments, assignment, time entries, site visits, and outbound email.

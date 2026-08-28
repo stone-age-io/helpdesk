@@ -111,10 +111,13 @@ func TestThingsSchema(t *testing.T) {
 }
 
 // TestTicketsCreateRuleIntact pins the WHOLE requester branch, not just the
-// clause this migration added. The rule has been restated verbatim by four
-// migrations now (1800, 1806, 1812, 1815, and this one); nothing composes it, so
-// a copy-paste that dropped `assignee:isset` or `source = 'portal'` would be a
-// silent portal privilege escalation that no other test would catch.
+// clause this migration added. The rule has been restated verbatim by six
+// migrations now (1800, 1806, 1812, 1815, this one, and 1825); nothing composes
+// it, so a copy-paste that dropped `assignee:isset` or `source = 'portal'` would
+// be a silent portal privilege escalation that no other test would catch.
+//
+// Note this asserts the LIVE rule, i.e. 1825's — the last writer wins, so the
+// two clauses 1825 changed are checked in their current form here.
 func TestTicketsCreateRuleIntact(t *testing.T) {
 	app := testutil.SetupApp(t)
 

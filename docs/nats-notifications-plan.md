@@ -5,6 +5,14 @@ document is the implementation plan for adding a second delivery channel to the
 notification subsystem — publishing a fixed, typed JSON envelope to JetStream
 alongside (and independent of) email.
 
+It says "seven event types" throughout; there are now **eight**. Migration
+`1817000000` added `visit.completed`, which is the one event that ships
+email-disabled and NATS-enabled — completion is already visible to humans via
+the ticket's status and comments, but "work done on site" is exactly the signal
+MSP-internal automation wants. See [notifications.md](notifications.md) for the
+current event / recipient / suppression matrix and
+[protocol.md](protocol.md#nats-notification-events-outbound) for the envelope.
+
 ## Goal & shape
 
 For each of the seven event types, an admin can opt in to publishing a

@@ -21,7 +21,7 @@ Everything here is **best-effort and never blocks a write**:
 
 ## Channels
 
-The same seven events drive both channels; each template gates them
+The same eight events drive both channels; each template gates them
 **independently**:
 
 - **`enabled`** — send email to the resolved recipient classes.
