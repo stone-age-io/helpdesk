@@ -39,7 +39,8 @@ leaves room for `comment` / `resolve` later without a subject migration.
   "body": "vibration sensor overcurrent",   // optional
   "priority": "high",                       // optional: low|normal|high|urgent (else normal)
   "dedupe_key": "pump-7-overcurrent",       // optional: idempotency key, unique per ticket
-  "thing": "pump-7",                        // optional: stored as the ticket's asset
+  "thing": "pump-7",                        // optional: free-text, stored as thing_note
+  "thing_code": "PUMP-7",                   // optional: resolves to a things row (this customer)
   "location": "line-3",                     // optional: free-text, stored as location_note
   "location_code": "BLDG-C",                // optional: resolves to a locations row (this customer)
   "category": "iot-device"                  // optional: a ticket_categories key
@@ -55,12 +56,22 @@ Behavior:
 - **`dedupe_key`**: if a ticket with the same key exists, the event is
   acked without creating a second ticket. Publishers should stamp a stable
   key for retry loops and flapping sources.
-- **`thing`** is stored as the ticket's structured `asset`; **`location`** is
-  free text stored as `location_note`. **`location_code`** resolves against
-  this customer's `locations` rows (matched on `code`) and sets the ticket's
-  `location` relation — the queryable reporting axis. An unresolved code is
-  logged and kept as a breadcrumb in `location_note` (no row is auto-created),
-  so the operator can add the missing `locations` row and later events resolve.
+- **`thing`** and **`location`** are free text, stored as `thing_note` and
+  `location_note`. **`thing_code`** and **`location_code`** are the platform
+  join keys: each resolves against this customer's `things` / `locations` rows
+  (matched on `code`) and sets the corresponding relation — the queryable
+  reporting axes. An unresolved code is logged and kept as a breadcrumb in its
+  own note field (no row is auto-created), so the operator can add the missing
+  row and later events resolve.
+
+  The two resolve independently: a resolved `thing` does **not** backfill the
+  ticket's `location`, even though the thing record has one. One payload field
+  maps to one ticket field; inference belongs in the UI, not the projection.
+
+  Both codes are `(customer, code)`-scoped, so a code can never resolve across
+  tenants. Note that the platform does **not** freeze `things.code` or
+  `locations.code` — renaming one upstream means later events stop resolving and
+  fall back to free text until the helpdesk row is updated to match.
 - **`category`** is matched against a `ticket_categories` `key`; an unknown
   or inactive key is ignored (the ticket is still created, unclassified) —
   the same graceful-degradation stance as an unmapped org.
@@ -179,7 +190,8 @@ selects the customer. This route is the future email-provider
   "requester_email": "rita@acme.com",    // optional: links an existing portal account
   "dedupe_key": "alarm-1234",            // optional: idempotency key
   "category": "hardware",                // optional: a ticket_categories key (unknown ignored)
-  "asset": "printer-3f",                 // optional: free-text device/system
+  "thing": "printer-3f",                 // optional: free-text (thing_note)
+  "thing_code": "HQ-PRN-3",              // optional: resolves to a things row (this customer)
   "location": "3rd floor copy room",     // optional: free-text (location_note)
   "location_code": "BLDG-C"              // optional: resolves to a locations row (this customer)
 }
@@ -200,10 +212,13 @@ token's customer — a stray email can never link a ticket across tenants.
 Non-matching emails are silently ignored (the ticket is still created,
 unlinked).
 
-`location_code` resolves to one of the token customer's `locations` rows (by
-`code`) and sets the ticket's `location` relation; an unresolved code stays as
-free text in `location_note` (same behavior, and same customer scoping, as the
-NATS intake).
+`thing_code` and `location_code` resolve to one of the token customer's `things`
+/ `locations` rows (by `code`) and set the corresponding relation; an unresolved
+code stays as free text in its note field (same behavior, and same customer
+scoping, as the NATS intake).
+
+The free-text device field is spelled **`thing`**, matching the NATS contract —
+it was `asset` before the `things` collection existed.
 
 ## HTTP inbound (email provider)
 

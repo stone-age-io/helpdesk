@@ -24,6 +24,7 @@ const props = defineProps<{
   categoryOptions: Option[]
   requesterOptions: Option[]
   locationOptions: Option[]
+  thingOptions: Option[]
   projectOptions: Option[]
   notify: boolean
 }>()
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   patch: [fields: Record<string, string | number | null>]
   'change-customer': [value: string]
   'create-location': [label: string]
+  'create-thing': [label: string]
   'update:notify': [value: boolean]
 }>()
 
@@ -80,11 +82,13 @@ const navigateUrl = computed(() => {
       @update:model-value="emit('patch', { requester: $event })"
     />
   </div>
-  <!-- Location is editable in place here (always visible) — field work needs it
-       reachable, and the Navigate link doubles as the read affordance when a
-       site is set. Location note carries dispatch hints / the intake fallback.
-       Project surfaces as a read chip only when set (its picker lives in
-       Classification below). -->
+  <!-- Location and Thing — the two structured axes — are editable in place here
+       (always visible). Field work needs the site reachable, and "which device?"
+       is the first question on a hardware ticket; each carries its own read
+       affordance (Navigate, view →). Their free-text fallbacks sit together down
+       in Classification, since they're intake residue and scratch hints rather
+       than things you set. Project surfaces as a read chip only when set (its
+       picker lives in Classification too). -->
   <div class="form-control">
     <label class="label py-1">
       <span class="label-text text-xs">Location</span>
@@ -102,14 +106,23 @@ const navigateUrl = computed(() => {
     />
   </div>
   <div class="form-control">
-    <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
-    <input
-      :value="ticket.location_note || ''"
-      type="text"
-      maxlength="200"
-      class="input input-bordered input-sm"
-      placeholder="Access hints / where"
-      @change="emit('patch', { location_note: ($event.target as HTMLInputElement).value })"
+    <label class="label py-1">
+      <span class="label-text text-xs">Thing</span>
+      <router-link
+        v-if="ticket.expand?.thing"
+        :to="`/staff/things/${ticket.thing}`"
+        class="label-text-alt link link-hover"
+      >view →</router-link>
+    </label>
+    <SearchSelect
+      :model-value="ticket.thing || ''"
+      :options="thingOptions"
+      size="sm"
+      empty-label="None"
+      placeholder="Pick a device…"
+      create-label="New thing"
+      @update:model-value="emit('patch', { thing: $event })"
+      @create="emit('create-thing', $event)"
     />
   </div>
   <router-link
@@ -210,14 +223,25 @@ const navigateUrl = computed(() => {
     />
   </div>
   <div class="form-control">
-    <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
+    <label class="label py-1"><span class="label-text text-xs">Thing note</span></label>
     <input
-      :value="ticket.asset || ''"
+      :value="ticket.thing_note || ''"
       type="text"
       maxlength="200"
       class="input input-bordered input-sm"
-      placeholder="Device / system"
-      @change="emit('patch', { asset: ($event.target as HTMLInputElement).value })"
+      placeholder="Device text / from intake"
+      @change="emit('patch', { thing_note: ($event.target as HTMLInputElement).value })"
+    />
+  </div>
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
+    <input
+      :value="ticket.location_note || ''"
+      type="text"
+      maxlength="200"
+      class="input input-bordered input-sm"
+      placeholder="Access hints / where"
+      @change="emit('patch', { location_note: ($event.target as HTMLInputElement).value })"
     />
   </div>
   <div class="flex items-center justify-between gap-2">

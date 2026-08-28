@@ -33,6 +33,7 @@ const sections: NavSection[] = [
       { label: 'Customers', icon: '🏢', path: '/staff/customers' },
       { label: 'Requesters', icon: '🙋', path: '/staff/requesters' },
       { label: 'Locations', icon: '📍', path: '/staff/locations' },
+      { label: 'Things', icon: '🧰', path: '/staff/things' },
     ],
   },
   {
@@ -40,6 +41,8 @@ const sections: NavSection[] = [
     items: [
       { label: 'Staff', icon: '👥', path: '/staff/staff', adminOnly: true },
       { label: 'Categories', icon: '🏷️', path: '/staff/categories', adminOnly: true },
+      { label: 'Thing Types', icon: '🧩', path: '/staff/thing-types', adminOnly: true },
+      { label: 'Location Types', icon: '🗺️', path: '/staff/location-types', adminOnly: true },
       { label: 'Notifications', icon: '✉️', path: '/staff/notifications', adminOnly: true },
     ],
   },

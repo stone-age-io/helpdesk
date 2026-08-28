@@ -43,9 +43,11 @@ const commentFiles = ref<File[]>([])
 const posting = ref(false)
 
 async function loadTicket() {
-  // Expand category for the badge; the ticket_categories read rule (migration
-  // 1808000000) lets requesters resolve the label.
-  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category' })
+  // Expand category for the badge (ticket_categories read rule, migration
+  // 1808000000) and thing for its name (things read rule, 1824000000). A
+  // requester describes the problem as "the reader at the north door", so
+  // echoing the structured name back confirms the ticket is about the right box.
+  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category,thing' })
 }
 
 async function loadComments() {
@@ -299,6 +301,10 @@ onUnmounted(() => {
                 />
                 <span v-else class="text-base-content/40">—</span>
               </div>
+              <div v-if="ticket.expand?.thing?.name" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Thing</span>
+                <span class="text-right">{{ ticket.expand?.thing?.name }}</span>
+              </div>
               <div class="flex items-center justify-between gap-2">
                 <span class="text-base-content/60">Opened</span>
                 <span>{{ format(new Date(ticket.created), 'MMM d, yyyy') }}</span>
@@ -427,6 +433,10 @@ onUnmounted(() => {
                 :color="ticket.expand?.category?.color"
               />
               <span v-else class="text-base-content/40">—</span>
+            </div>
+            <div v-if="ticket.expand?.thing?.name" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Thing</span>
+              <span class="text-right">{{ ticket.expand?.thing?.name }}</span>
             </div>
             <div class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Opened</span>

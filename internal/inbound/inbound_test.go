@@ -58,9 +58,9 @@ func TestCreateTicketClassification(t *testing.T) {
 		t.Fatalf("seed category: %v", err)
 	}
 
-	// Known key + free-text asset/location all land on the ticket.
+	// Known key + free-text thing/location all land on the ticket.
 	rec, _, err := CreateTicket(app, customer, Payload{
-		Title: "printer down", Category: "voip", Asset: "printer-3f", Location: "copy room",
+		Title: "printer down", Category: "voip", Thing: "printer-3f", Location: "copy room",
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket: %v", err)
@@ -68,8 +68,8 @@ func TestCreateTicketClassification(t *testing.T) {
 	if got := rec.GetString("category"); got != cat.Id {
 		t.Errorf("category: got %q, want %q", got, cat.Id)
 	}
-	if got := rec.GetString("asset"); got != "printer-3f" {
-		t.Errorf("asset: got %q", got)
+	if got := rec.GetString("thing_note"); got != "printer-3f" {
+		t.Errorf("thing_note: got %q", got)
 	}
 	if got := rec.GetString("location_note"); got != "copy room" {
 		t.Errorf("location_note: got %q", got)
@@ -206,6 +206,56 @@ func TestCreateTicketResolvesLocationByCode(t *testing.T) {
 		t.Errorf("unknown code linked a location: %q", got)
 	}
 	if got := rec2.GetString("location_note"); got != "ZZZ" {
+		t.Errorf("breadcrumb: got %q, want ZZZ", got)
+	}
+}
+
+func TestCreateTicketResolvesThingByCode(t *testing.T) {
+	app, customer := setup(t)
+
+	thingCol, _ := app.FindCollectionByNameOrId("things")
+	thing := core.NewRecord(thingCol)
+	thing.Set("customer", customer.Id)
+	thing.Set("code", "HQ-CAM-1")
+	thing.Set("name", "Lobby Camera")
+	if err := app.Save(thing); err != nil {
+		t.Fatalf("seed thing: %v", err)
+	}
+
+	// A thing with the SAME code at another customer must not match — the
+	// resolver is customer-scoped, so a stray webhook can't link across tenants.
+	custCol, _ := app.FindCollectionByNameOrId("customers")
+	other := core.NewRecord(custCol)
+	other.Set("name", "Globex")
+	other.Set("active", true)
+	if err := app.Save(other); err != nil {
+		t.Fatalf("save other customer: %v", err)
+	}
+	otherThing := core.NewRecord(thingCol)
+	otherThing.Set("customer", other.Id)
+	otherThing.Set("code", "HQ-CAM-1")
+	otherThing.Set("name", "Globex Lobby Camera")
+	if err := app.Save(otherThing); err != nil {
+		t.Fatalf("seed other thing: %v", err)
+	}
+
+	rec, _, err := CreateTicket(app, customer, Payload{Title: "x", ThingCode: "HQ-CAM-1"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec.GetString("thing"); got != thing.Id {
+		t.Errorf("thing: got %q, want %q (this customer's camera, not Globex's)", got, thing.Id)
+	}
+
+	// Unknown code → breadcrumb in thing_note, no relation.
+	rec2, _, err := CreateTicket(app, customer, Payload{Title: "y", ThingCode: "ZZZ"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec2.GetString("thing"); got != "" {
+		t.Errorf("unknown code linked a thing: %q", got)
+	}
+	if got := rec2.GetString("thing_note"); got != "ZZZ" {
 		t.Errorf("breadcrumb: got %q, want ZZZ", got)
 	}
 }

@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Project, Requester, Staff, Ticket, TicketCategory, TicketComment, TicketEvent, TimeEntry, Visit } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, Thing, Ticket, TicketCategory, TicketComment, TicketEvent, TimeEntry, Visit } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import WorkCard from '@/components/WorkCard.vue'
@@ -30,6 +30,7 @@ const customers = ref<Customer[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
 const locations = ref<Location[]>([])
+const things = ref<Thing[]>([])
 const projects = ref<Project[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -75,6 +76,21 @@ const requesterOptions = computed(() =>
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
 )
+// Things at the ticket's site sort first, but nothing is filtered out: a thing's
+// location is optional, agents often know the device before the site, and a
+// picker that silently hides the row you're looking for is worse than a long
+// one. SearchSelect renders in the order given, so sorting is the whole fix.
+const thingOptions = computed(() => {
+  const site = ticket.value?.location
+  const ranked = site
+    ? [...things.value].sort((a, b) => Number(b.location === site) - Number(a.location === site))
+    : things.value
+  return ranked.map((t) => ({
+    id: t.id,
+    label: t.name,
+    sublabel: [t.code, (t.expand?.location as Location | undefined)?.name].filter(Boolean).join(' · ') || undefined,
+  }))
+})
 const projectOptions = computed(() =>
   projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
 )
@@ -108,7 +124,7 @@ const timeline = computed<TimelineItem[]>(() => {
 
 async function loadTicket() {
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, {
-    expand: 'customer,assignee,requester,category,location,project',
+    expand: 'customer,assignee,requester,category,location,project,thing',
   })
 }
 
@@ -121,6 +137,18 @@ async function loadRequesters(customerId: string) {
 async function loadLocations(customerId: string) {
   locations.value = customerId
     ? await pb.collection('locations').getFullList<Location>({ filter: `customer = '${customerId}'`, sort: 'name' })
+    : []
+}
+
+// Retired things stay out of the picker but keep their history — that's the
+// whole reason `retired` exists instead of deleting the row.
+async function loadThings(customerId: string) {
+  things.value = customerId
+    ? await pb.collection('things').getFullList<Thing>({
+        filter: `customer = '${customerId}' && retired != true`,
+        sort: 'name',
+        expand: 'location',
+      })
     : []
 }
 
@@ -189,6 +217,7 @@ async function load() {
     await loadRequesters(ticket.value?.customer || '')
     await loadLocations(ticket.value?.customer || '')
     await loadProjects(ticket.value?.customer || '')
+    await loadThings(ticket.value?.customer || '')
   } catch (err: any) {
     error.value = err?.message || 'Failed to load ticket'
   } finally {
@@ -204,7 +233,7 @@ async function updateField(field: 'status' | 'priority' | 'assignee', value: str
       id,
       { [field]: value },
       {
-        expand: 'customer,assignee,requester,category,location,project',
+        expand: 'customer,assignee,requester,category,location,project,thing',
         // The backend hook reads this header and skips the outbound email.
         headers: notify.value ? {} : { 'X-Helpdesk-Quiet': '1' },
       },
@@ -220,7 +249,7 @@ async function patchPlain(fields: Record<string, string | number | null>) {
   if (!ticket.value) return
   try {
     ticket.value = await pb.collection('tickets').update<Ticket>(id, fields, {
-      expand: 'customer,assignee,requester,category,location,project',
+      expand: 'customer,assignee,requester,category,location,project,thing',
     })
   } catch (err: any) {
     error.value = err?.message || 'Failed to save'
@@ -243,10 +272,11 @@ async function saveHeader() {
 // then reloads the requester picker for the new company.
 async function changeCustomer(value: string) {
   if (!value || value === ticket.value?.customer) return
-  await patchPlain({ customer: value, requester: '', location: '', project: '' })
+  await patchPlain({ customer: value, requester: '', location: '', project: '', thing: '' })
   await loadRequesters(value)
   await loadLocations(value)
   await loadProjects(value)
+  await loadThings(value)
 }
 
 // Inline-create a location for this ticket's customer from the picker, then
@@ -260,6 +290,27 @@ async function createLocation(label: string) {
     await patchPlain({ location: rec.id })
   } catch (err: any) {
     error.value = err?.message || 'Failed to create location'
+  }
+}
+
+// Inline-create a thing from the picker, seeding its site from the ticket — a
+// thing filed from a ticket is almost always at that ticket's site, and an
+// unplaced thing is a hole in the reporting axis this collection exists for.
+// Creates a stub in a curated mirror on purpose, same as createLocation; it may
+// still need a `code` filled in later to join the platform.
+async function createThing(label: string) {
+  const customerId = ticket.value?.customer
+  if (!customerId || !label.trim()) return
+  try {
+    const rec = await pb.collection('things').create({
+      customer: customerId,
+      name: label.trim(),
+      location: ticket.value?.location || '',
+    })
+    await loadThings(customerId)
+    await patchPlain({ thing: rec.id })
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to create thing'
   }
 }
 
@@ -454,11 +505,13 @@ onUnmounted(() => {
                 :category-options="categoryOptions"
                 :requester-options="requesterOptions"
                 :location-options="locationOptions"
+                :thing-options="thingOptions"
                 :project-options="projectOptions"
                 @update-field="updateField"
                 @patch="patchPlain"
                 @change-customer="changeCustomer"
                 @create-location="createLocation"
+                @create-thing="createThing"
               />
             </div>
           </details>
@@ -597,11 +650,13 @@ onUnmounted(() => {
               :category-options="categoryOptions"
               :requester-options="requesterOptions"
               :location-options="locationOptions"
+              :thing-options="thingOptions"
               :project-options="projectOptions"
               @update-field="updateField"
               @patch="patchPlain"
               @change-customer="changeCustomer"
               @create-location="createLocation"
+              @create-thing="createThing"
             />
           </div>
         </div>

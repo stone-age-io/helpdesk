@@ -8,9 +8,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Ticket } from '@/types'
+import type { Customer, Location, RecordType, Ticket } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import LocationPicker from '@/components/LocationPicker.vue'
+import MetadataEditor from '@/components/MetadataEditor.vue'
 import TicketBadges from '@/components/TicketBadges.vue'
 
 const route = useRoute()
@@ -29,6 +30,13 @@ const record = ref<Location | null>(null)
 const customer = ref<Customer | null>(null)
 const customers = ref<Customer[]>([])
 const tickets = ref<Ticket[]>([])
+const types = ref<RecordType[]>([])
+// Same-customer locations, for the parent picker and the ancestor path.
+const siblings = ref<Location[]>([])
+
+// The JSON tab holds a text buffer parsed only on blur, so a save fired while it
+// is focused would silently drop the edit. commit() flushes it, or refuses.
+const metadataEditor = ref<InstanceType<typeof MetadataEditor> | null>(null)
 
 const form = ref({
   customer: '',
@@ -40,9 +48,71 @@ const form = ref({
   notes: '',
   lat: 0,
   lng: 0,
+  type: '',
+  parent: '',
+  metadata: null as Record<string, any> | null,
 })
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
+const typeOptions = computed(() =>
+  types.value.map((t) => ({ id: t.id, label: t.name, sublabel: t.code || undefined })),
+)
+
+// The parent picker offers same-customer sites, minus this record and anything
+// beneath it. Excluding only self (which is all the platform console does) still
+// admits A→B→A; walking down from here and dropping the whole subtree is the
+// same few lines and actually closes it. PocketBase has no server-side cycle
+// detection, so this picker is the only guard there is.
+const parentOptions = computed(() => {
+  const excluded = new Set<string>()
+  if (id.value) {
+    excluded.add(id.value)
+    // Breadth-first down the tree. The visited set is not optional: without it a
+    // cycle already in the data would spin here forever.
+    let frontier = [id.value]
+    while (frontier.length) {
+      const next: string[] = []
+      for (const parentId of frontier) {
+        for (const l of siblings.value) {
+          if (l.parent === parentId && !excluded.has(l.id)) {
+            excluded.add(l.id)
+            next.push(l.id)
+          }
+        }
+      }
+      frontier = next
+    }
+  }
+  return siblings.value
+    .filter((l) => !excluded.has(l.id))
+    .map((l) => ({ id: l.id, label: l.name, sublabel: l.code || undefined }))
+})
+
+// Read-only breadcrumb of the containing sites, nearest last. Capped and
+// visited-guarded for the same reason as above — a cycle must degrade to a short
+// path, never to a hung tab.
+const ancestorPath = computed(() => {
+  if (!form.value.parent) return ''
+  const byId = new Map(siblings.value.map((l) => [l.id, l]))
+  const names: string[] = []
+  const seen = new Set<string>(id.value ? [id.value] : [])
+  let cursor: string | undefined = form.value.parent
+  while (cursor && !seen.has(cursor) && names.length < 8) {
+    seen.add(cursor)
+    const node = byId.get(cursor)
+    if (!node) break
+    names.unshift(node.name)
+    cursor = node.parent
+  }
+  return names.length ? `${names.join(' → ')} → ${form.value.name || 'this site'}` : ''
+})
+
+// The schema driving the metadata form comes from the selected type; read from
+// the loaded list so switching the picker re-types the form before any save.
+const activeSchema = computed(() => {
+  if (!form.value.type) return null
+  return types.value.find((t) => t.id === form.value.type)?.metadata_schema || null
+})
 
 // Prefer coordinates; fall back to the free-text address. Empty when neither
 // is set, which hides the Navigate control.
@@ -67,7 +137,36 @@ function applyRecord(loc: Location) {
     notes: loc.notes || '',
     lat: loc.lat || 0,
     lng: loc.lng || 0,
+    type: loc.type || '',
+    parent: loc.parent || '',
+    metadata: (loc.metadata as Record<string, any> | null) ?? null,
   }
+}
+
+// Types and candidate parents are both customer-scoped.
+async function loadScoped(customerId: string) {
+  types.value = []
+  siblings.value = []
+  if (!customerId) return
+  try {
+    types.value = await pb.collection('location_types').getFullList<RecordType>({
+      filter: `customer = '${customerId}'`,
+      sort: 'name',
+    })
+    siblings.value = await pb.collection('locations').getFullList<Location>({
+      filter: `customer = '${customerId}'`,
+      sort: 'name',
+    })
+  } catch {
+    // Both are optional; the pickers just stay empty.
+  }
+}
+
+// Create path only: the customer bounds both the type and the parent picker.
+function onCustomerChange(value: string) {
+  form.value.type = ''
+  form.value.parent = ''
+  loadScoped(value)
 }
 
 function startEdit() {
@@ -94,6 +193,7 @@ async function load() {
       applyRecord(loc)
       editing.value = false
       customer.value = (loc.expand?.customer as Customer) || null
+      await loadScoped(loc.customer)
       tickets.value = (
         await pb.collection('tickets').getList<Ticket>(1, 10, {
           filter: `location = '${id.value}'`,
@@ -112,6 +212,8 @@ async function load() {
 
 async function save() {
   if (!form.value.customer || !form.value.name.trim()) return
+  // Flush a JSON tab left mid-edit; refuses the save if it doesn't parse.
+  if (metadataEditor.value && !metadataEditor.value.commit()) return
   saving.value = true
   error.value = ''
   const data = {
@@ -124,6 +226,9 @@ async function save() {
     notes: form.value.notes.trim(),
     lat: form.value.lat || 0,
     lng: form.value.lng || 0,
+    type: form.value.type,
+    parent: form.value.parent,
+    metadata: form.value.metadata,
   }
   try {
     if (isEdit.value) {
@@ -209,6 +314,7 @@ watch(() => route.params.id, load)
               size="sm"
               placeholder="Customer…"
               :disabled="!editing || saving"
+              @update:model-value="onCustomerChange"
             />
             <input v-else type="text" class="input input-bordered input-sm" :value="customer?.name || '—'" disabled />
           </div>
@@ -222,6 +328,34 @@ watch(() => route.params.id, load)
               <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="!editing || saving" />
             </div>
           </div>
+          <div class="flex gap-2">
+            <div class="form-control flex-1 min-w-0">
+              <label class="label py-1">
+                <span class="label-text">Type</span>
+                <router-link v-if="editing" to="/staff/location-types" class="label-text-alt link link-hover">manage →</router-link>
+              </label>
+              <SearchSelect
+                v-model="form.type"
+                :options="typeOptions"
+                size="sm"
+                empty-label="None"
+                placeholder="Pick a type…"
+                :disabled="!editing || saving || !form.customer"
+              />
+            </div>
+            <div class="form-control flex-1 min-w-0">
+              <label class="label py-1"><span class="label-text">Parent</span></label>
+              <SearchSelect
+                v-model="form.parent"
+                :options="parentOptions"
+                size="sm"
+                empty-label="None"
+                placeholder="Contained by…"
+                :disabled="!editing || saving || !form.customer"
+              />
+            </div>
+          </div>
+          <p v-if="ancestorPath" class="text-xs text-base-content/50 -mt-1">{{ ancestorPath }}</p>
           <div class="flex gap-2">
             <div class="form-control flex-1">
               <label class="label py-1"><span class="label-text">Contact</span></label>
@@ -252,6 +386,25 @@ watch(() => route.params.id, load)
               <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
               <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
             </div>
+          </div>
+        </div>
+
+        <!-- Metadata -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title text-base">Metadata</h2>
+            <p class="text-xs text-base-content/60 mb-2">
+              <template v-if="activeSchema">Fields defined by this location's type.</template>
+              <template v-else>
+                Free-form fields. Give the type a metadata schema to get typed inputs instead.
+              </template>
+            </p>
+            <MetadataEditor
+              ref="metadataEditor"
+              v-model="form.metadata"
+              :schema="activeSchema"
+              :disabled="!editing || saving"
+            />
           </div>
         </div>
 

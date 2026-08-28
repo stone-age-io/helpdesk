@@ -118,23 +118,26 @@ Not a source of truth. Tickets and comments carry **attachments**
 owning record, so attachments on internal comments stay staff-only.
 Classification (migration `1806000000`): an optional `category` (admin-managed
 `ticket_categories` **relation**, not a select — staff-classified). A ticket
-also carries a `type` (`issue` | `install`) and an optional `project`, free-text
-`asset`, a structured `location` (→ `locations`) and a free-text `location_note`
-fallback (all migration `1812000000`). An optional `estimated_minutes` (staff
-effort estimate, migration `1815000000`) is compared against the logged
-`time_entries` total per ticket and summed per project at read time — one
-nullable column, distinct from `visits.duration_minutes` (a calendar block, not
-an effort estimate). The portal create rule blocks requesters from setting
-`category` / `type` / `project` / `location` / `estimated_minutes` (via
-`:isset = false`); machine intakes set `asset` and resolve a payload
-`location_code` to the `location` relation (unmatched → `location_note`).
+also carries a `type` (`issue` | `install`) and an optional `project`, a
+structured `location` (→ `locations`) with a free-text `location_note` fallback
+(migration `1812000000`), and — mirroring that pair exactly — a structured
+`thing` (→ `things`) with a free-text `thing_note` fallback (migration
+`1824000000`, which dropped the earlier free-text `asset`). An optional
+`estimated_minutes` (staff effort estimate, migration `1815000000`) is compared
+against the logged `time_entries` total per ticket and summed per project at read
+time — one nullable column, distinct from `visits.duration_minutes` (a calendar
+block, not an effort estimate). The portal create rule blocks requesters from
+setting `category` / `type` / `project` / `location` / `estimated_minutes` /
+`thing` (via `:isset = false`), while both `_note` fallbacks stay unguarded
+(harmless free text). Machine intakes resolve payload `location_code` /
+`thing_code` to their relations, unmatched → the matching note, no auto-stub.
 `docs/data-model.md` covers it.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee, plus the classification/grouping fields category, type,
-project, location) writes a `ticket_events` row rendered as a staff-only
+project, location, thing) writes a `ticket_events` row rendered as a staff-only
 timeline; relation values are resolved to labels at write time (category/
-location name, project `#N Title`). Reads are staff-only (the trail names
+location/thing name, project `#N Title`). Reads are staff-only (the trail names
 technicians); it has no
 create/update API rule — the hooks write it server-side via `app.Save`
 (which bypasses collection rules), so it can't be forged or edited through
@@ -172,11 +175,12 @@ optional `code` — the join key to the platform's Location concept: machine
 intakes resolve a payload `location_code` per `(customer, code)` and set the
 ticket's `location` relation (unmatched → free-text `location_note`, no
 auto-stub), making location a queryable dimension (tickets/installs/visits/time
-by location). Still not a CMDB — a place, not an asset catalog. Locations live
+by location). Locations live
 in the Directory and any staff member creates/edits them via a detail view
 (`1813000000`; delete stays admin); optional `lat`/`lng` come from a Leaflet
 map picker (Nominatim address search) and drive a maps "Navigate" deep link on
-the ticket. A **project**
+the ticket. `1824000000` added `type`, `parent` and `metadata` to close the
+shape gap with the platform's `locations`. A **project**
 groups 1..N tickets (often one `install`-type ticket per trade, plus reactive
 tickets) at a location over a target window; sequential `number` (hook, like
 tickets) and a single `lead` for whole-rollout accountability. Crucially it is
@@ -189,6 +193,35 @@ lead/crew (same roster-hiding as visits). The tripwire for splitting this into
 its own sibling app: the project side needing its own portal/tenancy/ingestion —
 not merely re-parenting a visit. `docs/service-delivery-plan.md` has the full
 rationale.
+
+**Things / types** (migration `1824000000`): the device axis, and the last
+free-text ticket field promoted to a relation. A **thing** is a subset mirror of
+the platform's `things` — minus its entire identity half (`password`, `tokenKey`,
+`email`, `nats_user`, `nebula_host`), which is control-plane and must never cross
+the boundary — joined by `(customer, code)` exactly like locations, so
+`thing_code` on either intake resolves to the relation (unmatched → `thing_note`,
+no auto-stub). It exists to answer the two questions free text couldn't: *every
+ticket for this device* and *which devices burn the most hours*.
+
+There is **no live sync and there cannot be one**: the platform publishes no
+event stream for things, so the only read paths are a control-plane credential
+(forbidden here) or an edge KV mirror. This is a hand-curated local catalog that
+*joins* upstream by code, and deliberately a **superset** of it — `code` is
+nullable because MSP work covers gear the platform never onboarded. Bulk-loading
+is an operator-run export→seed, which is why both shapes stay faithful; note that
+`stone` and leaf-sync store raw PocketBase ids for `type`/`location`/`parent`, so
+a seeder needs the full exported set to build an id→code map before it can
+rewrite any relation.
+
+`thing_types` / `location_types` are the classifiers, and `metadata_schema` on
+them is the point: a JSON Schema naming the keys records of that type track, so
+`metadata` doesn't become a bag of drifting key spellings. Schemas are authored
+upstream and edited here as raw JSON (parse-validated on save) — the helpdesk
+renders schemas, it never builds them, which is why the platform's visual
+SchemaBuilder is deliberately not ported while `MetadataEditor` /
+`JsonSchemaForm` are. `retired` rather than the platform's `active` so the bool's
+zero value means "in service" (the `non_billable` idiom); a seeder maps
+`retired = !active`.
 
 **Time tracking** (`internal/timeentries`, `internal/timers`): labor is a
 `time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket

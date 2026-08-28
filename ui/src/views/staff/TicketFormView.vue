@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Customer, Location, Project, Requester, Staff, TicketCategory } from '@/types'
+import type { Customer, Location, Project, Requester, Staff, Thing, TicketCategory } from '@/types'
 import { TICKET_PRIORITIES, TICKET_TYPES } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import FileInput from '@/components/FileInput.vue'
@@ -14,6 +14,7 @@ const staff = ref<Staff[]>([])
 const requesters = ref<Requester[]>([])
 const categories = ref<TicketCategory[]>([])
 const locations = ref<Location[]>([])
+const things = ref<Thing[]>([])
 const projects = ref<Project[]>([])
 const files = ref<File[]>([])
 const loading = ref(false)
@@ -29,7 +30,8 @@ const form = ref({
   requester: '',
   category: '',
   project: '',
-  asset: '',
+  thing: '',
+  thing_note: '',
   location: '',
   location_note: '',
 })
@@ -72,6 +74,22 @@ async function loadLocations() {
   }
 }
 
+// Retired things stay out of the picker but keep their ticket history.
+async function loadThings() {
+  form.value.thing = ''
+  things.value = []
+  if (!form.value.customer) return
+  try {
+    things.value = await pb.collection('things').getFullList<Thing>({
+      filter: `customer = '${form.value.customer}' && retired != true`,
+      sort: 'name',
+      expand: 'location',
+    })
+  } catch {
+    // Thing linking is optional.
+  }
+}
+
 async function loadProjects() {
   form.value.project = ''
   projects.value = []
@@ -86,10 +104,11 @@ async function loadProjects() {
   }
 }
 
-// The customer bounds the requester, location, and project pickers.
+// The customer bounds the requester, location, thing, and project pickers.
 function onCustomerChange() {
   loadRequesters()
   loadLocations()
+  loadThings()
   loadProjects()
 }
 
@@ -104,6 +123,24 @@ async function createLocation(label: string) {
   }
 }
 
+// Seeds the new thing's site from the ticket's — a thing filed from a ticket is
+// almost always at that ticket's site, and an unplaced thing is a hole in the
+// reporting axis the collection exists to provide.
+async function createThing(label: string) {
+  if (!form.value.customer || !label.trim()) return
+  try {
+    const rec = await pb.collection('things').create({
+      customer: form.value.customer,
+      name: label.trim(),
+      location: form.value.location || '',
+    })
+    await loadThings()
+    form.value.thing = rec.id
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to create thing'
+  }
+}
+
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, label: c.name })))
@@ -113,6 +150,20 @@ const requesterOptions = computed(() =>
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
 )
+// Sorted so things at the selected site come first; nothing is filtered out,
+// since a thing's location is optional and the device is often known before the
+// site. See TicketDetailView.thingOptions for the full reasoning.
+const thingOptions = computed(() => {
+  const site = form.value.location
+  const ranked = site
+    ? [...things.value].sort((a, b) => Number(b.location === site) - Number(a.location === site))
+    : things.value
+  return ranked.map((t) => ({
+    id: t.id,
+    label: t.name,
+    sublabel: [t.code, (t.expand?.location as Location | undefined)?.name].filter(Boolean).join(' · ') || undefined,
+  }))
+})
 const projectOptions = computed(() =>
   projects.value.map((p) => ({ id: p.id, label: `#${p.number} ${p.title}`, sublabel: p.status })),
 )
@@ -219,12 +270,16 @@ onMounted(loadOptions)
               <SearchSelect v-model="form.project" :options="projectOptions" size="sm" empty-label="None" placeholder="Attach to a project…" :disabled="loading || !form.customer" />
             </div>
             <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Asset</span></label>
-              <input v-model="form.asset" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Device / system" :disabled="loading" />
+              <label class="label py-1"><span class="label-text text-xs">Device note</span></label>
+              <input v-model="form.thing_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Device text / from intake" :disabled="loading" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location</span></label>
               <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Pick a site…" create-label="New location" :disabled="loading || !form.customer" @create="createLocation" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Thing</span></label>
+              <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Pick a device…" create-label="New thing" :disabled="loading || !form.customer" @create="createThing" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location note</span></label>

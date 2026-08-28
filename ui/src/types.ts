@@ -56,6 +56,42 @@ export interface Location extends BaseRecord {
   // maps deep link on a ticket. A hand-entered site may have neither.
   lat?: number
   lng?: number
+  // Platform-shape fields (migration 1824000000), so an export seeds without
+  // translation. `parent` is written by the seeder far more than by hand —
+  // dispatch is site-level.
+  type?: string
+  parent?: string
+  metadata?: Record<string, unknown> | null
+}
+
+// A type is the classifier a thing/location belongs to, mirroring the platform's
+// thing_types / location_types minus their NATS-contract fields. `metadata_schema`
+// is the point of it: a JSON Schema saying which keys records of this type track,
+// which is what keeps `metadata` from becoming a bag of drifting key spellings.
+// Null schema → the record form falls back to free-form key/value rows.
+export interface RecordType extends BaseRecord {
+  customer: string
+  code?: string
+  name: string
+  description?: string
+  metadata_schema?: Record<string, any> | null
+}
+
+// Subset mirror of the platform's `things`, minus the entire identity half
+// (credentials, NATS/Nebula links) which is control-plane and never crosses the
+// boundary. Deliberately a SUPERSET of the platform's catalog: `code` is optional
+// because MSP work covers gear that was never onboarded.
+export interface Thing extends BaseRecord {
+  customer: string
+  code?: string
+  name: string
+  type?: string
+  location?: string
+  notes?: string
+  // Stores the exception so the zero value means "in service" — see the
+  // migration comment. Maps to the platform's !active.
+  retired?: boolean
+  metadata?: Record<string, unknown> | null
 }
 
 export type ProjectStatus = 'planned' | 'active' | 'completed' | 'canceled'
@@ -108,11 +144,13 @@ export interface Ticket extends BaseRecord {
   estimated_minutes?: number
   // Classification: what the ticket is about (staff-set) + provenance.
   category?: string
-  asset?: string
-  // Structured place (relation to locations) — the reporting axis. location_note
-  // is free text: dispatch hints, or the unmatched-code fallback from intake.
+  // Structured place / device (relations to locations and things) — the two
+  // reporting axes. The `_note` fields are free text: dispatch hints or a
+  // scratch description, and the unmatched-code fallback from machine intake.
   location?: string
   location_note?: string
+  thing?: string
+  thing_note?: string
   // Derived (server-maintained): the last public comment was staff's and the
   // ticket is still open, i.e. the requester's reply is what's holding it up.
   awaiting_requester?: boolean

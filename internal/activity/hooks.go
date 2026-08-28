@@ -23,12 +23,12 @@ const (
 
 // auditedFields are the workflow fields whose changes are worth a timeline
 // entry: the lifecycle trio (status, priority, assignee) plus the
-// classification/grouping decisions (category, type, project, location) that
-// are staff actions with real workflow meaning. Title/body edits are
+// classification/grouping decisions (category, type, project, location, thing)
+// that are staff actions with real workflow meaning. Title/body edits are
 // deliberately excluded — too noisy, no workflow meaning. The portal read rule
 // (migration 1808000000) still scopes requesters to `field = 'status'`, so the
 // newer fields never reach the portal timeline.
-var auditedFields = []string{"status", "priority", "assignee", "category", "type", "project", "location"}
+var auditedFields = []string{"status", "priority", "assignee", "category", "type", "project", "location", "thing"}
 
 // SetActor attributes a programmatic ticket change to a specific identity so
 // the audit hook can name it — e.g. the requester whose comment auto-reopened
@@ -110,6 +110,13 @@ func displayValue(app core.App, field, val string) string {
 		}
 		if l, err := app.FindRecordById("locations", val); err == nil {
 			return l.GetString("name")
+		}
+	case "thing":
+		if val == "" {
+			return "None"
+		}
+		if th, err := app.FindRecordById("things", val); err == nil {
+			return th.GetString("name")
 		}
 	case "project":
 		if val == "" {

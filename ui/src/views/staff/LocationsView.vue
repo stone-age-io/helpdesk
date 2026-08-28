@@ -17,6 +17,7 @@ const columns: Column<Location>[] = [
   { key: 'name', label: 'Name' },
   { key: 'expand.customer.name', label: 'Customer' },
   { key: 'code', label: 'Code' },
+  { key: 'expand.type.name', label: 'Type' },
   { key: 'address', label: 'Address' },
   { key: 'contact', label: 'Contact' },
   { key: 'notes', label: 'Notes' },
@@ -44,7 +45,7 @@ async function load() {
   try {
     locations.value = await pb
       .collection('locations')
-      .getFullList<Location>({ sort: 'name', expand: 'customer' })
+      .getFullList<Location>({ sort: 'name', expand: 'customer,type' })
   } catch (err: any) {
     error.value = err?.message || 'Failed to load locations'
   } finally {

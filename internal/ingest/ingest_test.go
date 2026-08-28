@@ -71,8 +71,8 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("body"); got != "overcurrent" {
 		t.Errorf("body: got %q, want %q", got, "overcurrent")
 	}
-	if got := rec.GetString("asset"); got != "pump-7" {
-		t.Errorf("asset: got %q, want pump-7", got)
+	if got := rec.GetString("thing_note"); got != "pump-7" {
+		t.Errorf("thing_note: got %q, want pump-7", got)
 	}
 	if got := rec.GetString("location_note"); got != "line-3" {
 		t.Errorf("location_note: got %q, want line-3", got)
@@ -220,5 +220,79 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	recC, _ := app.FindFirstRecordByFilter("tickets", "title = 'cc'")
 	if got := recC.GetString("location_note"); got != "rear dock" {
 		t.Errorf("free-text should win location_note: got %q, want 'rear dock'", got)
+	}
+}
+
+func TestProjectResolvesThingByCode(t *testing.T) {
+	app, c, customer := setup(t)
+
+	thingCol, _ := app.FindCollectionByNameOrId("things")
+	thing := core.NewRecord(thingCol)
+	thing.Set("customer", customer.Id)
+	thing.Set("code", "PUMP-7")
+	thing.Set("name", "Line 3 Feed Pump")
+	if err := app.Save(thing); err != nil {
+		t.Fatalf("seed thing: %v", err)
+	}
+
+	// Matching code → the structured relation is set.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"a","thing_code":"PUMP-7"}`)); out != Ack {
+		t.Fatalf("matching code: %v", out)
+	}
+	recA, err := app.FindFirstRecordByFilter("tickets", "title = 'a'")
+	if err != nil {
+		t.Fatalf("ticket a: %v", err)
+	}
+	if got := recA.GetString("thing"); got != thing.Id {
+		t.Errorf("thing relation: got %q, want %q", got, thing.Id)
+	}
+
+	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"b","thing_code":"NOPE"}`)); out != Ack {
+		t.Fatalf("unknown code: %v", out)
+	}
+	recB, err := app.FindFirstRecordByFilter("tickets", "title = 'b'")
+	if err != nil {
+		t.Fatalf("ticket b: %v", err)
+	}
+	if got := recB.GetString("thing"); got != "" {
+		t.Errorf("unknown code should leave thing empty, got %q", got)
+	}
+	if got := recB.GetString("thing_note"); got != "NOPE" {
+		t.Errorf("unknown-code breadcrumb: got %q, want NOPE", got)
+	}
+
+	// Free-text thing wins the note even alongside an unresolved code.
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"cc","thing":"the big pump","thing_code":"NOPE"}`)); out != Ack {
+		t.Fatalf("freetext+code: %v", out)
+	}
+	recC, _ := app.FindFirstRecordByFilter("tickets", "title = 'cc'")
+	if got := recC.GetString("thing_note"); got != "the big pump" {
+		t.Errorf("free-text should win thing_note: got %q, want 'the big pump'", got)
+	}
+
+	// A resolved thing must NOT backfill the ticket's location, even though the
+	// thing has one. The two resolvers stay independent; inference is UI work.
+	locCol, _ := app.FindCollectionByNameOrId("locations")
+	loc := core.NewRecord(locCol)
+	loc.Set("customer", customer.Id)
+	loc.Set("name", "Plant Floor")
+	if err := app.Save(loc); err != nil {
+		t.Fatalf("seed location: %v", err)
+	}
+	thing.Set("location", loc.Id)
+	if err := app.Save(thing); err != nil {
+		t.Fatalf("update thing: %v", err)
+	}
+	if out := c.Project("helpdesk.org123.tickets.create",
+		[]byte(`{"title":"dd","thing_code":"PUMP-7"}`)); out != Ack {
+		t.Fatalf("placed thing: %v", out)
+	}
+	recD, _ := app.FindFirstRecordByFilter("tickets", "title = 'dd'")
+	if got := recD.GetString("location"); got != "" {
+		t.Errorf("resolved thing should not backfill ticket location, got %q", got)
 	}
 }

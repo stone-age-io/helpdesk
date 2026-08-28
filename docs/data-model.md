@@ -79,10 +79,13 @@ machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
 carries the inbound email `Message-ID`), `attachments` (≤6 files),
 `category` (→ ticket_categories, optional — see below), `type` (`issue` |
 `install`, default `issue` via the create hook — reactive vs. planned work),
-`project` (→ projects, optional — groups install/reactive work), `asset`
-(free text), `location` (→ locations, optional — the structured place, and
-the reporting axis), `location_note` (free text — dispatch hints, or the
-unmatched-code fallback from machine intake). All added/changed `1812000000`.
+`project` (→ projects, optional — groups install/reactive work),
+`location` (→ locations, optional — the structured place, and the reporting
+axis), `location_note` (free text — dispatch hints, or the unmatched-code
+fallback from machine intake). All added/changed `1812000000`.
+`thing` (→ things, optional — the structured device, the second reporting axis)
+and `thing_note` (free text — a scratch description, or the unmatched-code
+fallback), which replaced the free-text `asset` in `1824000000`.
 `estimated_minutes` (int ≥ 1, optional — staff effort estimate, added
 `1815000000`; compared against the logged `time_entries` total per ticket and
 summed per project at read time — see `projects`). Distinct from
@@ -113,9 +116,12 @@ Rules:
   A requester sees only their own company's tickets.
 - **create** — staff freely; a requester only for their own customer, with
   `requester` = themselves, no `assignee`, `source = 'portal'`, and none of
-  `category` / `type` / `project` / `location` / `estimated_minutes` (all
-  pinned in the create rule so the portal can't forge them — classification,
-  the service-delivery fields, and the effort estimate are staff actions).
+  `category` / `type` / `project` / `location` / `estimated_minutes` / `thing`
+  (all pinned in the create rule so the portal can't forge them —
+  classification, the service-delivery fields, and the effort estimate are staff
+  actions). The `_note` fallbacks are deliberately **unguarded**: they're
+  harmless free text, and the portal's optional "where / which device" hints
+  depend on them.
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
 - **delete** — `AdminRule`.
@@ -130,10 +136,19 @@ history), `sort_order`, `color` (hex, rendered as a soft badge).
 A managed collection + relation rather than a `select` field because it is
 staff/admin-managed from the SPA: admins add/retire categories with no code
 deploy, renames touch one row (a select denormalizes the value onto every
-ticket), and it matches the app's grain. `asset` stays free text
-(**not** a CMDB — no device catalog); `location` was promoted to a relation
-(see `locations` below) once projects made physical places recur, but it stays
-a light place registry, not an asset catalog.
+ticket), and it matches the app's grain. The same reasoning later produced
+`thing_types` / `location_types` (`1824000000`).
+
+Both of the ticket's "what is this about" fields have since followed the same
+path from free text to relation: `location` in `1812000000`, once projects made
+physical places recur, and `asset` in `1824000000`, which replaced it with
+`thing` (→ `things`) plus a `thing_note` fallback. The earlier "**not** a CMDB —
+no device catalog" objection recorded here applied to an *authored* catalog
+someone would have to keep true by hand. `things` isn't one: it is a curated
+**mirror** of the platform's `things`, joined by `(customer, code)`, whose source
+of truth lives upstream. What it buys is the pair of questions free text could
+never answer — every ticket for this device, and which devices burn the most
+hours.
 
 Rules: read `StaffRule || RequesterRule` (staff use it for the picker;
 requesters read it so a ticket's category **badge** resolves portal-side —
@@ -264,7 +279,16 @@ codes / access directions), `contact`, `contact_phone`, `lat` / `lng`
 relation; an unmatched code falls back to `location_note`, no auto-stub
 (`docs/protocol.md`). `lat`/`lng` are set from the map picker in the Locations
 detail view and back a maps "Navigate" deep link on the ticket (coordinates
-preferred, `address` as fallback).
+preferred, `address` as fallback). `1824000000` added `type` (→ location_types),
+`parent` (self-relation, no cascade delete) and `metadata`, closing the shape gap
+with the platform's `locations` so an export seeds without translation.
+
+`parent` exists because the seeder writes it, not because the UI needs it —
+dispatch is site-level, and a ticket naming a `thing` already carries the
+precision a room-level hierarchy would provide. PocketBase has no cycle detection
+for self-relations, so the parent picker excludes the record *and its whole
+subtree*, and any code that walks the chain carries a visited set and a depth cap.
+A dangling `parent` (deleted site) renders blank, like `tickets.category`.
 
 A location earns a relation where a one-off ticket visit's free-text location
 did not: a project revisits the same site over weeks, so the place recurs. It
@@ -276,6 +300,59 @@ Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
 `StaffRule` (any agent manages sites day-to-day from the Directory — update
 opened in `1813000000`); **delete** `AdminRule` (the one destructive op against
 a location referenced by tickets/projects/visits).
+
+### `things` — the device catalog (added `1824000000`)
+
+`customer` (required), `code` (the platform Thing join key, optional — unique per
+customer when set), `name` (required), `type` (→ thing_types), `location`
+(→ locations), `notes`, `retired` (bool), `metadata` (json). A subset mirror of
+the platform's `things` minus its entire identity half (`password`, `tokenKey`,
+`email`, `nats_user`, `nebula_host`) — those are control-plane and the helpdesk
+must never hold them.
+
+Machine intakes resolve a payload `thing_code` per `(customer, code)` and set the
+ticket's `thing`; an unmatched code falls back to `thing_note`, no auto-stub
+(`docs/protocol.md`). Same contract as `location_code`, and the two resolve
+independently — a resolved thing does **not** backfill the ticket's location,
+even though it has one.
+
+Deliberately a **superset** of the platform's catalog: `code` is nullable because
+MSP work covers printers, door strikes and customer switches that were never
+onboarded to the control plane. There is no live sync and there cannot be one —
+the platform publishes no event stream for things, and the only read paths are a
+control-plane credential or an edge KV mirror. Bulk-loading is an operator-run
+export→seed, which is why the shape stays faithful.
+
+`retired` rather than the platform's `active` because a Go bool's zero value is
+`false`: an `active` field would make every hand-created row arrive *inactive*
+and be skipped by any `active = true` filter. Storing the exception is the
+`time_entries.non_billable` idiom. A seeder maps `retired = !active`.
+
+Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`;
+create/update `StaffRule` (any agent curates inventory, and the ticket form
+inline-creates); delete `AdminRule` (things are referenced by tickets, and
+retiring is almost always the right move instead).
+
+### `thing_types` / `location_types` — classifiers + metadata schemas (added `1824000000`)
+
+`customer` (required), `code` (join key, unique per customer when set), `name`
+(required), `description`, `metadata_schema` (json). Identical shape — the
+platform's versions differ only in fields that are pure NATS contract
+(`capabilities`, `subject_prefix`, `operations`, `nats_role`), none of which
+crosses the boundary. They stay two collections because that is the platform's
+shape and it keeps an export→seed a 1:1 map.
+
+`metadata_schema` is the reason they exist: a JSON Schema naming the keys records
+of that type track, so `metadata` doesn't degenerate into a bag of drifting key
+spellings (`serial` / `Serial` / `sn`). A type with a schema gives its records a
+typed metadata form; one without falls back to free-form key/value rows, which is
+why a property-less schema is stored as `null` rather than
+`{type:'object',properties:{}}`. Schemas are **authored upstream** in the platform
+console and edited here as raw JSON, parse-validated before save.
+
+Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)` —
+a requester's ticket may render a typed metadata field, so the schema has to be
+readable; create/update/delete `AdminRule`, matching `ticket_categories`.
 
 ### `projects` — installation / field-work container (added `1812000000`)
 

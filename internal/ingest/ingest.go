@@ -35,11 +35,11 @@ type CreatePayload struct {
 	// that retries (or a flapping sensor stamping a stable key) creates one
 	// ticket, not many.
 	DedupeKey string `json:"dedupe_key,omitempty"`
-	// Thing is an optional provenance hint stored as the ticket's asset.
-	// Location is free text stored as location_note. LocationCode is the
-	// platform Location join key: it resolves to a locations row for this
-	// customer and only falls back to location_note when it can't be matched.
+	// Thing and Location are free text, stored as thing_note / location_note.
+	// ThingCode and LocationCode are the platform join keys: each resolves to a
+	// row for this customer and only falls back to its note when unmatched.
 	Thing        string `json:"thing,omitempty"`
+	ThingCode    string `json:"thing_code,omitempty"`
 	Location     string `json:"location,omitempty"`
 	LocationCode string `json:"location_code,omitempty"`
 	// Category is an optional ticket_categories key. An unknown or inactive
@@ -201,10 +201,26 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	rec.Set("origin_subject", subject)
 	// Provenance hints as structured, filterable/reportable fields (they used
 	// to be folded into the body as a trailing [thing · location] line).
-	rec.Set("asset", strings.TrimSpace(payload.Thing))
-	// A location code resolves to the structured relation (the reporting axis);
-	// free-text Location is the note. An unresolved code is logged and kept as a
-	// breadcrumb in the note so the operator can create the missing locations row.
+	// A code resolves to the structured relation (the reporting axis); the
+	// free-text field is the note. An unresolved code is logged and kept as a
+	// breadcrumb in the note so the operator can create the missing row. The two
+	// resolvers are independent and side-effect-free: a resolved thing does not
+	// backfill the ticket's location, even though it has one. Inference belongs
+	// in the UI, not in the projection.
+	thingNote := strings.TrimSpace(payload.Thing)
+	if code := strings.TrimSpace(payload.ThingCode); code != "" {
+		if thingID, ok := resolveThing(c.app, customer.Id, code); ok {
+			rec.Set("thing", thingID)
+		} else {
+			slog.Warn("ingest: unresolved thing code — create a things row with this code",
+				"code", code, "customer", customer.GetString("name"), "subject", subject)
+			if thingNote == "" {
+				thingNote = code
+			}
+		}
+	}
+	rec.Set("thing_note", thingNote)
+
 	locNote := strings.TrimSpace(payload.Location)
 	if code := strings.TrimSpace(payload.LocationCode); code != "" {
 		if locID, ok := resolveLocation(c.app, customer.Id, code); ok {
@@ -269,6 +285,25 @@ func resolveLocation(app core.App, customerID, code string) (string, bool) {
 		return "", false
 	}
 	return loc.Id, true
+}
+
+// resolveThing maps a thing code to a things id within the customer, with the
+// same contract and the same no-auto-stub stance as resolveLocation. Duplicated
+// in internal/inbound rather than shared: the two packages are independent
+// projections of two different wire contracts (as resolveCategory already is),
+// and a package holding two eight-line functions costs more than the copy.
+func resolveThing(app core.App, customerID, code string) (string, bool) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", false
+	}
+	thing, err := app.FindFirstRecordByFilter(
+		"things", "customer = {:c} && code = {:code}",
+		dbx.Params{"c": customerID, "code": code})
+	if err != nil || thing == nil {
+		return "", false
+	}
+	return thing.Id, true
 }
 
 func isNotFound(err error) bool {

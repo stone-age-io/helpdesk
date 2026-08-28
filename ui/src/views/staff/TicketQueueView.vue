@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Staff, Ticket, TicketCategory, TicketStatus, TicketPriority, TicketType } from '@/types'
+import type { Customer, Location, Staff, Thing, Ticket, TicketCategory, TicketStatus, TicketPriority, TicketType } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
@@ -21,6 +21,7 @@ const customers = ref<Customer[]>([])
 const staff = ref<Staff[]>([])
 const categories = ref<TicketCategory[]>([])
 const locations = ref<Location[]>([])
+const things = ref<Thing[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -38,6 +39,8 @@ const customer = ref(q('customer'))
 const assignee = ref(q('assignee') || (auth.isField ? auth.record?.id || '' : ''))
 const category = ref(q('category'))
 const location = ref(q('location'))
+// Deep-linked from a thing's detail card (View all →).
+const thing = ref(q('thing'))
 const type = ref<TicketType | ''>((q('type') as any) || '')
 const search = ref(q('search'))
 
@@ -50,6 +53,10 @@ const categoryOptions = computed(() => categories.value.map((c) => ({ id: c.id, 
 // Locations span customers here, so disambiguate by customer name in the sublabel.
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.expand?.customer?.name })),
+)
+// Already customer-scoped by loadThings, so the code disambiguates instead.
+const thingOptions = computed(() =>
+  things.value.map((t) => ({ id: t.id, label: t.name, sublabel: t.code || undefined })),
 )
 
 const mineActive = computed(() => assignee.value === auth.record?.id)
@@ -121,9 +128,9 @@ async function exportCsv() {
     const rows = await pb.collection('tickets').getFullList<Ticket>({
       filter: buildFilter(),
       sort: '-created',
-      expand: 'customer,assignee,requester,category,location',
+      expand: 'customer,assignee,requester,category,location,thing',
     })
-    const header = ['number', 'title', 'customer', 'category', 'type', 'location', 'estimated_minutes', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
+    const header = ['number', 'title', 'customer', 'category', 'type', 'location', 'thing', 'estimated_minutes', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
     const lines = [header.join(',')]
     for (const t of rows) {
       lines.push(
@@ -134,6 +141,7 @@ async function exportCsv() {
           t.expand?.category?.name || '',
           t.type || '',
           t.expand?.location?.name || '',
+          t.expand?.thing?.name || '',
           t.estimated_minutes ?? '',
           t.status,
           t.priority,
@@ -182,6 +190,7 @@ function buildFilter(): string {
   if (customer.value) parts.push(`customer = '${customer.value}'`)
   if (category.value) parts.push(`category = '${category.value}'`)
   if (location.value) parts.push(`location = '${location.value}'`)
+  if (thing.value) parts.push(`thing = '${thing.value}'`)
   if (type.value) parts.push(`type = '${type.value}'`)
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
   else if (assignee.value) parts.push(`assignee = '${assignee.value}'`)
@@ -234,7 +243,33 @@ async function loadFilterOptions() {
   }
 }
 
-watch([status, priority, customer, category, location, type, assignee, sortKey, sortDir], () => {
+// Things are loaded only once a customer is picked. Unlike locations (tens of
+// rows, loaded globally), the mirror can run to thousands, and an unscoped
+// cross-customer device picker isn't a useful control anyway — the same gate the
+// ticket form applies to its own pickers.
+async function loadThings(customerId: string) {
+  if (!customerId) {
+    things.value = []
+    return
+  }
+  try {
+    things.value = await pb.collection('things').getFullList<Thing>({
+      filter: `customer = '${customerId}'`,
+      sort: 'name',
+    })
+  } catch {
+    // The picker stays empty; the queue is unaffected.
+  }
+}
+
+// A thing id is meaningless outside its customer, so switching customers clears
+// it rather than leaving a filter that matches nothing.
+watch(customer, (value) => {
+  if (thing.value) thing.value = ''
+  loadThings(value)
+})
+
+watch([status, priority, customer, category, location, thing, type, assignee, sortKey, sortDir], () => {
   page.value = 1
   // Filter changes drop the selection — bulk-acting on rows that are no
   // longer visible would be a footgun. Paging keeps it (cross-page select).
@@ -250,6 +285,9 @@ interface SavedView {
   customer: string
   category: string
   location: string
+  // Optional: views saved before things existed have no such key, which is why
+  // applyView defaults every field with `|| ''` rather than assigning directly.
+  thing?: string
   type: string
   assignee: string
   search: string
@@ -278,6 +316,7 @@ function saveCurrentView() {
     customer: customer.value,
     category: category.value,
     location: location.value,
+    thing: thing.value,
     type: type.value,
     assignee: assignee.value,
     search: search.value,
@@ -295,6 +334,7 @@ function applyView(v: SavedView) {
   customer.value = v.customer
   category.value = v.category || ''
   location.value = v.location || ''
+  thing.value = v.thing || ''
   type.value = (v.type as any) || ''
   assignee.value = v.assignee
   search.value = v.search
@@ -325,6 +365,9 @@ let unsubscribe: (() => void) | null = null
 onMounted(async () => {
   load()
   loadFilterOptions()
+  // A deep link may arrive with ?customer=…&thing=… already set; populate the
+  // picker so the active filter is visible rather than silently applied.
+  if (customer.value) loadThings(customer.value)
   loadSavedViews()
   window.addEventListener('helpdesk:focus-search', focusSearch)
   try {
@@ -367,6 +410,17 @@ onUnmounted(() => {
       </div>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="location" :options="locationOptions" size="sm" empty-label="All locations" placeholder="Location…" />
+      </div>
+      <!-- Gated on the customer filter: see loadThings. -->
+      <div class="w-full sm:w-52">
+        <SearchSelect
+          v-model="thing"
+          :options="thingOptions"
+          size="sm"
+          empty-label="All things"
+          :placeholder="customer ? 'Thing…' : 'Pick a customer first'"
+          :disabled="!customer"
+        />
       </div>
       <select v-model="type" class="select select-bordered select-sm w-full sm:w-auto">
         <option value="">All types</option>

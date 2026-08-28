@@ -41,12 +41,14 @@ type Payload struct {
 	RequesterEmail string `json:"requester_email,omitempty"`
 	DedupeKey      string `json:"dedupe_key,omitempty"`
 	// Category is an optional ticket_categories key; unknown/inactive keys are
-	// ignored (ticket still created, unclassified). Asset/Location are optional
-	// free-text provenance fields.
+	// ignored (ticket still created, unclassified).
 	Category string `json:"category,omitempty"`
-	Asset    string `json:"asset,omitempty"`
-	// Location is free-text (location_note); LocationCode resolves to a
-	// locations row for this customer, falling back to location_note on a miss.
+	// Thing and Location are free text (thing_note / location_note); ThingCode
+	// and LocationCode are the platform join keys, each resolving to a row for
+	// this customer and falling back to its note on a miss. `thing` matches the
+	// NATS contract — the webhook used to spell this one `asset`.
+	Thing        string `json:"thing,omitempty"`
+	ThingCode    string `json:"thing_code,omitempty"`
 	Location     string `json:"location,omitempty"`
 	LocationCode string `json:"location_code,omitempty"`
 	// Source is the ticket provenance to stamp. Not wire-bound (json:"-") — it's
@@ -141,9 +143,19 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 	rec.Set("body", p.Body)
 	rec.Set("priority", priority)
 	rec.Set("source", source)
-	rec.Set("asset", strings.TrimSpace(p.Asset))
-	// A location code resolves to the structured relation; free-text Location is
-	// the note. An unresolved code is kept as a breadcrumb in the note.
+	// A code resolves to the structured relation; the free-text field is the
+	// note. An unresolved code is kept as a breadcrumb in the note. The two
+	// resolvers stay independent — a resolved thing does not backfill location.
+	thingNote := strings.TrimSpace(p.Thing)
+	if code := strings.TrimSpace(p.ThingCode); code != "" {
+		if thingID, ok := resolveThing(app, customer.Id, code); ok {
+			rec.Set("thing", thingID)
+		} else if thingNote == "" {
+			thingNote = code
+		}
+	}
+	rec.Set("thing_note", thingNote)
+
 	locNote := strings.TrimSpace(p.Location)
 	if code := strings.TrimSpace(p.LocationCode); code != "" {
 		if locID, ok := resolveLocation(app, customer.Id, code); ok {
@@ -222,6 +234,23 @@ func resolveLocation(app core.App, customerID, code string) (string, bool) {
 		return "", false
 	}
 	return loc.Id, true
+}
+
+// resolveThing maps a thing code to a things id within the customer
+// (empty/unknown → ("", false)); no auto-stub, matching the ingest path.
+// Customer-scoped so a code can never resolve across tenants.
+func resolveThing(app core.App, customerID, code string) (string, bool) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", false
+	}
+	thing, err := app.FindFirstRecordByFilter(
+		"things", "customer = {:c} && code = {:code}",
+		dbx.Params{"c": customerID, "code": code})
+	if err != nil || thing == nil {
+		return "", false
+	}
+	return thing.Id, true
 }
 
 func mintToken() (string, error) {

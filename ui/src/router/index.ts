@@ -42,6 +42,15 @@ const router = createRouter({
         { path: 'locations', name: 'locations', component: () => import('@/views/staff/LocationsView.vue') },
         { path: 'locations/new', name: 'location-new', component: () => import('@/views/staff/LocationDetailView.vue') },
         { path: 'locations/:id', name: 'location-detail', component: () => import('@/views/staff/LocationDetailView.vue') },
+        // `things/new` MUST stay ahead of `things/:id`: vue-router resolves in
+        // declaration order, so reversed it would match :id with id === 'new'
+        // and the create form would 404. Same ordering as tickets and locations.
+        { path: 'things', name: 'things', component: () => import('@/views/staff/ThingsView.vue') },
+        { path: 'things/new', name: 'thing-new', component: () => import('@/views/staff/ThingDetailView.vue') },
+        { path: 'things/:id', name: 'thing-detail', component: () => import('@/views/staff/ThingDetailView.vue') },
+        // One component, two collections — see RecordTypesView's header.
+        { path: 'thing-types', name: 'thing-types', component: () => import('@/views/staff/RecordTypesView.vue'), props: { collection: 'thing_types', noun: 'Thing' }, meta: { adminOnly: true } },
+        { path: 'location-types', name: 'location-types', component: () => import('@/views/staff/RecordTypesView.vue'), props: { collection: 'location_types', noun: 'Location' }, meta: { adminOnly: true } },
         { path: 'notifications', name: 'notifications', component: () => import('@/views/staff/NotificationTemplatesView.vue'), meta: { adminOnly: true } },
       ],
     },
