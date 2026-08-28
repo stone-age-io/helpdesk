@@ -55,6 +55,17 @@ pre-mount; `BrandLogo.vue` prefers the overlay logo, else the built-in inline
 mark. `branding.example/` is the committed template. Mirrors the sibling
 `platform`/`access-control` apps' branding system.
 
+Each shell carries its own stock wordmark (staff/field "Service Desk", portal
+"Support"), which reads better than one name repeated everywhere — but an
+overlay `appName` must **replace** those, not sit beside them, or a branded
+install shows the operator's logo next to our name. That is what
+`branding.shellName(fallback)` is for, and why the store tracks
+`nameFromOverlay` separately: `appName` alone can't distinguish "the operator
+chose this" from "nobody configured anything". Every shell and the sign-in card
+go through it. Adding a new wordmark means calling `shellName()`, never
+hardcoding the literal — the sidebar's `brand` prop used to be passed by every
+caller, which silently made the overlay name dead everywhere it mattered.
+
 The SPA is also an **installable PWA**, same shape as the platform app:
 `ui/public/` holds `manifest.json`, the two icons (the Stone-Age mark in the
 helpdesk indigo), and a deliberately **no-op `sw.js`** — the service worker

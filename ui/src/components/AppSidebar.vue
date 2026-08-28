@@ -38,9 +38,11 @@ const emit = defineEmits<{ (e: 'change-password'): void; (e: 'edit-profile'): vo
 const isLargeScreen = useMediaQuery('(min-width: 1024px)')
 const effectiveCompact = computed(() => sidebarCompact.value && isLargeScreen.value)
 
-// Brand text: an explicit prop wins (the shells differ — "Service Desk" vs
-// "Support"), else the operator branding overlay's app name.
-const brandText = computed(() => props.brand ?? brandingStore.appName)
+// Brand text: the shell's own label ("Service Desk" vs "Support") on a stock
+// install, replaced wholesale by an operator overlay's app name. Every caller
+// passes `brand`, so before shellName() existed the overlay name never reached
+// the sidebar at all — the logo was branded and the wordmark beside it wasn't.
+const brandText = computed(() => brandingStore.shellName(props.brand ?? brandingStore.appName))
 
 // Hide admin-only items from non-admins; drop sections left empty.
 const visibleSections = computed<NavSection[]>(() =>

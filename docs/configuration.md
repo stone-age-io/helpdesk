@@ -57,12 +57,26 @@ empty `theme.css` / `{}` `branding.json` so a stock install never 404s
 
 | File | Shape | Effect |
 |---|---|---|
-| `branding.json` | `{ "appName": "...", "logo": "logo.svg" }` | app name (sidebar + browser tab) and logo file, served at `/branding/<logo>`. |
+| `branding.json` | `{ "appName": "...", "logo": "logo.svg" }` | app name and logo file, served at `/branding/<logo>`. |
 | `theme.css` | DaisyUI `[data-theme=light\|dark]` OKLCH var overrides | recolors the UI; loaded after the bundled CSS. Override only what you need — the rest keeps the built-in theme. |
 | the logo (e.g. `logo.svg`) | an image | replaces the built-in mark; `.brand-logo-img` is a CSS hook for per-theme swaps. |
 
 Copy [`branding.example/`](../branding.example) to the host (e.g.
 `/etc/helpdesk/branding/`), add your `logo.svg`, and set `branding.dir`.
+
+**Where `appName` lands.** Each shell has its own stock wordmark — the staff and
+field apps say "Service Desk", the requester portal says "Support" — because on
+an unbranded install those read better than one name repeated everywhere. An
+`appName` **replaces** all of them, so a branded install never shows the
+operator's logo next to our stock name. It also sets the browser tab title and
+the sign-in card, which is the first screen anyone sees and therefore the one
+that most needs to look like the operator's. Long names truncate rather than
+overflow the card. The `<title>` in `index.html` is only the pre-JavaScript
+fallback; the SPA overwrites it before mount.
+
+Not brandable: the PWA manifest (a static file — an operator overlay can't
+rename the installed app) and outbound email templates (those are edited in the
+SPA under **Notifications**, not here).
 
 ### NATS credentials
 

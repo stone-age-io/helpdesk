@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandingStore } from '@/stores/branding'
+import BrandLogo from '@/components/BrandLogo.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const brandingStore = useBrandingStore()
+
+// The one shell-neutral surface: before sign-in we don't know whether this is a
+// staff member or a requester, so it can't use either shell's label. Falls back
+// to the staff wording, which is also the app's own name.
+const brandText = computed(() => brandingStore.shellName('Service Desk'))
 
 const email = ref('')
 const password = ref('')
@@ -33,8 +41,13 @@ async function submit() {
   <div class="min-h-screen bg-base-200 flex items-center justify-center p-4">
     <div class="card bg-base-100 shadow-xl w-full max-w-sm">
       <div class="card-body">
-        <div class="flex justify-between items-start">
-          <h1 class="card-title text-2xl mb-2">Service Desk</h1>
+        <div class="flex justify-between items-start gap-3">
+          <h1 class="card-title text-2xl mb-2 gap-3 min-w-0">
+            <span class="w-9 h-9 flex items-center justify-center flex-shrink-0 text-primary">
+              <BrandLogo :size="36" />
+            </span>
+            <span class="truncate">{{ brandText }}</span>
+          </h1>
           <ThemeToggle />
         </div>
         <form class="space-y-4" @submit.prevent="submit">

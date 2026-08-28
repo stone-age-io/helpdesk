@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useBrandingStore } from '@/stores/branding'
 import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ProfileModal from '@/components/ProfileModal.vue'
@@ -9,6 +10,11 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 const route = useRoute()
 const showPassword = ref(false)
 const showProfile = ref(false)
+
+// "Support" reads better than the company name to the customer on a stock
+// install; an operator overlay's app name replaces it. See stores/branding.ts.
+const branding = useBrandingStore()
+const brandText = computed(() => branding.shellName('Support'))
 
 const sections: NavSection[] = [
   {
@@ -52,7 +58,7 @@ watch(
               </svg>
             </label>
           </div>
-          <span class="justify-self-center font-bold text-lg">Support</span>
+          <span class="justify-self-center font-bold text-lg truncate">{{ brandText }}</span>
           <div class="justify-self-end">
             <ThemeToggle />
           </div>
@@ -68,7 +74,7 @@ watch(
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" brand="Support" home="/portal/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
+      <AppSidebar :sections="sections" :brand="brandText" home="/portal/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />

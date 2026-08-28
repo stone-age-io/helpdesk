@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
@@ -7,6 +7,7 @@ import ProfileModal from '@/components/ProfileModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import TimerBar from '@/components/TimerBar.vue'
 import { useTimerStore } from '@/stores/timer'
+import { useBrandingStore } from '@/stores/branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +17,10 @@ const showProfile = ref(false)
 // One running timer follows the agent across the whole staff app; load it once
 // here so the bar reflects a timer started on any device / a prior session.
 const timer = useTimerStore()
+// Stock label, replaced wholesale by an operator overlay's app name. Bound in
+// the mobile top bar and handed to AppSidebar, so both wordmarks agree.
+const branding = useBrandingStore()
+const brandText = computed(() => branding.shellName('Service Desk'))
 
 const sections: NavSection[] = [
   {
@@ -110,7 +115,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </svg>
             </label>
           </div>
-          <span class="justify-self-center font-bold text-lg">Service Desk</span>
+          <span class="justify-self-center font-bold text-lg truncate">{{ brandText }}</span>
           <div class="justify-self-end">
             <ThemeToggle />
           </div>
@@ -130,7 +135,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <div class="drawer-side z-40">
       <label for="sidebar-drawer" class="drawer-overlay" aria-label="Close navigation menu"></label>
-      <AppSidebar :sections="sections" brand="Service Desk" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
+      <AppSidebar :sections="sections" :brand="brandText" home="/staff/dashboard" @change-password="showPassword = true" @edit-profile="showProfile = true" />
     </div>
 
     <ChangePasswordModal v-if="showPassword" @close="showPassword = false" />

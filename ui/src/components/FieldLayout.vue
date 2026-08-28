@@ -7,9 +7,10 @@
 // Same /staff/* child routes as StaffLayout — only the chrome differs. The
 // running-timer strip stays pinned since the timer is the field agent's main
 // tool.
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandingStore } from '@/stores/branding'
 import { useTimerStore } from '@/stores/timer'
 import AppSidebar, { type NavSection } from '@/components/AppSidebar.vue'
 import Avatar from '@/components/Avatar.vue'
@@ -25,6 +26,11 @@ const timer = useTimerStore()
 
 const showPassword = ref(false)
 const showProfile = ref(false)
+
+// Same label as the staff shell — the field view is that app on a phone, not a
+// separate product. Replaced wholesale by an operator overlay's app name.
+const branding = useBrandingStore()
+const brandText = computed(() => branding.shellName('Service Desk'))
 
 const tabs = [
   { label: 'Today', icon: '📋', path: '/staff/today' },
@@ -68,7 +74,7 @@ onMounted(() => timer.load())
     <div class="hidden lg:block shrink-0">
       <AppSidebar
         :sections="fieldSections"
-        brand="Service Desk"
+        :brand="brandText"
         home="/staff/today"
         @change-password="showPassword = true"
         @edit-profile="showProfile = true"
@@ -93,7 +99,7 @@ onMounted(() => timer.load())
               <li><a class="text-error" @click="logout">Sign out</a></li>
             </ul>
           </div>
-          <span class="justify-self-center font-bold text-lg">Service Desk</span>
+          <span class="justify-self-center font-bold text-lg truncate">{{ brandText }}</span>
           <div class="justify-self-end">
             <ThemeToggle />
           </div>
