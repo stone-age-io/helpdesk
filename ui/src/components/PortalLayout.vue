@@ -16,6 +16,7 @@ const sections: NavSection[] = [
       { label: 'Dashboard', icon: '📊', path: '/portal/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/portal/tickets' },
       { label: 'Visits', icon: '📅', path: '/portal/visits' },
+      { label: 'Sites', icon: '📍', path: '/portal/sites' },
       { label: 'Projects', icon: '📁', path: '/portal/projects' },
       { label: 'New Ticket', icon: '➕', path: '/portal/tickets/new' },
     ],

@@ -44,10 +44,11 @@ const posting = ref(false)
 
 async function loadTicket() {
   // Expand category for the badge (ticket_categories read rule, migration
-  // 1808000000) and thing for its name (things read rule, 1824000000). A
-  // requester describes the problem as "the reader at the north door", so
-  // echoing the structured name back confirms the ticket is about the right box.
-  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category,thing' })
+  // 1808000000) plus thing and location for their names (things / locations read
+  // rules, 1824000000 and 1812000000). A requester describes the problem as "the
+  // reader at the north door", so echoing the structured names back confirms the
+  // ticket is about the right box at the right site.
+  ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category,thing,location' })
 }
 
 async function loadComments() {
@@ -113,6 +114,17 @@ async function load() {
 // reply reopens it (surface that intent, and confirm it after). A `closed`
 // ticket is final: no reply box, a follow-up is a new ticket (the server rule
 // blocks the comment either way).
+// Structured name first, free-text note as the fallback — the note is what
+// carries a site or device that isn't in the catalog, which is most of them.
+// Only the structured half links into a filtered history; a note is just text
+// and there is nothing to filter on.
+const siteLabel = computed(
+  () => ticket.value?.expand?.location?.name || ticket.value?.location_note || '',
+)
+const deviceLabel = computed(
+  () => ticket.value?.expand?.thing?.name || ticket.value?.thing_note || '',
+)
+
 const isResolved = computed(() => ticket.value?.status === 'resolved')
 const isFinalClosed = computed(() => ticket.value?.status === 'closed')
 
@@ -301,9 +313,27 @@ onUnmounted(() => {
                 />
                 <span v-else class="text-base-content/40">—</span>
               </div>
-              <div v-if="ticket.expand?.thing?.name" class="flex items-center justify-between gap-2">
-                <span class="text-base-content/60">Thing</span>
-                <span class="text-right">{{ ticket.expand?.thing?.name }}</span>
+              <div v-if="siteLabel" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Site</span>
+                <router-link
+                  v-if="ticket.location"
+                  :to="`/portal/tickets?location=${ticket.location}`"
+                  class="link link-hover text-right"
+                >
+                  {{ siteLabel }}
+                </router-link>
+                <span v-else class="text-right">{{ siteLabel }}</span>
+              </div>
+              <div v-if="deviceLabel" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Device</span>
+                <router-link
+                  v-if="ticket.thing"
+                  :to="`/portal/tickets?thing=${ticket.thing}`"
+                  class="link link-hover text-right"
+                >
+                  {{ deviceLabel }}
+                </router-link>
+                <span v-else class="text-right">{{ deviceLabel }}</span>
               </div>
               <div class="flex items-center justify-between gap-2">
                 <span class="text-base-content/60">Opened</span>
@@ -434,9 +464,27 @@ onUnmounted(() => {
               />
               <span v-else class="text-base-content/40">—</span>
             </div>
-            <div v-if="ticket.expand?.thing?.name" class="flex items-center justify-between gap-2">
-              <span class="text-base-content/60">Thing</span>
-              <span class="text-right">{{ ticket.expand?.thing?.name }}</span>
+            <div v-if="siteLabel" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Site</span>
+              <router-link
+                v-if="ticket.location"
+                :to="`/portal/tickets?location=${ticket.location}`"
+                class="link link-hover text-right"
+              >
+                {{ siteLabel }}
+              </router-link>
+              <span v-else class="text-right">{{ siteLabel }}</span>
+            </div>
+            <div v-if="deviceLabel" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Device</span>
+              <router-link
+                v-if="ticket.thing"
+                :to="`/portal/tickets?thing=${ticket.thing}`"
+                class="link link-hover text-right"
+              >
+                {{ deviceLabel }}
+              </router-link>
+              <span v-else class="text-right">{{ deviceLabel }}</span>
             </div>
             <div class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Opened</span>

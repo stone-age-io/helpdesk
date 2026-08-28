@@ -136,10 +136,15 @@ func TestTicketsCreateRuleIntact(t *testing.T) {
 		"@request.body.category:isset = false",
 		"@request.body.project:isset = false",
 		"@request.body.type:isset = false",
-		"@request.body.location:isset = false",
 		"@request.body.estimated_minutes:isset = false",
-		"@request.body.thing:isset = false",
 		"@request.body.source = 'portal'",
+		// `location` and `thing` were :isset-guarded here, but 1825000000 traded
+		// both guards for tenant-scoped relation hops so a requester can name
+		// their own site and device at intake. The hops are what keeps that from
+		// being a cross-tenant write, and they are pinned — behaviourally, over
+		// real HTTP — in 1825000000_portal_site_device_test.go.
+		"@request.body.location.customer = @request.auth.customer",
+		"@request.body.thing.customer = @request.auth.customer",
 	} {
 		if !strings.Contains(rule, clause) {
 			t.Errorf("tickets create rule missing %q", clause)

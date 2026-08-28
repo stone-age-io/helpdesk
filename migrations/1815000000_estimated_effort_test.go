@@ -33,11 +33,12 @@ func TestEstimatedEffortSchema(t *testing.T) {
 	}
 
 	// The requester (portal) create rule keeps the estimate staff-only, and must
-	// still carry the 1812 service-field guards it supersedes.
+	// still carry the 1812 service-field guards it supersedes. (1812's third
+	// guard, `location`, became a tenant hop in 1825000000.)
 	if r := tickets.CreateRule; r == nil ||
 		!strings.Contains(*r, "@request.body.estimated_minutes:isset = false") ||
 		!strings.Contains(*r, "@request.body.type:isset = false") ||
-		!strings.Contains(*r, "@request.body.location:isset = false") {
+		!strings.Contains(*r, "@request.body.project:isset = false") {
 		t.Errorf("tickets create rule missing estimate/service guards: %v", tickets.CreateRule)
 	}
 }

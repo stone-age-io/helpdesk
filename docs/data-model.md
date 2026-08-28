@@ -116,12 +116,33 @@ Rules:
   A requester sees only their own company's tickets.
 - **create** — staff freely; a requester only for their own customer, with
   `requester` = themselves, no `assignee`, `source = 'portal'`, and none of
-  `category` / `type` / `project` / `location` / `estimated_minutes` / `thing`
-  (all pinned in the create rule so the portal can't forge them —
-  classification, the service-delivery fields, and the effort estimate are staff
-  actions). The `_note` fallbacks are deliberately **unguarded**: they're
-  harmless free text, and the portal's optional "where / which device" hints
-  depend on them.
+  `category` / `type` / `project` / `estimated_minutes` (all pinned in the create
+  rule so the portal can't forge them — classification, the grouping fields, and
+  the effort estimate are triage, i.e. staff actions).
+
+  `location` and `thing` are the exception, since `1825000000`: a requester
+  **may** set both, because they are not judgements about the work but facts
+  about where it is and what it is on, and at intake the requester is the only
+  one who knows them. Each is guarded by a tenant hop instead of an `:isset`
+  ban:
+
+  ```
+  @request.body.location = '' || @request.body.location.customer = @request.auth.customer
+  ```
+
+  Both halves are load-bearing. PocketBase validates that a relation id
+  *exists*, not that it is yours, so without the hop a requester could attach
+  another customer's site to their ticket — and the ticket detail expands and
+  renders it straight back. And the `= ''` term must be there (and must come
+  first): `:isset` means "the key was submitted", so an untouched picker sending
+  `location: ""` fails an `:isset = false` guard, which would reject every ticket
+  filed without a site. `= ''` covers the absent case too, which is why the
+  clause has two terms and not three. `1825000000_portal_site_device_test.go`
+  pins all of it behaviourally, over real HTTP.
+
+  The `_note` fallbacks stay **unguarded**: they're harmless free text, and
+  they're how a requester names a site or device that isn't in the catalog —
+  which is most of them.
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
 - **delete** — `AdminRule`.

@@ -7,13 +7,14 @@
 // the portal project view). Rows drill into the owning ticket — the requester's
 // natural detail surface (there's no field work view for them).
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { Location, Visit, VisitStatus } from '@/types'
 import { pb } from '@/pb'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import { format, startOfToday } from 'date-fns'
 
 const router = useRouter()
+const route = useRoute()
 
 const visits = ref<Visit[]>([])
 const locations = ref<Location[]>([])
@@ -25,7 +26,8 @@ const error = ref('')
 // about most: what's coming up. `site` only appears for multi-site customers.
 type When = 'upcoming' | 'past' | 'all'
 const when = ref<When>('upcoming')
-const site = ref('')
+// Seedable from the Sites page, whose per-site "Visits →" links here.
+const site = ref(typeof route.query.site === 'string' ? route.query.site : '')
 
 const statusBadge: Record<VisitStatus, string> = {
   requested: 'badge-soft-neutral',

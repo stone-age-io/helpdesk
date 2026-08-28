@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import type { Ticket, TicketPriority, TicketStatus } from '@/types'
+import type { Location, Thing, Ticket, TicketPriority, TicketStatus } from '@/types'
 import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
@@ -44,6 +44,17 @@ const mineOnly = ref(false)
 // Tickets whose last public reply was from support — the requester's court.
 // Seedable from the dashboard "needs your reply" tile via ?awaiting=1.
 const awaitingOnly = ref(q('awaiting') === '1')
+// Site / device, seeded from the query string so "View all →" on a ticket and
+// on the Sites page deep-links straight into a filtered history. These are the
+// whole reason location and thing became relations — free text could never
+// answer "everything at this site" or "everything on this box".
+const location = ref(q('location'))
+const thing = ref(q('thing'))
+
+// The catalogs backing the two selects; the collection rules scope both to this
+// requester's customer. A select is only rendered once its catalog has rows.
+const locations = ref<Location[]>([])
+const things = ref<Thing[]>([])
 
 function buildFilter(): string {
   const parts: string[] = []
@@ -51,6 +62,8 @@ function buildFilter(): string {
   else if (status.value) parts.push(`status = '${status.value}'`)
   if (priority.value) parts.push(`priority = '${priority.value}'`)
   if (awaitingOnly.value) parts.push(`awaiting_requester = true`)
+  if (location.value) parts.push(`location = '${location.value}'`)
+  if (thing.value) parts.push(`thing = '${thing.value}'`)
   if (mineOnly.value && auth.record?.id) parts.push(`requester = '${auth.record.id}'`)
   if (search.value.trim()) {
     const raw = search.value.trim().replace(/'/g, "\\'")
@@ -77,7 +90,7 @@ async function load(quiet = false) {
   }
 }
 
-watch([status, priority, mineOnly, awaitingOnly], () => {
+watch([status, priority, mineOnly, awaitingOnly, location, thing], () => {
   page.value = 1
   load()
 })
@@ -101,11 +114,23 @@ const exporting = ref(false)
 async function exportCsv() {
   exporting.value = true
   try {
-    const rows = await pb.collection('tickets').getFullList<Ticket>({ filter: buildFilter(), sort: '-created' })
-    const header = ['number', 'title', 'status', 'priority', 'created', 'updated']
+    // Only the export expands — the list itself doesn't render site/device, and
+    // an expand on every page load would be paid for nothing.
+    const rows = await pb.collection('tickets').getFullList<Ticket>({
+      filter: buildFilter(),
+      sort: '-created',
+      expand: 'location,thing',
+    })
+    const header = ['number', 'title', 'status', 'priority', 'site', 'device', 'created', 'updated']
     const lines = [header.join(',')]
     for (const t of rows) {
-      lines.push([t.number, t.title, t.status, t.priority, t.created, t.updated || ''].map(csvEscape).join(','))
+      const site = t.expand?.location?.name || t.location_note || ''
+      const device = t.expand?.thing?.name || t.thing_note || ''
+      lines.push(
+        [t.number, t.title, t.status, t.priority, site, device, t.created, t.updated || '']
+          .map(csvEscape)
+          .join(','),
+      )
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a')
@@ -125,8 +150,31 @@ async function exportCsv() {
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
 let unsubscribe: (() => void) | null = null
 
+// Re-seed from the URL when only the query changes: vue-router reuses the
+// component for /portal/tickets?location=A → ?location=B, so setup() doesn't
+// run again and the filter would silently ignore the new deep link.
+watch(
+  () => [route.query.location, route.query.thing, route.query.status, route.query.awaiting],
+  () => {
+    location.value = q('location')
+    thing.value = q('thing')
+  },
+)
+
 onMounted(async () => {
   await load()
+  // Catalogs are best-effort: a failure just leaves the selects unrendered, and
+  // a deep-linked filter still applies because it filters on the id, not a name.
+  //
+  // Retired devices are deliberately INCLUDED here, unlike the intake form which
+  // filters them out. Filing a new ticket against decommissioned gear is a
+  // mistake; reading the history of it is the whole point of keeping the row.
+  const [locs, thgs] = await Promise.allSettled([
+    pb.collection('locations').getFullList<Location>({ sort: 'name' }),
+    pb.collection('things').getFullList<Thing>({ sort: 'name' }),
+  ])
+  if (locs.status === 'fulfilled') locations.value = locs.value
+  if (thgs.status === 'fulfilled') things.value = thgs.value
   try {
     unsubscribe = await pb.collection('tickets').subscribe('*', () => {
       clearTimeout(reloadTimer)
@@ -160,6 +208,14 @@ onUnmounted(() => {
       <select v-model="priority" class="select select-bordered select-sm w-full sm:w-auto">
         <option value="">All priorities</option>
         <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
+      </select>
+      <select v-if="locations.length" v-model="location" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">All sites</option>
+        <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }}</option>
+      </select>
+      <select v-if="things.length" v-model="thing" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">All devices</option>
+        <option v-for="t in things" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
       <div class="flex gap-2">
         <button class="btn btn-sm flex-1 sm:flex-none" :class="awaitingOnly ? 'btn-primary' : 'btn-ghost'" @click="awaitingOnly = !awaitingOnly">

@@ -56,11 +56,13 @@ func TestServiceDeliverySchema(t *testing.T) {
 		t.Error("tickets.type should be a select field")
 	}
 
-	// The requester (portal) create rule keeps the new service fields staff-only.
+	// The requester (portal) create rule keeps the service TRIAGE fields
+	// staff-only. `location` was guarded here too until 1825000000, which traded
+	// its :isset guard for a tenant-scoped relation hop so requesters can name
+	// their own site at intake — see 1825000000_portal_site_device_test.go.
 	if r := tickets.CreateRule; r == nil ||
 		!strings.Contains(*r, "@request.body.project:isset = false") ||
-		!strings.Contains(*r, "@request.body.type:isset = false") ||
-		!strings.Contains(*r, "@request.body.location:isset = false") {
+		!strings.Contains(*r, "@request.body.type:isset = false") {
 		t.Errorf("tickets create rule missing service-field guards: %v", tickets.CreateRule)
 	}
 

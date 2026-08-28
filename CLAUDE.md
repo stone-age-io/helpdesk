@@ -127,9 +127,20 @@ structured `location` (→ `locations`) with a free-text `location_note` fallbac
 against the logged `time_entries` total per ticket and summed per project at read
 time — one nullable column, distinct from `visits.duration_minutes` (a calendar
 block, not an effort estimate). The portal create rule blocks requesters from
-setting `category` / `type` / `project` / `location` / `estimated_minutes` /
-`thing` (via `:isset = false`), while both `_note` fallbacks stay unguarded
-(harmless free text). Machine intakes resolve payload `location_code` /
+setting the triage fields `category` / `type` / `project` / `estimated_minutes`
+(via `:isset = false`), while both `_note` fallbacks stay unguarded (harmless
+free text). `location` and `thing` were in that list until migration
+`1825000000`, which opened both to requesters — they aren't judgements about the
+work, they're facts about where it is and what it's on, and at intake the
+requester is the only one who knows them. Each swapped its `:isset` ban for a
+**tenant hop**, `@request.body.<rel> = '' || @request.body.<rel>.customer =
+@request.auth.customer`. Both terms matter: PocketBase validates that a relation
+id *exists*, not that it's yours (so the hop is what stops a cross-tenant
+attach), and `:isset` means "key was submitted", so an untouched picker sending
+`""` would fail an `:isset = false` guard and reject every ticket filed without
+a site. The migration comment carries the measured truth table; the tests pin it
+over real HTTP (`testutil.Handler` — the first rule tests in this repo that
+execute a rule rather than assert on its string). Machine intakes resolve payload `location_code` /
 `thing_code` to their relations, unmatched → the matching note, no auto-stub.
 `docs/data-model.md` covers it.
 
@@ -367,6 +378,23 @@ then falls back to `users`; router guards by auth collection
 categories, notifications).
 `/t/:id` forwards to the right detail view by role (bounces through login
 with a `redirect` query).
+
+The **portal** reads the site/device axes as well as writing them. Intake offers
+a picker per axis (customer-scoped by the collection rules, so no client filter
+is needed or trustworthy), with devices at the chosen site sorted to the top but
+**never hidden** — `things.location` is optional and a requester may know the box
+without knowing which site it's filed under. Both `_note` fields survive as the
+"not in the catalog" escape hatch, and when a customer has neither catalog
+populated the pickers don't render at all: the form degrades to exactly the two
+free-text inputs it was before. `/portal/tickets` gains matching `location` /
+`thing` filters seeded from the query string, so the ticket detail's site and
+device link into a filtered history (deliberately including *retired* devices —
+you can't file against decommissioned gear, but reading its history is the point
+of keeping the row). `/portal/sites` exists for the one question the ticket list
+can't answer — who is coming to this site, and when; everything else on it is a
+launcher into those filters, which is why there's no per-site detail view. It
+never shows a technician, matching the roster-hiding in the portal visit and
+project views.
 
 ## Conventions
 
