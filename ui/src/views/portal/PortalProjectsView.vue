@@ -14,7 +14,7 @@ const loading = ref(true)
 const error = ref('')
 
 const statusClass: Record<ProjectStatus, string> = {
-  planned: 'badge-soft-neutral',
+  pending: 'badge-soft-neutral',
   active: 'badge-soft-info',
   completed: 'badge-soft-success',
   canceled: 'badge-soft-neutral opacity-60',

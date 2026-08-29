@@ -43,7 +43,7 @@ func TestProjectNumberAssignment(t *testing.T) {
 		if got := rec.GetInt("number"); got != want {
 			t.Errorf("project number: got %d, want %d", got, want)
 		}
-		if got := rec.GetString("status"); got != "planned" {
+		if got := rec.GetString("status"); got != "pending" {
 			t.Errorf("default status: got %q, want planned", got)
 		}
 	}

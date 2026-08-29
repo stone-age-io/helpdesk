@@ -94,7 +94,11 @@ export interface Thing extends BaseRecord {
   metadata?: Record<string, unknown> | null
 }
 
-export type ProjectStatus = 'planned' | 'active' | 'completed' | 'canceled'
+// Lifecycle. `pending` is "scoped but not started" — renamed from `planned` in
+// migration 1827000000 so it stops colliding with a ticket's `type: planned`,
+// which means something else and shares a screen with it on the project detail
+// view. Gates no behaviour: a badge colour and a roster filter.
+export type ProjectStatus = 'pending' | 'active' | 'completed' | 'canceled'
 
 export interface Project extends BaseRecord {
   number: number
@@ -231,7 +235,7 @@ export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting'
 export const TICKET_PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent']
 export const TICKET_TYPES: TicketType[] = ['reactive', 'planned']
 export const VISIT_STATUSES: VisitStatus[] = ['requested', 'scheduled', 'completed', 'canceled']
-export const PROJECT_STATUSES: ProjectStatus[] = ['planned', 'active', 'completed', 'canceled']
+export const PROJECT_STATUSES: ProjectStatus[] = ['pending', 'active', 'completed', 'canceled']
 
 // Shapes served by the /api/helpdesk/notifications routes (not raw records).
 

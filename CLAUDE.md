@@ -169,7 +169,12 @@ as their own measure), so it stays a fixed select — an admin-invented type wou
 have no defined meaning to either. `status` and `priority` sit on the same side
 for the same reason. More granular *kinds* of planned work (install vs. survey
 vs. replacement) are a labelling need and belong on `category` or a new axis,
-never on `type`.
+never on `type`. Projects' own lifecycle is `pending | active | completed |
+canceled` (`1827000000`) — `pending` was `planned` until a ticket `type` of
+that name arrived, and the two shared the project detail screen: a planned
+project full of planned tickets, one word meaning two things. The ticket axis
+kept the word because that is where it carries the distinction; on a project it
+was only the first of four states.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee, plus the classification/grouping fields category, type,

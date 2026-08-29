@@ -400,8 +400,11 @@ readable; create/update/delete `AdminRule`, matching `ticket_categories`.
 
 `number` (unique int, assigned by the `internal/projects` create hook),
 `customer` (required), `location` (→ locations, optional), `title` (required),
-`description`, `status` (`planned` | `active` | `completed` | `canceled`,
-default `planned`), `start_date` / `target_date` (the target window), `lead`
+`description`, `status` (`pending` | `active` | `completed` | `canceled`,
+default `pending` — renamed from `planned` in `1827000000` so it stops
+colliding with a ticket's `type: planned`, which means something else and
+shares the project detail screen with it), `start_date` / `target_date` (the
+target window), `lead`
 (→ staff, optional — whole-rollout accountability, distinct from the
 per-ticket assignees).
 

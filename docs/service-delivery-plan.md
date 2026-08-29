@@ -83,7 +83,7 @@ inline create). Edit/delete: admin (curated roster).
 
 **New `projects`** — `number` (sequential, hook-assigned), `customer`
 (rel, req), `location` (rel), `title` (req), `description`, `status`
-(`planned | active | completed | canceled`), `start_date`, `target_date`,
+(`pending | active | completed | canceled`), `start_date`, `target_date`,
 `lead` (rel → staff). Read: staff + requester-own-customer. Create/update:
 staff. Delete: admin.
 

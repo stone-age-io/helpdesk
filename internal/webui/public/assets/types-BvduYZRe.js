@@ -1,1 +1,0 @@
-const e=["open","in_progress","waiting","resolved","closed"],n=["low","normal","high","urgent"],T=["reactive","planned"],a=["planned","active","completed","canceled"];export{a as P,e as T,n as a,T as b};

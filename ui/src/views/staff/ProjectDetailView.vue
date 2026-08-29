@@ -41,7 +41,7 @@ const editing = ref(false)
 const form = ref({
   customer: '',
   title: '',
-  status: 'planned',
+  status: 'pending',
   description: '',
   location: '',
   lead: '',
@@ -177,7 +177,7 @@ function cancelEdit() {
 }
 
 const statusClass: Record<string, string> = {
-  planned: 'badge-soft-neutral',
+  pending: 'badge-soft-neutral',
   active: 'badge-soft-info',
   completed: 'badge-soft-success',
   canceled: 'badge-soft-neutral opacity-60',

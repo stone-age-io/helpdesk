@@ -18,7 +18,7 @@ func Register(app *pocketbase.PocketBase) {
 			e.Record.Set("number", nextNumber(e.App))
 		}
 		if e.Record.GetString("status") == "" {
-			e.Record.Set("status", "planned")
+			e.Record.Set("status", "pending")
 		}
 		return e.Next()
 	})

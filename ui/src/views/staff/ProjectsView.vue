@@ -57,7 +57,7 @@ function fmtDate(s?: string): string {
 }
 
 const statusClass: Record<ProjectStatus, string> = {
-  planned: 'badge-soft-neutral',
+  pending: 'badge-soft-neutral',
   active: 'badge-soft-info',
   completed: 'badge-soft-success',
   canceled: 'badge-soft-neutral opacity-60',
