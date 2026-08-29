@@ -423,6 +423,21 @@ thing and thing type (hours-first, since "which devices burn the most time" is
 why things stopped being free text). The unattributed "—" bucket always sorts
 last however big it is; it is usually the largest row and it is not an answer.
 
+The page **pins the filters and totals and tabs the rollups** (`?view=` in the
+URL, so a report is linkable and survives a reload). The totals aren't a report,
+they're the denominator every report is read against, so they never go behind a
+tab; the rollups genuinely are alternatives, and stacking all seven made a long
+page of which six tables were noise. A shared "group by" dropdown is the wrong
+control here — these tables don't share a column set (staff has Field/Visits,
+location has Tickets/Installs, category has Total/Open), so one selector would
+flatten away the distinctions that are the point. All seven render through
+`ReportTable.vue` (a column spec + a `#label` slot), which also owns the
+proportional bar. That bar scales to the largest **attributed** value, not the
+largest overall: the "—" bucket is routinely the biggest row, and scaling to it
+squashed every real device into the left quarter of the track. Grids holding
+side-by-side cards need `items-start` — a grid row otherwise stretches to its
+tallest cell and pads the short card with dead space.
+
 The **portal** reads the site/device axes as well as writing them. Intake offers
 a picker per axis (customer-scoped by the collection rules, so no client filter
 is needed or trustworthy), with devices at the chosen site sorted to the top but

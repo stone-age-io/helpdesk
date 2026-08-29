@@ -299,7 +299,10 @@ onMounted(load)
         </div>
       </div>
 
-      <div v-if="showSites || showDevices" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- items-start, not the default stretch: a grid row sizes to its tallest
+           cell, so a short device table beside a long site one would otherwise
+           be padded out with dead space to match. -->
+      <div v-if="showSites || showDevices" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <div v-if="showSites" class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
             <h2 class="font-semibold text-sm">By site</h2>

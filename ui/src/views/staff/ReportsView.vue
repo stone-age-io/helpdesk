@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Location, Thing, Ticket, TimeEntry, Visit } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
+import ReportTable, { type ReportColumn } from '@/components/ReportTable.vue'
 
 // Aggregate the data the app already captures — logged time, completed
 // visits, and ticket volume — over a date range, optionally scoped to one
@@ -11,6 +13,22 @@ import SearchSelect from '@/components/SearchSelect.vue'
 // cards never surfaced. Handy for month-end billing, utilization, and spotting what
 // breaks most. Every rollup is exportable (per-report + Export all), and the
 // underlying time/visit rows export in detail.
+//
+// LAYOUT: the filters and the totals row are PINNED, and the rollups are tabbed
+// one at a time beneath them. The totals are not a report — they are the
+// denominator every report is read against ("14h on this device" means nothing
+// without "180h logged overall"), so putting them behind a tab of their own
+// would hide the number you are comparing to. The rollups genuinely are
+// alternatives: you arrive with one question, and stacking all seven made a
+// very long page of which six tables were noise. Tabs also give each table the
+// full width, which is what killed the ragged whitespace the old 2-up grid
+// produced whenever a short table sat beside a long one (CSS grid stretches a
+// row to its tallest cell).
+//
+// A shared "group by" dropdown would be the other obvious control here, and it
+// is the wrong one: these tables do not share a column set (staff has Field and
+// Visits, location has Tickets and Installs, category has Total and Open), so
+// one selector would force flattening away distinctions that are the point.
 //
 // Ticket rollups count tickets *created* in the range. Resolution-time and
 // reopen-rate metrics need the ticket_events history and land in a later
@@ -259,7 +277,9 @@ const byCategory = computed<CatRow[]>(() => {
 // each channel — the machine-generated share is the automation story.
 const bySource = computed(() =>
   [...tickets.value.reduce((m, t) => m.set(t.source, (m.get(t.source) || 0) + 1), new Map<string, number>()).entries()]
-    .map(([source, count]) => ({ source, count, pct: totalTickets.value ? Math.round((count / totalTickets.value) * 100) : 0 }))
+    // The dimension is named "label" like every other rollup, so ReportTable
+    // reads it off the first column with no special case.
+    .map(([label, count]) => ({ label, count, pct: totalTickets.value ? Math.round((count / totalTickets.value) * 100) : 0 }))
     .sort((a, b) => b.count - a.count),
 )
 
@@ -285,9 +305,13 @@ function download(name: string, lines: string[]) {
 const suffix = () => `${from.value}_${to.value}`
 
 // Each rollup is a self-describing report: minutes stay numeric in CSV (for
-// spreadsheet math), even though the screen shows h/m.
+// spreadsheet math), even though the screen shows h/m. This one list drives the
+// tab strip, the card heading and the CSV, so a rollup can never appear as a tab
+// without an export or drift out of sync with its own header row.
 interface Report {
   key: string
+  /** Short tab label; `title` is the full heading above the table. */
+  tab: string
   title: string
   filename: string
   header: string[]
@@ -296,6 +320,7 @@ interface Report {
 const reports = computed<Report[]>(() => [
   {
     key: 'staff',
+    tab: 'Staff',
     title: 'By staff / technician',
     filename: 'by-staff',
     header: ['name', 'minutes', 'billable_minutes', 'field_minutes', 'visits'],
@@ -303,6 +328,7 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'customer',
+    tab: 'Customer',
     title: 'By customer',
     filename: 'by-customer',
     header: ['customer', 'minutes', 'billable_minutes', 'field_minutes', 'visits'],
@@ -310,6 +336,7 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'location',
+    tab: 'Location',
     title: 'By location',
     filename: 'by-location',
     header: ['location', 'tickets', 'installs', 'minutes', 'billable_minutes', 'visits'],
@@ -317,6 +344,7 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'thing',
+    tab: 'Thing',
     title: 'By thing',
     filename: 'by-thing',
     header: ['thing', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
@@ -324,6 +352,7 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'thingtype',
+    tab: 'Thing type',
     title: 'By thing type',
     filename: 'by-thing-type',
     header: ['thing_type', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
@@ -331,6 +360,7 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'category',
+    tab: 'Category',
     title: 'Tickets by category',
     filename: 'tickets-by-category',
     header: ['category', 'total', 'open'],
@@ -338,12 +368,105 @@ const reports = computed<Report[]>(() => [
   },
   {
     key: 'source',
+    tab: 'Source',
     title: 'Tickets by source',
     filename: 'tickets-by-source',
     header: ['source', 'count', 'share_pct'],
-    rows: () => bySource.value.map((r) => [r.source, r.count, r.pct]),
+    rows: () => bySource.value.map((r) => [r.label, r.count, r.pct]),
   },
 ])
+
+// --- the visible rollup ---
+// Which tab is open rides the URL (?view=thing), so a report is linkable, is
+// what you land back on after a reload, and survives the back button. An
+// unrecognised value falls back rather than rendering nothing.
+const route = useRoute()
+const router = useRouter()
+const DEFAULT_VIEW = 'customer' // month-end billing is the errand people arrive with
+const view = ref(
+  reports.value.some((r) => r.key === route.query.view) ? String(route.query.view) : DEFAULT_VIEW,
+)
+watch(view, (v) => {
+  router.replace({ query: { ...route.query, view: v === DEFAULT_VIEW ? undefined : v } })
+})
+const activeReport = computed(() => reports.value.find((r) => r.key === view.value))
+
+// Column specs. The measure carrying `bar` is the one each rollup is sorted by
+// — the bar is a reading aid for the ranking, so pointing it at another column
+// would fight the row order instead of reinforcing it.
+const H = { numeric: true, hours: true } as const
+const N = { numeric: true } as const
+const COLUMNS: Record<string, ReportColumn[]> = {
+  staff: [
+    { key: 'label', label: 'Name' },
+    { key: 'minutes', label: 'Time', ...H, bar: true },
+    { key: 'billableMinutes', label: 'Billable', ...H },
+    { key: 'fieldMinutes', label: 'Field', ...H },
+    { key: 'visits', label: 'Visits', ...N },
+  ],
+  customer: [
+    { key: 'label', label: 'Customer' },
+    { key: 'minutes', label: 'Time', ...H, bar: true },
+    { key: 'billableMinutes', label: 'Billable', ...H },
+    { key: 'fieldMinutes', label: 'Field', ...H },
+    { key: 'visits', label: 'Visits', ...N },
+  ],
+  location: [
+    { key: 'label', label: 'Location' },
+    { key: 'tickets', label: 'Tickets', ...N, bar: true },
+    { key: 'installs', label: 'Installs', ...N },
+    { key: 'minutes', label: 'Time', ...H },
+    { key: 'billableMinutes', label: 'Billable', ...H },
+    { key: 'visits', label: 'Visits', ...N },
+  ],
+  thing: [
+    { key: 'label', label: 'Thing' },
+    { key: 'minutes', label: 'Time', ...H, bar: true },
+    { key: 'billableMinutes', label: 'Billable', ...H },
+    { key: 'tickets', label: 'Tickets', ...N },
+    { key: 'installs', label: 'Installs', ...N },
+    { key: 'visits', label: 'Visits', ...N },
+  ],
+  thingtype: [
+    { key: 'label', label: 'Type' },
+    { key: 'minutes', label: 'Time', ...H, bar: true },
+    { key: 'billableMinutes', label: 'Billable', ...H },
+    { key: 'tickets', label: 'Tickets', ...N },
+    { key: 'installs', label: 'Installs', ...N },
+    { key: 'visits', label: 'Visits', ...N },
+  ],
+  category: [
+    { key: 'label', label: 'Category' },
+    { key: 'count', label: 'Total', ...N, bar: true },
+    { key: 'open', label: 'Open', ...N },
+  ],
+  source: [
+    { key: 'label', label: 'Source' },
+    { key: 'count', label: 'Count', ...N, bar: true },
+    { key: 'pct', label: 'Share %', ...N },
+  ],
+}
+
+// What the unattributed row reads as, per rollup.
+const NULL_LABELS: Record<string, string> = {
+  staff: 'Unattributed',
+  customer: 'None',
+  location: 'No location',
+  thing: 'No thing',
+  thingtype: 'Untyped',
+}
+
+const ROWS: Record<string, () => any[]> = {
+  staff: () => byPerson.value,
+  customer: () => byCustomer.value,
+  location: () => byLocation.value,
+  thing: () => byThing.value,
+  thingtype: () => byThingType.value,
+  category: () => byCategory.value,
+  source: () => bySource.value,
+}
+const activeRows = computed(() => ROWS[view.value]?.() || [])
+const activeColumns = computed(() => COLUMNS[view.value] || [])
 
 function exportOne(key: string) {
   const rep = reports.value.find((r) => r.key === key)
@@ -518,185 +641,47 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- By person -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">By staff / technician</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('staff')">CSV</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Name</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in byPerson" :key="r.label">
-                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'Unattributed' : r.label }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                  </tr>
-                  <tr v-if="byPerson.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- By customer -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">By customer</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('customer')">CSV</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Customer</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Field</th><th class="text-right">Visits</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in byCustomer" :key="r.label">
-                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'None' : r.label }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.fieldMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                  </tr>
-                  <tr v-if="byCustomer.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+      <!-- Rollups: one at a time, full width. The tab strip scrolls sideways on
+           a narrow screen rather than wrapping into a second row. -->
+      <div role="tablist" class="tabs tabs-bordered overflow-x-auto flex-nowrap">
+        <a
+          v-for="r in reports"
+          :key="r.key"
+          role="tab"
+          class="tab whitespace-nowrap"
+          :class="{ 'tab-active font-semibold': view === r.key }"
+          @click="view = r.key"
+        >
+          {{ r.tab }}
+        </a>
       </div>
 
-      <!-- By location: the reporting axis the ticket→location relation adds. -->
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body p-4 space-y-2">
           <div class="flex items-center justify-between gap-2">
-            <h2 class="font-semibold text-sm">By location</h2>
-            <button class="btn btn-ghost btn-xs" @click="exportOne('location')">CSV</button>
+            <h2 class="font-semibold text-sm">{{ activeReport?.title }}</h2>
+            <button class="btn btn-ghost btn-xs" @click="exportOne(view)">CSV</button>
           </div>
-          <div class="overflow-x-auto">
-            <table class="table table-sm">
-              <thead><tr><th>Location</th><th class="text-right">Tickets</th><th class="text-right">Installs</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Visits</th></tr></thead>
-              <tbody>
-                <tr v-for="r in byLocation" :key="r.label">
-                  <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No location' : r.label }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ r.installs || '—' }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                </tr>
-                <tr v-if="byLocation.length === 0"><td colspan="6" class="text-base-content/50">No activity in range.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- The device axis. Sorted by time, not count: these two answer "what is
-           costing us hours", which is why things stopped being free text. -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">By thing</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('thing')">CSV</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Thing</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Tickets</th><th class="text-right">Visits</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in byThing" :key="r.label">
-                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No thing' : r.label }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                  </tr>
-                  <tr v-if="byThing.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">By thing type</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('thingtype')">CSV</button>
-            </div>
-            <p class="text-xs text-base-content/50">
-              Grouped by type <em>name</em>, so a class of device aggregates across every
-              customer that owns one.
-            </p>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Type</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Tickets</th><th class="text-right">Installs</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in byThingType" :key="r.label">
-                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'Untyped' : r.label }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.installs || '—' }}</td>
-                  </tr>
-                  <tr v-if="byThingType.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Ticket volume: what came in during the range, by category and by
-           channel. Counts tickets created in the range. -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">Tickets by category</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('category')">CSV</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Category</th><th class="text-right">Total</th><th class="text-right">Open</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in byCategory" :key="r.label">
-                    <td><CategoryBadge v-if="r.label !== 'Uncategorized'" :name="r.label" :color="r.color" /><span v-else class="text-base-content/50">Uncategorized</span></td>
-                    <td class="text-right font-mono tabular-nums">{{ r.count }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
-                  </tr>
-                  <tr v-if="byCategory.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="font-semibold text-sm">Tickets by source</h2>
-              <button class="btn btn-ghost btn-xs" @click="exportOne('source')">CSV</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead><tr><th>Source</th><th class="text-right">Count</th><th class="text-right">Share</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in bySource" :key="r.source">
-                    <td class="capitalize">{{ r.source }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.count }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.pct }}%</td>
-                  </tr>
-                  <tr v-if="bySource.length === 0"><td colspan="3" class="text-base-content/50">No tickets in range.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <p v-if="view === 'thingtype'" class="text-xs text-base-content/50">
+            Grouped by type <em>name</em>, so a class of device aggregates across every
+            customer that owns one.
+          </p>
+          <ReportTable
+            :columns="activeColumns"
+            :rows="activeRows"
+            :null-label="NULL_LABELS[view] || 'Unattributed'"
+            :empty="view === 'category' || view === 'source' ? 'No tickets in range.' : 'No activity in range.'"
+          >
+            <!-- Category is the one dimension that renders as something other
+                 than text; every other rollup takes the default cell. -->
+            <template v-if="view === 'category'" #label="{ row }">
+              <CategoryBadge v-if="row.label !== 'Uncategorized'" :name="row.label" :color="row.color" />
+              <span v-else class="text-base-content/50">Uncategorized</span>
+            </template>
+            <template v-else-if="view === 'source'" #label="{ row }">
+              <span class="capitalize">{{ row.label }}</span>
+            </template>
+          </ReportTable>
         </div>
       </div>
     </template>
