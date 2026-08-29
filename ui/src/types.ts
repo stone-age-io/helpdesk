@@ -43,7 +43,7 @@ export interface Customer extends BaseRecord {
 
 // Service delivery (migrations/1812000000). A location is a customer's physical
 // place; `code` is the platform Location join key. A project groups 1..N tickets
-// (installs + reactive work) at a location over a target window.
+// (planned + reactive work) at a location over a target window.
 export interface Location extends BaseRecord {
   customer: string
   code?: string
@@ -111,7 +111,13 @@ export interface Project extends BaseRecord {
 export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
 export type TicketSource = 'portal' | 'agent' | 'nats' | 'webhook'
-export type TicketType = 'issue' | 'install'
+// Reactive (customer-initiated, reply-driven) vs. planned (anticipated
+// project / field work, tracked by visits rather than by a customer answer).
+// A FIXED enum, not a managed collection like TicketCategory: the server
+// branches on it (planned tickets never get the "needs your reply" nag) and the
+// reports count planned work as its own measure, so an admin-invented value
+// would have no defined behaviour. See migrations/1826000000.
+export type TicketType = 'reactive' | 'planned'
 
 // Admin-managed classification (migrations/1806000000). `key` is the stable
 // slug used in filters and machine payloads; `name` is display-only.
@@ -135,7 +141,7 @@ export interface Ticket extends BaseRecord {
   source: TicketSource
   origin_subject?: string
   attachments?: string[]
-  // Reactive issue vs. planned install (staff-set; defaults to issue).
+  // Reactive vs. planned work (staff-set; defaults to reactive).
   type?: TicketType
   // Optional grouping into a project (installation / field work).
   project?: string
@@ -223,7 +229,7 @@ export interface Visit extends BaseRecord {
 
 export const TICKET_STATUSES: TicketStatus[] = ['open', 'in_progress', 'waiting', 'resolved', 'closed']
 export const TICKET_PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent']
-export const TICKET_TYPES: TicketType[] = ['issue', 'install']
+export const TICKET_TYPES: TicketType[] = ['reactive', 'planned']
 export const VISIT_STATUSES: VisitStatus[] = ['requested', 'scheduled', 'completed', 'canceled']
 export const PROJECT_STATUSES: ProjectStatus[] = ['planned', 'active', 'completed', 'canceled']
 

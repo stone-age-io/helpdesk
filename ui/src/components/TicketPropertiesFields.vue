@@ -207,7 +207,7 @@ const navigateUrl = computed(() => {
   </div>
   <div class="form-control">
     <label class="label py-1"><span class="label-text text-xs">Type</span></label>
-    <select class="select select-bordered select-sm" :value="ticket.type || 'issue'" @change="emit('patch', { type: ($event.target as HTMLSelectElement).value })">
+    <select class="select select-bordered select-sm" :value="ticket.type || 'reactive'" @change="emit('patch', { type: ($event.target as HTMLSelectElement).value })">
       <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
     </select>
   </div>

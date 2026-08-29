@@ -443,7 +443,7 @@ var heroTickets = []ticketFixture{
 		Key: "nw-reader-offline", Customer: "northwind", Requester: "regina",
 		Title:    "North door reader is offline",
 		Body:     "Staff badged in fine yesterday. This morning the reader has no lights and the door stays locked.",
-		Priority: "high", Source: "portal", Category: "access-control", Type: "issue",
+		Priority: "high", Source: "portal", Category: "access-control", Type: "reactive",
 		Location: "NW-HQ", Thing: "RDR-01", Assignee: "diego", EstimatedMinutes: 60,
 		CreatedDays: -3, Transitions: []string{"in_progress"},
 		Comments: []commentFixture{
@@ -458,7 +458,7 @@ var heroTickets = []ticketFixture{
 		Key: "ib-pump-overcurrent", Customer: "ironbridge",
 		Title:    "Pump fault on line 3",
 		Body:     "Vibration sensor reporting overcurrent on the feed pump. Auto-filed by the plant controller.",
-		Priority: "urgent", Source: "nats", Category: "iot-device", Type: "issue",
+		Priority: "urgent", Source: "nats", Category: "iot-device", Type: "reactive",
 		Location: "IB-PLANT1-L3", Thing: "PUMP-7", Assignee: "maya", EstimatedMinutes: 180,
 		OriginSubject: "helpdesk.org_ironbridge.tickets.create",
 		CreatedDays:   -5, Transitions: []string{"in_progress", "waiting"},
@@ -475,7 +475,7 @@ var heroTickets = []ticketFixture{
 		Key: "hv-badge-intermittent", Customer: "harborview", Requester: "anita",
 		Title:    "ER entrance badge reader intermittent",
 		Body:     "Roughly one in five badges needs a second tap. Started after last week's power work.",
-		Priority: "high", Source: "portal", Category: "access-control", Type: "issue",
+		Priority: "high", Source: "portal", Category: "access-control", Type: "reactive",
 		Location: "HV-MAIN-ER", Thing: "HV-RDR-ER", Assignee: "priya",
 		CreatedDays: -9, Transitions: []string{"in_progress", "resolved"},
 		Comments: []commentFixture{
@@ -489,7 +489,7 @@ var heroTickets = []ticketFixture{
 		Key: "nw-dc-install-doors", Customer: "northwind",
 		Title:    "Install door hardware — DC dock doors 1-6",
 		Body:     "Hang and wire controllers for the first six dock doors.",
-		Priority: "normal", Source: "agent", Category: "access-control", Type: "install",
+		Priority: "normal", Source: "agent", Category: "access-control", Type: "planned",
 		Location: "NW-DC1", Thing: "RDR-02", Project: "nw-dc-access", Assignee: "sam",
 		EstimatedMinutes: 960, CreatedDays: -18, Transitions: []string{"in_progress"},
 		Visits: []visitFixture{
@@ -505,7 +505,7 @@ var heroTickets = []ticketFixture{
 		Key: "nw-dc-install-network", Customer: "northwind",
 		Title:    "Install network drops — DC controller closet",
 		Body:     "Twelve drops from the closet to the dock controllers.",
-		Priority: "normal", Source: "agent", Category: "network", Type: "install",
+		Priority: "normal", Source: "agent", Category: "network", Type: "planned",
 		Location: "NW-DC1", Project: "nw-dc-access", Assignee: "tomas", EstimatedMinutes: 600,
 		CreatedDays: -16,
 		Visits:      []visitFixture{{Status: "requested", Notes: "Needs scheduling once the doors are hung."}},
@@ -514,7 +514,7 @@ var heroTickets = []ticketFixture{
 		Key: "cp-yard-camera", Customer: "cedarpoint", Requester: "owen",
 		Title:    "Yard camera feed dropping overnight",
 		Body:     "The northeast yard camera goes offline around 02:00 and comes back by 06:00.",
-		Priority: "normal", Source: "webhook", Category: "network", Type: "issue",
+		Priority: "normal", Source: "webhook", Category: "network", Type: "reactive",
 		Location: "CP-YARD", Thing: "CAM-NE", Assignee: "diego", CreatedDays: -6,
 		Comments: []commentFixture{
 			{Author: "diego", Body: "Could you confirm whether the pole lighting is on a timer? The window matches a power cycle.", RequestsReply: true, DayOffset: -5},
@@ -524,7 +524,7 @@ var heroTickets = []ticketFixture{
 		Key: "su-printer-jam", Customer: "summit", Requester: "lena",
 		Title:    "Reception printer jamming constantly",
 		Body:     "Jams every few pages on the lower tray.",
-		Priority: "low", Source: "email", Category: "hardware", Type: "issue",
+		Priority: "low", Source: "email", Category: "hardware", Type: "reactive",
 		Location: "SU-TOWER", Thing: "Lobby Reception Printer", CreatedDays: -4,
 		Comments: []commentFixture{{Author: "lena", Body: "Still happening this morning.", DayOffset: -2}},
 	},
@@ -532,7 +532,7 @@ var heroTickets = []ticketFixture{
 		Key: "nw-unmatched-intake", Customer: "northwind",
 		Title:    "Unknown device reporting faults",
 		Body:     "Machine intake referenced a device code we do not have in the catalog yet.",
-		Priority: "normal", Source: "nats", Category: "iot-device", Type: "issue",
+		Priority: "normal", Source: "nats", Category: "iot-device", Type: "reactive",
 		OriginSubject: "helpdesk.org_northwind.tickets.create",
 		// No Thing: the unmatched-code fallback the intakes actually produce. A
 		// demo should show what that looks like in the UI.
@@ -543,7 +543,7 @@ var heroTickets = []ticketFixture{
 		Key: "gw-rtu-firmware-a1", Customer: "galewind", Requester: "bram",
 		Title:    "Alpha RTU 1 firmware upgrade",
 		Body:     "Stage the 3.2.0 firmware on Alpha RTU 1 during the Tuesday maintenance window.",
-		Priority: "normal", Source: "agent", Category: "iot-device", Type: "install",
+		Priority: "normal", Source: "agent", Category: "iot-device", Type: "planned",
 		Location: "GW-SUB-A", Thing: "RTU-A1", Project: "gw-rtu-firmware", Assignee: "gwen",
 		EstimatedMinutes: 240, CreatedDays: -22, Transitions: []string{"in_progress", "resolved", "closed"},
 		Comments: []commentFixture{
@@ -560,7 +560,7 @@ var heroTickets = []ticketFixture{
 		Key: "hv-annex-canceled", Customer: "harborview", Requester: "joel",
 		Title:    "Annex reader install — on hold",
 		Body:     "Hold the annex reader work until the lease question is settled.",
-		Priority: "low", Source: "portal", Category: "access-control", Type: "install",
+		Priority: "low", Source: "portal", Category: "access-control", Type: "planned",
 		Location: "HV-WEST", Project: "hv-annex-access", CreatedDays: -55,
 		Transitions: []string{"waiting", "closed"},
 		Comments: []commentFixture{

@@ -98,7 +98,7 @@ func TestServiceDeliveryWiring(t *testing.T) {
 	})
 	ticket := seed(t, app, "tickets", map[string]any{
 		"customer": customer.Id, "title": "Install access control", "number": 1,
-		"type": "install", "project": project.Id, "location": location.Id,
+		"type": "planned", "project": project.Id, "location": location.Id,
 	})
 
 	got, err := app.FindRecordById("tickets", ticket.Id)
@@ -111,8 +111,8 @@ func TestServiceDeliveryWiring(t *testing.T) {
 	if got.GetString("location") != location.Id {
 		t.Errorf("ticket.location not wired: got %q, want %q", got.GetString("location"), location.Id)
 	}
-	if got.GetString("type") != "install" {
-		t.Errorf("ticket.type: got %q, want install", got.GetString("type"))
+	if got.GetString("type") != "planned" {
+		t.Errorf("ticket.type: got %q, want planned", got.GetString("type"))
 	}
 }
 

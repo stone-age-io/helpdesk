@@ -25,7 +25,7 @@ const form = ref({
   title: '',
   body: '',
   priority: 'normal',
-  type: 'issue',
+  type: 'reactive',
   assignee: '',
   requester: '',
   category: '',

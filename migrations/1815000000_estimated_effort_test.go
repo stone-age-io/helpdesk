@@ -50,7 +50,7 @@ func TestEstimatedEffortRoundTrip(t *testing.T) {
 	customer := seed(t, app, "customers", map[string]any{"name": "Acme", "active": true})
 	ticket := seed(t, app, "tickets", map[string]any{
 		"customer": customer.Id, "title": "Install access control", "number": 1,
-		"type": "install", "estimated_minutes": 240,
+		"type": "planned", "estimated_minutes": 240,
 	})
 
 	got, err := app.FindRecordById("tickets", ticket.Id)

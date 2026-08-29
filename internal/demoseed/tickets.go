@@ -98,7 +98,7 @@ func (s *seeder) generateTicket(i int) ticketFixture {
 	})
 	priority := s.weighted(map[string]int{"low": 22, "normal": 52, "high": 20, "urgent": 6})
 	source := s.weighted(map[string]int{"portal": 38, "agent": 28, "nats": 14, "webhook": 10, "email": 10})
-	ttype := s.weighted(map[string]int{"issue": 82, "install": 18})
+	ttype := s.weighted(map[string]int{"reactive": 82, "planned": 18})
 
 	// Age: skewed recent, with a long tail so the aging buckets and the
 	// ticket-volume report both have something to show.
@@ -113,7 +113,7 @@ func (s *seeder) generateTicket(i int) ticketFixture {
 	}
 
 	var title string
-	if ttype == "install" {
+	if ttype == "planned" {
 		title = fmt.Sprintf(s.pick(installTemplates), locName)
 	} else {
 		tpl := issueTemplates[tgt.thingType]
@@ -178,7 +178,7 @@ func (s *seeder) generateTicket(i int) ticketFixture {
 			}
 		}
 	}
-	if ttype == "install" || s.rng.Intn(100) < 25 {
+	if ttype == "planned" || s.rng.Intn(100) < 25 {
 		f.EstimatedMinutes = (1 + s.rng.Intn(16)) * 30
 	}
 	if p := s.projectFor(tgt.customer, ttype); p != "" {
@@ -279,7 +279,7 @@ func (s *seeder) categoryFor(thingType, ticketType string) string {
 	if c, ok := byThing[thingType]; ok {
 		return c
 	}
-	if ticketType == "install" {
+	if ticketType == "planned" {
 		return "hardware"
 	}
 	return "other"
@@ -298,7 +298,7 @@ func (s *seeder) projectFor(customer, ticketType string) string {
 		return ""
 	}
 	odds := 18
-	if ticketType == "install" {
+	if ticketType == "planned" {
 		odds = 62 // install work is what projects are mostly made of
 	}
 	if s.rng.Intn(100) >= odds {
@@ -344,7 +344,7 @@ func (s *seeder) addGeneratedChildren(f *ticketFixture, status string, age int, 
 
 	// On-site work: installs almost always, issues sometimes.
 	visitOdds := 22
-	if f.Type == "install" {
+	if f.Type == "planned" {
 		visitOdds = 70
 	}
 	if s.rng.Intn(100) < visitOdds {

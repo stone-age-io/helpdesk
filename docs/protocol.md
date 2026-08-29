@@ -131,7 +131,7 @@ accepts both, and an outbound event can never be re-ingested as a ticket.
   "customer": { "id": "cust123", "name": "Acme Corp", "platform_org_id": "org_..." },
   "ticket": {
     "id": "rec123", "number": 42, "title": "Pump fault on line 3",
-    "status": "in_progress", "priority": "high", "type": "issue",
+    "status": "in_progress", "priority": "high", "type": "reactive",
     "source": "nats", "url": "https://helpdesk.example.com/t/rec123",
     "assignee": { "name": "Sam Staff", "email": "sam@816tech.example" }
   },

@@ -31,9 +31,9 @@ func Register(app *pocketbase.PocketBase) {
 		if e.Record.GetString("source") == "" {
 			e.Record.Set("source", "agent")
 		}
-		// Reactive issue unless a caller (staff UI, project setup) says install.
+		// Reactive unless a caller (staff UI, project setup) says planned.
 		if e.Record.GetString("type") == "" {
-			e.Record.Set("type", "issue")
+			e.Record.Set("type", "reactive")
 		}
 		syncResolvedAt(e.Record)
 		return e.Next()
@@ -105,13 +105,13 @@ func handleRequesterReply(app core.App, ticket *core.Record, userID string) {
 	}
 }
 
-// markAwaitingRequester flags that staff are waiting on the requester. Install
+// markAwaitingRequester flags that staff are waiting on the requester. Planned
 // tickets are excluded — proactive field work isn't a reply-driven conversation
 // (its status is tracked by visits/project, not a customer answer). A public
 // note on an already-resolved/closed ticket doesn't ask for anything, and a
 // no-op when the flag is already set avoids a redundant write.
 func markAwaitingRequester(app core.App, ticket *core.Record) {
-	if ticket.GetString("type") == "install" {
+	if ticket.GetString("type") == "planned" {
 		return
 	}
 	if st := ticket.GetString("status"); st == "resolved" || st == "closed" {

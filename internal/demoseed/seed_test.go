@@ -273,7 +273,7 @@ func TestSeedCoversTheFilterSurface(t *testing.T) {
 			t.Errorf("no ticket with source %q", s)
 		}
 	}
-	for _, ty := range []string{"issue", "install"} {
+	for _, ty := range []string{"reactive", "planned"} {
 		if types[ty] == 0 {
 			t.Errorf("no ticket with type %q", ty)
 		}

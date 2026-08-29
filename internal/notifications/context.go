@@ -119,7 +119,7 @@ func SampleContext() TicketContext {
 			OldStatus: "open",
 			Priority:  "high",
 			Source:    "nats",
-			Type:      "issue",
+			Type:      "reactive",
 			URL:       "https://helpdesk.example.com/t/sample1",
 		},
 		Customer:      "Acme Corp",

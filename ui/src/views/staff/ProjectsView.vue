@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Projects: the durable container grouping 1..N tickets (installs + reactive
+// Projects: the durable container grouping 1..N tickets (planned + reactive
 // work) at a customer location over a target window. This is the list; creation
 // and everything else (linked tickets, derived crew and time) lives on the
 // detail/form view, reached via "New Project" — consistent with the other

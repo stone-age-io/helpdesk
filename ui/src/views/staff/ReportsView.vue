@@ -178,7 +178,7 @@ const byCustomer = computed(() =>
 )
 
 // The axes that hang off the ticket — location, thing, thing type — roll up
-// identically: time and visits come from work done in range, tickets/installs
+// identically: time and visits come from work done in range, tickets/planned
 // from tickets created in range, and the "—" bucket is work where the field was
 // never set (most reactive tickets). One grouper rather than three near-copies;
 // only the label and the sort differ.
@@ -191,13 +191,13 @@ interface AxisRow {
   billableMinutes: number
   visits: number
   tickets: number
-  installs: number
+  planned: number
 }
 function byTicketAxis(keyOf: (t: any) => string, sortBy: 'tickets' | 'minutes'): AxisRow[] {
   const map = new Map<string, AxisRow>()
   const row = (label: string) => {
     const k = label || '—'
-    if (!map.has(k)) map.set(k, { label: k, minutes: 0, billableMinutes: 0, visits: 0, tickets: 0, installs: 0 })
+    if (!map.has(k)) map.set(k, { label: k, minutes: 0, billableMinutes: 0, visits: 0, tickets: 0, planned: 0 })
     return map.get(k)!
   }
   for (const e of entries.value) {
@@ -209,7 +209,7 @@ function byTicketAxis(keyOf: (t: any) => string, sortBy: 'tickets' | 'minutes'):
   for (const t of tickets.value) {
     const r = row(keyOf(t))
     r.tickets += 1
-    if (t.type === 'install') r.installs += 1
+    if (t.type === 'planned') r.planned += 1
   }
   // The "—" bucket sinks to the bottom regardless of size. It is usually the
   // biggest row — most reactive tickets name no device — but "work we didn't
@@ -339,24 +339,24 @@ const reports = computed<Report[]>(() => [
     tab: 'Location',
     title: 'By location',
     filename: 'by-location',
-    header: ['location', 'tickets', 'installs', 'minutes', 'billable_minutes', 'visits'],
-    rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.installs, r.minutes, r.billableMinutes, r.visits]),
+    header: ['location', 'tickets', 'planned', 'minutes', 'billable_minutes', 'visits'],
+    rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.planned, r.minutes, r.billableMinutes, r.visits]),
   },
   {
     key: 'thing',
     tab: 'Thing',
     title: 'By thing',
     filename: 'by-thing',
-    header: ['thing', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
-    rows: () => byThing.value.map((r) => [r.label === '—' ? '(no thing)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.installs, r.visits]),
+    header: ['thing', 'minutes', 'billable_minutes', 'tickets', 'planned', 'visits'],
+    rows: () => byThing.value.map((r) => [r.label === '—' ? '(no thing)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.planned, r.visits]),
   },
   {
     key: 'thingtype',
     tab: 'Thing type',
     title: 'By thing type',
     filename: 'by-thing-type',
-    header: ['thing_type', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
-    rows: () => byThingType.value.map((r) => [r.label === '—' ? '(untyped)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.installs, r.visits]),
+    header: ['thing_type', 'minutes', 'billable_minutes', 'tickets', 'planned', 'visits'],
+    rows: () => byThingType.value.map((r) => [r.label === '—' ? '(untyped)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.planned, r.visits]),
   },
   {
     key: 'category',
@@ -414,7 +414,7 @@ const COLUMNS: Record<string, ReportColumn[]> = {
   location: [
     { key: 'label', label: 'Location' },
     { key: 'tickets', label: 'Tickets', ...N, bar: true },
-    { key: 'installs', label: 'Installs', ...N },
+    { key: 'planned', label: 'Planned', ...N },
     { key: 'minutes', label: 'Time', ...H },
     { key: 'billableMinutes', label: 'Billable', ...H },
     { key: 'visits', label: 'Visits', ...N },
@@ -424,7 +424,7 @@ const COLUMNS: Record<string, ReportColumn[]> = {
     { key: 'minutes', label: 'Time', ...H, bar: true },
     { key: 'billableMinutes', label: 'Billable', ...H },
     { key: 'tickets', label: 'Tickets', ...N },
-    { key: 'installs', label: 'Installs', ...N },
+    { key: 'planned', label: 'Planned', ...N },
     { key: 'visits', label: 'Visits', ...N },
   ],
   thingtype: [
@@ -432,7 +432,7 @@ const COLUMNS: Record<string, ReportColumn[]> = {
     { key: 'minutes', label: 'Time', ...H, bar: true },
     { key: 'billableMinutes', label: 'Billable', ...H },
     { key: 'tickets', label: 'Tickets', ...N },
-    { key: 'installs', label: 'Installs', ...N },
+    { key: 'planned', label: 'Planned', ...N },
     { key: 'visits', label: 'Visits', ...N },
   ],
   category: [

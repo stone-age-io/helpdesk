@@ -262,7 +262,7 @@ watch(() => form.value.customer, (c) => loadLocations(c))
                   class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
                 >
                   <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
-                  <span v-if="t.type === 'install'" class="badge-soft badge-soft-primary">install</span>
+                  <span v-if="t.type === 'planned'" class="badge-soft badge-soft-primary">planned</span>
                   <span class="flex-1 truncate">{{ t.title }}</span>
                   <span v-if="t.estimated_minutes" class="text-xs text-base-content/50 hidden sm:block whitespace-nowrap" title="Estimated effort">~{{ fmt(t.estimated_minutes) }}</span>
                   <span class="text-xs text-base-content/60 hidden sm:block">{{ t.expand?.assignee?.name || 'Unassigned' }}</span>

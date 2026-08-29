@@ -125,14 +125,16 @@ powers the portal's "needs your reply" prompt, list chip, and dashboard tile.
 It is **staff-explicit, not inferred**: a public staff comment sets it only when
 the author ticks *Request a reply* (`ticket_comments.requests_reply`, migration
 `1819000000`) — a plain status update doesn't nag the customer — and it's
-cleared on a requester reply or on resolve/close (pre-save). `install` tickets
+cleared on a requester reply or on resolve/close (pre-save). `planned` tickets
 are excluded entirely (proactive field work isn't a reply-driven conversation).
 Not a source of truth. Tickets and comments carry **attachments**
 (≤6 files, 10 MB each); PB serves files only to callers who can view the
 owning record, so attachments on internal comments stay staff-only.
 Classification (migration `1806000000`): an optional `category` (admin-managed
 `ticket_categories` **relation**, not a select — staff-classified). A ticket
-also carries a `type` (`issue` | `install`) and an optional `project`, a
+also carries a `type` (`reactive` | `planned`, migration `1826000000` — they
+were `issue`/`install`, which weren't parallel nouns and undersold what the
+value gates) and an optional `project`, a
 structured `location` (→ `locations`) with a free-text `location_note` fallback
 (migration `1812000000`), and — mirroring that pair exactly — a structured
 `thing` (→ `things`) with a free-text `thing_note` fallback (migration
@@ -157,6 +159,17 @@ over real HTTP (`testutil.Handler` — the first rule tests in this repo that
 execute a rule rather than assert on its string). Machine intakes resolve payload `location_code` /
 `thing_code` to their relations, unmatched → the matching note, no auto-stub.
 `docs/data-model.md` covers it.
+
+`category` and `type` look like the same kind of field and are not, which is
+worth stating once: **enums for what the code branches on, collections for what
+only humans read.** `category` is inert — a label, so it's an admin-managed
+collection that grows without a deploy. `type` gates behaviour (`planned`
+tickets never get the `awaiting_requester` nag; every report axis counts them
+as their own measure), so it stays a fixed select — an admin-invented type would
+have no defined meaning to either. `status` and `priority` sit on the same side
+for the same reason. More granular *kinds* of planned work (install vs. survey
+vs. replacement) are a labelling need and belong on `category` or a new axis,
+never on `type`.
 
 **Audit trail** (`internal/activity`): every workflow-field change (status,
 priority, assignee, plus the classification/grouping fields category, type,
@@ -206,7 +219,7 @@ in the Directory and any staff member creates/edits them via a detail view
 map picker (Nominatim address search) and drive a maps "Navigate" deep link on
 the ticket. `1824000000` added `type`, `parent` and `metadata` to close the
 shape gap with the platform's `locations`. A **project**
-groups 1..N tickets (often one `install`-type ticket per trade, plus reactive
+groups 1..N tickets (often one `planned`-type ticket per trade, plus reactive
 tickets) at a location over a target window; sequential `number` (hook, like
 tickets) and a single `lead` for whole-rollout accountability. Crucially it is
 a *grouping layer above the ledger* — visits and time stay parented to tickets,

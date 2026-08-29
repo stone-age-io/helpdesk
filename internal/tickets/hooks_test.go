@@ -214,7 +214,7 @@ func TestInstallTicketNeverAwaitsRequester(t *testing.T) {
 	ticket := core.NewRecord(col)
 	ticket.Set("customer", customer.Id)
 	ticket.Set("title", "camera install")
-	ticket.Set("type", "install")
+	ticket.Set("type", "planned")
 	ticket.Set("status", "in_progress")
 	if err := app.Save(ticket); err != nil {
 		t.Fatalf("save install ticket: %v", err)
@@ -441,5 +441,31 @@ func TestAutoCloseDisabledIsNoOp(t *testing.T) {
 	}
 	if got := statusOf(t, app, stale.Id); got != "resolved" {
 		t.Errorf("days=0 must leave tickets resolved, got %q", got)
+	}
+}
+
+// The create hook's default and the tickets.type enum have to agree: the hook
+// stamps a value on every ticket that arrives without one (machine intake,
+// seeds, the portal form), so a default outside the enum would make every such
+// insert invalid. Pinned here rather than in the migrations package because
+// SetupApp does not bind record hooks — without Register the field just stays
+// empty and the assertion would be vacuous.
+func TestTypeDefaultsToReactive(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+
+	col, err := app.FindCollectionByNameOrId("tickets")
+	if err != nil {
+		t.Fatalf("find tickets: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.Set("customer", customer.Id)
+	rec.Set("title", "no type given")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save ticket: %v", err)
+	}
+	if got := rec.GetString("type"); got != "reactive" {
+		t.Errorf("default type: got %q, want reactive", got)
 	}
 }

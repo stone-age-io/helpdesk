@@ -41,8 +41,8 @@ management. Three options were weighed:
   You could delete the `projects` collection and still have a working
   helpdesk.
 - **A ticket is the unit of work.** No separate "task" noun. A `type`
-  (`issue | install`) discriminator distinguishes reactive from planned work.
-  A project is **1..N tickets** — e.g. one `install` ticket per trade (access
+  (`reactive | planned`) discriminator distinguishes reactive from planned work.
+  A project is **1..N tickets** — e.g. one `planned` ticket per trade (access
   control, video, intrusion) plus any reactive tickets that arise on the job.
 - **Derived crew.** No change to the ticket assignee model. The crew is the
   ticket lead ∪ its visits' assignees; each **visit is one person's scheduled
@@ -88,7 +88,7 @@ inline create). Edit/delete: admin (curated roster).
 staff. Delete: admin.
 
 **`tickets` amendments** — add `project` (rel), `type`
-(`issue | install`, default `issue` via hook), `location` (rel → locations);
+(`reactive | planned`, default `reactive` via hook), `location` (rel → locations);
 **rename** the existing free-text `location` → `location_note` (the
 unmatched-code fallback); `requester` was already optional. The requester
 (portal) create rule gains `project`/`type`/`location` `:isset = false`

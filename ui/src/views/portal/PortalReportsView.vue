@@ -111,7 +111,7 @@ const totalMinutes = computed(() =>
 )
 
 // --- axes ---
-// Site and device roll up identically: tickets/installs/open from what was filed
+// Site and device roll up identically: tickets/planned/open from what was filed
 // in range, visits from work completed in range, hours from the per-ticket
 // minutes. The "—" bucket is work that named no site / no device.
 //
@@ -122,7 +122,7 @@ interface AxisRow {
   id: string
   label: string
   tickets: number
-  installs: number
+  planned: number
   open: number
   visits: number
   minutes: number
@@ -131,13 +131,13 @@ function byTicketAxis(idOf: (t: any) => string, labelOf: (t: any) => string): Ax
   const map = new Map<string, AxisRow>()
   const row = (id: string, label: string) => {
     const k = label || '—'
-    if (!map.has(k)) map.set(k, { id, label: k, tickets: 0, installs: 0, open: 0, visits: 0, minutes: 0 })
+    if (!map.has(k)) map.set(k, { id, label: k, tickets: 0, planned: 0, open: 0, visits: 0, minutes: 0 })
     return map.get(k)!
   }
   for (const t of tickets.value) {
     const r = row(idOf(t), labelOf(t))
     r.tickets += 1
-    if (t.type === 'install') r.installs += 1
+    if (t.type === 'planned') r.planned += 1
     if (t.status !== 'resolved' && t.status !== 'closed') r.open += 1
     r.minutes += minutesByTicket.value[t.id] || 0
   }
@@ -217,14 +217,14 @@ function exportCsv() {
   const axis = (title: string, rows: AxisRow[], head: string) => {
     lines.push(
       title,
-      [head, 'tickets', 'installs', 'still_open', 'visits', ...(hoursEnabled.value ? ['billable_minutes'] : [])].join(','),
+      [head, 'tickets', 'planned', 'still_open', 'visits', ...(hoursEnabled.value ? ['billable_minutes'] : [])].join(','),
     )
     for (const r of rows) {
       lines.push(
         [
           r.label === '—' ? `(no ${head})` : r.label,
           r.tickets,
-          r.installs,
+          r.planned,
           r.open,
           r.visits,
           ...(hoursEnabled.value ? [r.minutes] : []),

@@ -98,8 +98,8 @@ expanded — the page — and this route never grows a second copy of it.
 `1823000000`), `origin_subject` (the full hub-side NATS subject, provenance for
 machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
 carries the inbound email `Message-ID`), `attachments` (≤6 files),
-`category` (→ ticket_categories, optional — see below), `type` (`issue` |
-`install`, default `issue` via the create hook — reactive vs. planned work),
+`category` (→ ticket_categories, optional — see below), `type` (`reactive` |
+`planned`, default `reactive` via the create hook),
 `project` (→ projects, optional — groups install/reactive work),
 `location` (→ locations, optional — the structured place, and the reporting
 axis), `location_note` (free text — dispatch hints, or the unmatched-code
@@ -115,7 +115,7 @@ summed per project at read time — see `projects`). Distinct from
 `internal/tickets` backing the portal's "needs your reply" prompt / list chip /
 dashboard tile. Staff-explicit: set only when a public staff comment ticks
 *Request a reply* (`ticket_comments.requests_reply`, `1819000000`), cleared on a
-requester reply or on resolve/close. `install` tickets are excluded. Not a
+requester reply or on resolve/close. `planned` tickets are excluded. Not a
 source of truth. `resolved_at` (datetime, optional, added `1821000000`) — stamped
 by the `internal/tickets` guard when the ticket enters `resolved`, cleared when
 it leaves (mirrors visits' `completed_at`); it gives the auto-close cron a
@@ -406,7 +406,7 @@ default `planned`), `start_date` / `target_date` (the target window), `lead`
 per-ticket assignees).
 
 A project is a planning-and-grouping layer **above** the ticket → visit → time
-ledger: it groups 1..N tickets (often one `install` ticket per trade, plus any
+ledger: it groups 1..N tickets (often one `planned` ticket per trade, plus any
 reactive tickets) and stores none of their execution data. Crew (lead ∪
 ticket/visit assignees), total logged time, and total estimated effort
 (`sum(ticket.estimated_minutes)`, shown as an estimated-vs-logged bar) are all

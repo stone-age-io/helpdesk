@@ -164,7 +164,7 @@ func TestProjectChangeResolvesNumberTitle(t *testing.T) {
 func TestTypeChangeLogged(t *testing.T) {
 	app, id := setup(t)
 	ticket := reload(t, app, id)
-	ticket.Set("type", "install")
+	ticket.Set("type", "planned")
 	if err := app.Save(ticket); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestTypeChangeLogged(t *testing.T) {
 	if got := evs[0].GetString("field"); got != "type" {
 		t.Errorf("field: got %q, want type", got)
 	}
-	if got := evs[0].GetString("new_value"); got != "install" {
+	if got := evs[0].GetString("new_value"); got != "planned" {
 		t.Errorf("type new_value: got %q, want install", got)
 	}
 }
