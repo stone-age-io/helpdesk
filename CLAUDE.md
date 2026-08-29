@@ -447,7 +447,7 @@ they're the denominator every report is read against, so they never go behind a
 tab; the rollups genuinely are alternatives, and stacking all seven made a long
 page of which six tables were noise. A shared "group by" dropdown is the wrong
 control here — these tables don't share a column set (staff has Field/Visits,
-location has Tickets/Installs, category has Total/Open), so one selector would
+location has Tickets/Planned, category has Total/Open), so one selector would
 flatten away the distinctions that are the point. All seven render through
 `ReportTable.vue` (a column spec + a `#label` slot), which also owns the
 proportional bar. That bar scales to the largest **attributed** value, not the
@@ -515,4 +515,7 @@ than merely unbuilt (see **Things / types**).
 description of the app — the same is true of `docs/service-delivery-plan.md` and
 `docs/nats-notifications-plan.md`. Each carries a status banner saying where
 reality has moved past it. For current behaviour use this file plus
-`docs/data-model.md`.
+`docs/data-model.md`. `docs/overview.md` is the narrative counterpart to both:
+the mental model, what each role does, and a tour on seeded demo data — the
+place to point a newcomer, and the place to update when a concept (not a field)
+changes.

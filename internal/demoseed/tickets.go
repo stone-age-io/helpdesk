@@ -2,6 +2,7 @@ package demoseed
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -307,6 +308,12 @@ func (s *seeder) projectFor(customer, ticketType string) string {
 	return pool[s.rng.Intn(len(pool))]
 }
 
+// terminal reports whether a ticket status is one the comment hooks treat as
+// closed to further nudging (see tickets.markAwaitingRequester).
+func terminal(status string) bool {
+	return status == "resolved" || status == "closed"
+}
+
 func (s *seeder) addGeneratedChildren(f *ticketFixture, status string, age int, assignee, requester string) {
 	worked := status != "open"
 
@@ -320,7 +327,19 @@ func (s *seeder) addGeneratedChildren(f *ticketFixture, status string, age int, 
 			c := commentFixture{Author: assignee, Body: s.pick(staffReplies), DayOffset: off}
 			// A public staff reply sometimes asks for something back, which is
 			// what drives the portal's "needs your reply" prompt.
-			if requester != "" && s.rng.Intn(100) < 28 {
+			//
+			// Weighted by status, because an outstanding question only survives
+			// on a live ticket: resolving or closing clears awaiting_requester
+			// (see tickets.syncResolvedAt / markAwaitingRequester), so a request
+			// drawn onto a terminal ticket produces no demo state at all. Half
+			// the seeded tickets are terminal, and at flat odds that swallowed
+			// nearly every request — six of eight customers opened the portal to
+			// a "needs your reply" tile reading zero.
+			askOdds := 15
+			if !terminal(status) {
+				askOdds = 60
+			}
+			if requester != "" && s.rng.Intn(100) < askOdds {
 				c.RequestsReply = true
 			}
 			f.Comments = append(f.Comments, c)
@@ -332,7 +351,19 @@ func (s *seeder) addGeneratedChildren(f *ticketFixture, status string, age int, 
 			})
 		}
 	}
-	if requester != "" && worked && s.rng.Intn(100) < 45 {
+	// An ACTIVE ticket where staff asked a question and the customer has already
+	// answered is a ticket staff should have moved on by now. So on those the
+	// answer is withheld and the ball stays in the customer's court — otherwise
+	// the closing reply clears awaiting_requester and the state never shows.
+	pendingRequest := false
+	if !terminal(status) {
+		for _, c := range f.Comments {
+			if c.RequestsReply {
+				pendingRequest = true
+			}
+		}
+	}
+	if requester != "" && worked && !pendingRequest && s.rng.Intn(100) < 45 {
 		off := age + 2
 		if off > 0 {
 			off = 0
@@ -371,19 +402,40 @@ func (s *seeder) addGeneratedChildren(f *ticketFixture, status string, age int, 
 
 	// Labor. Reports split billable from written-off, so seed some of each.
 	if worked && assignee != "" {
+		// Whoever actually went on site, if anyone did. Hours attributed to a
+		// visit are logged by the technician who attended, not the desk agent
+		// who owns the ticket — that is what makes the reports' "Field" column
+		// and a technician's on-site utilization mean anything. Without this the
+		// visit link was never set on any seeded entry and Field read "—" for
+		// every technician in the demo.
+		fieldTech := ""
+		for _, v := range f.Visits {
+			if v.Status == "completed" && v.Assignee != "" {
+				fieldTech = v.Assignee
+				break
+			}
+		}
+
 		n := 1 + s.rng.Intn(3)
 		for i := 0; i < n; i++ {
 			d := age + s.rng.Intn(maxInt(1, -age+1))
 			if d > 0 {
 				d = 0
 			}
-			f.Time = append(f.Time, timeFixture{
+			entry := timeFixture{
 				Staff:       assignee,
 				Minutes:     (1 + s.rng.Intn(12)) * 15,
 				WorkDays:    d,
 				Note:        s.pick(workNotes),
 				NonBillable: s.rng.Intn(100) < 16,
-			})
+			}
+			// Most of the labor on a ticket that saw a completed visit is the
+			// on-site work itself; the rest is desk time around it.
+			if fieldTech != "" && s.rng.Intn(100) < 70 {
+				entry.Staff = fieldTech
+				entry.OnVisit = true
+			}
+			f.Time = append(f.Time, entry)
 		}
 	}
 }
@@ -514,7 +566,22 @@ func (s *seeder) writeTicket(t ticketFixture) error {
 }
 
 func (s *seeder) writeComments(ticket *core.Record, t ticketFixture) error {
-	for _, c := range t.Comments {
+	// Chronological order, not array order. The generator appends a staff reply
+	// first and the requester's answer second, but their DayOffsets are drawn
+	// independently — the "answer" is frequently the earlier of the two. Saving
+	// in array order therefore ran the comment hooks out of sequence: a reply
+	// that predates the request still cleared awaiting_requester, so the portal's
+	// "needs your reply" state came out near-empty on a seeded demo and
+	// contradicted the timeline shown right beside it.
+	//
+	// Sorting here rather than at generation time on purpose: generation must
+	// spend all of its randomness before any writing (see seed.go), and this
+	// consumes none. Stable, so same-day comments keep the order they were
+	// written in and the run stays reproducible.
+	ordered := append([]commentFixture(nil), t.Comments...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].DayOffset < ordered[j].DayOffset })
+
+	for _, c := range ordered {
 		existing, _ := s.app.FindFirstRecordByFilter("ticket_comments",
 			"ticket = {:t} && body = {:b}", dbx.Params{"t": ticket.Id, "b": c.Body})
 		if existing != nil {
@@ -604,6 +671,13 @@ func (s *seeder) writeTime(ticket *core.Record, t ticketFixture) error {
 		rec.Set("work_date", s.dateOnly(e.WorkDays))
 		rec.Set("note", e.Note)
 		rec.Set("non_billable", e.NonBillable)
+		// writeVisits ran first, so the completed visit exists by now.
+		if e.OnVisit {
+			if v, _ := s.app.FindFirstRecordByFilter("visits",
+				"ticket = {:t} && status = 'completed'", dbx.Params{"t": ticket.Id}); v != nil {
+				rec.Set("visit", v.Id)
+			}
+		}
 		notifications.Suppress(rec)
 		if err := s.app.Save(rec); err != nil {
 			return fmt.Errorf("time on %s: %w", t.Key, err)

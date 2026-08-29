@@ -27,7 +27,7 @@ import ReportTable, { type ReportColumn } from '@/components/ReportTable.vue'
 //
 // A shared "group by" dropdown would be the other obvious control here, and it
 // is the wrong one: these tables do not share a column set (staff has Field and
-// Visits, location has Tickets and Installs, category has Total and Open), so
+// Visits, location has Tickets and Planned, category has Total and Open), so
 // one selector would force flattening away distinctions that are the point.
 //
 // Ticket rollups count tickets *created* in the range. Resolution-time and

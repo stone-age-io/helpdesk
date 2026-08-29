@@ -18,6 +18,10 @@ subject-based provenance, and the helpdesk's durable JetStream consumer
 turns them into tickets. Humans use the portal, staff app, or the
 authenticated webhook.
 
+**New here?** [docs/overview.md](docs/overview.md) is the map — the handful of
+ideas the app is built on, what each role actually does day to day, and a
+five-minute tour on seeded demo data. The rest of `docs/` is reference.
+
 ## Features
 
 - **Two identity classes**: `staff` (cross-customer; `agent` / `admin` /
@@ -166,7 +170,7 @@ internal/
   webui/             //go:embed all:public (committed SPA dist)
   testutil/          real-PB-against-t.TempDir() harness + HTTP rule harness
 ui/                  Vue 3 + Vite + Pinia + Tailwind + daisyUI SPA (also a PWA)
-docs/                data model, wire protocol, notifications, email intake,
+docs/                overview guide, data model, wire protocol, notifications,
                      config, and the (historical) implementation plans
 ```
 

@@ -416,6 +416,10 @@ type timeFixture struct {
 	Minutes     int
 	WorkDays    int
 	NonBillable bool
+	// Attribute this labor to the ticket's completed visit. A flag rather than
+	// an id because visits do not exist yet at generation time — writeTime
+	// resolves it after writeVisits has run.
+	OnVisit bool
 }
 
 type ticketFixture struct {
