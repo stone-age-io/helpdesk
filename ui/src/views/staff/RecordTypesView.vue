@@ -45,19 +45,28 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 const search = ref('')
+// Types are customer-scoped, so this roster shows every customer's "Door
+// Controller" side by side. Unlike the Locations/Things rosters — where the
+// duplication is noise to be collapsed (see RosterFilters.vue) — here each row
+// IS the record you came to edit, so the fix is narrowing to one customer, not
+// merging them by name.
+const customerFilter = ref('')
 
 // Client-side filter — the list is loaded whole (getFullList, no pager). A type
 // taxonomy is small by nature; if it ever isn't, follow TicketQueueView's
 // server-side getList + buildFilter rather than growing this.
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return types.value
-  return types.value.filter((t) =>
-    (t.name || '').toLowerCase().includes(q) ||
-    (t.code || '').toLowerCase().includes(q) ||
-    (t.description || '').toLowerCase().includes(q) ||
-    ((t.expand?.customer as Customer | undefined)?.name || '').toLowerCase().includes(q),
-  )
+  return types.value.filter((t) => {
+    if (customerFilter.value && t.customer !== customerFilter.value) return false
+    if (!q) return true
+    return (
+      (t.name || '').toLowerCase().includes(q) ||
+      (t.code || '').toLowerCase().includes(q) ||
+      (t.description || '').toLowerCase().includes(q) ||
+      ((t.expand?.customer as Customer | undefined)?.name || '').toLowerCase().includes(q)
+    )
+  })
 })
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
@@ -345,12 +354,17 @@ onMounted(() => {
       </div>
     </div>
 
-    <input
-      v-model="search"
-      type="search"
-      placeholder="Filter by name, code, or customer…"
-      class="input input-bordered input-sm w-full sm:w-72"
-    />
+    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+      <input
+        v-model="search"
+        type="search"
+        placeholder="Filter by name, code, or customer…"
+        class="input input-bordered input-sm w-full sm:w-72"
+      />
+      <div class="w-full sm:w-52">
+        <SearchSelect v-model="customerFilter" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
+      </div>
+    </div>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
@@ -373,7 +387,7 @@ onMounted(() => {
         <button class="btn btn-ghost btn-xs text-error" @click="remove(item)">Delete</button>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No {{ noun.toLowerCase() }} types{{ search ? ' match.' : ' yet.' }}</span>
+        <span class="text-base-content/60">No {{ noun.toLowerCase() }} types{{ search || customerFilter ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

@@ -25,6 +25,7 @@ import (
 // beside notifications.RegisterRoutes and inbound.Register.
 func RegisterRoutes(e *core.ServeEvent) {
 	e.Router.GET("/api/helpdesk/tickets/{id}/time-total", handleTimeTotal)
+	registerSummaryRoute(e)
 }
 
 func handleTimeTotal(re *core.RequestEvent) error {

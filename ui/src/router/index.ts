@@ -68,6 +68,7 @@ const router = createRouter({
         { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
         { path: 'visits', name: 'portal-visits', component: () => import('@/views/portal/PortalVisitsView.vue') },
         { path: 'sites', name: 'portal-sites', component: () => import('@/views/portal/PortalSitesView.vue') },
+        { path: 'reports', name: 'portal-reports', component: () => import('@/views/portal/PortalReportsView.vue') },
         { path: 'projects', name: 'portal-projects', component: () => import('@/views/portal/PortalProjectsView.vue') },
         { path: 'projects/:id', name: 'portal-project-detail', component: () => import('@/views/portal/PortalProjectDetailView.vue') },
       ],

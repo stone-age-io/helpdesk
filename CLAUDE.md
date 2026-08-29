@@ -270,7 +270,12 @@ from production code paths; mail is held back by `notifications.Suppress`.
 `time_entries` row (minutes + `work_date` + optional `visit` tag) — the ticket
 is the canonical ledger, and `GET /tickets/{id}/time-total` exposes only the
 sum, gated per-customer by `show_time_to_requester` (staff get the full total;
-a requester gets the **billable-only** sum). Agents either log minutes
+a requester gets the **billable-only** sum). `GET /reports/time-by-ticket` is
+its batch companion (`ResolveTimeScope`, same policy, same redaction) returning
+`{enabled, minutes: {ticketId: N}}` for a work_date window — it exposes nothing
+`time-total` doesn't, just without the round trips, and answers
+`enabled: false` rather than 403 for an opted-out requester so the portal hides
+its hours section instead of showing a misleading zero. Agents either log minutes
 by hand or run a **start/stop timer**: one open `time_sessions` row per agent
 (unique index on `staff`; `started_at` server-stamped by the create hook),
 resolved into a normal `time_entries` row by `POST
@@ -397,6 +402,27 @@ categories, notifications).
 `/t/:id` forwards to the right detail view by role (bounces through login
 with a `redirect` query).
 
+`RosterFilters.vue` is the search + customer + type row shared by the Locations
+and Things rosters, and it settles a question worth not re-opening: type filters
+key on the type **name**, not its id. `thing_types`/`location_types` are
+customer-scoped, so eight customers each own a "Door Controller" row; filtering
+by id would need the customer picked first — a control dead until you touch
+another one — and would then answer only "this customer's". Name-keying dedupes
+the options instead, so picking "Door Controller" means every door controller,
+which is the cross-customer question a roster filter is actually asked (types
+with a shared `code` are the same upstream concept by design). The customer
+picker still narrows the type list, because the options derive from the rows in
+scope rather than the full taxonomy — a dependent *list*, not a dependent gate —
+and a narrowing that orphans the selected type clears it. `RecordTypesView`
+deliberately does NOT merge by name: there each row *is* the record you came to
+edit, so it takes a plain customer filter.
+
+Staff **Reports** scope by customer / location / thing and roll every
+ticket-hung axis through one `byTicketAxis` grouper — location (volume-first),
+thing and thing type (hours-first, since "which devices burn the most time" is
+why things stopped being free text). The unattributed "—" bucket always sorts
+last however big it is; it is usually the largest row and it is not an answer.
+
 The **portal** reads the site/device axes as well as writing them. Intake offers
 a picker per axis (customer-scoped by the collection rules, so no client filter
 is needed or trustworthy), with devices at the chosen site sorted to the top but
@@ -408,7 +434,11 @@ free-text inputs it was before. `/portal/tickets` gains matching `location` /
 `thing` filters seeded from the query string, so the ticket detail's site and
 device link into a filtered history (deliberately including *retired* devices —
 you can't file against decommissioned gear, but reading its history is the point
-of keeping the row). `/portal/sites` exists for the one question the ticket list
+of keeping the row). `/portal/reports` is the customer-facing Service Summary: tickets, visits and
+site/device/category rollups over a range, all from collections the requester
+can already read, plus a billable-hours column that appears only when their
+customer opted in. It never names a technician, same as the portal visit and
+project views. `/portal/sites` exists for the one question the ticket list
 can't answer — who is coming to this site, and when; everything else on it is a
 launcher into those filters, which is why there's no per-site detail view. It
 never shows a technician, matching the roster-hiding in the portal visit and

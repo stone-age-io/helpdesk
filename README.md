@@ -29,13 +29,16 @@ authenticated webhook.
   category/site/device filters, saved views, bulk assign/status, and CSV export;
   a Dispatch board and a mobile-first field-work view; a directory of customers,
   locations, things and projects; a reports view (time & visits by
-  tech/customer, billable vs. written-off, ticket volume by category and
-  source); and admin for requesters, staff, categories, record types, and
-  notification templates.
+  tech/customer/site/device/device-type, billable vs. written-off, ticket
+  volume by category and source, scopeable to one customer, site or device);
+  and admin for requesters, staff, categories, record types, and notification
+  templates.
 - **Requester portal**: a company dashboard, a searchable list of their own
   tickets, threaded ticket detail with attachments, a new-ticket form that can
-  name the site and device, filters and a Sites page over those two axes, plus
-  read-only visit and project views. The MSP roster is never shown.
+  name the site and device, filters and a Sites page over those two axes, a
+  Service Summary report (tickets, visits and — where the customer has opted in
+  — billable hours, by site, device and category), plus read-only visit and
+  project views. The MSP roster is never shown.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee, an
   admin-managed category, a structured site (`location`) and device (`thing`)
   each with a free-text fallback, an optional effort estimate, comment threads

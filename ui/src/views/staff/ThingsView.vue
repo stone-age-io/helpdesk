@@ -8,6 +8,10 @@
 // Any staff can create/edit via the detail view; only delete stays admin-only,
 // matching locations after migration 1813000000.
 //
+// Search / customer / type come from the shared RosterFilters (see that
+// component for why the type filter keys on the type NAME rather than its id);
+// the in-service toggle is this roster's own and rides its slot.
+//
 // SCALING: loaded whole via getFullList like the other Directory rosters, which
 // pages at 500/request under the hood. Things are an order or two more numerous
 // than locations, so this is the roster most likely to outgrow the pattern. When
@@ -18,7 +22,7 @@ import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Location, RecordType, Thing } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
-import SearchSelect from '@/components/SearchSelect.vue'
+import RosterFilters from '@/components/RosterFilters.vue'
 
 const router = useRouter()
 
@@ -42,27 +46,11 @@ const typeFilter = ref('')
 // A mirror accumulates decommissioned gear; in-service is the useful default.
 const statusFilter = ref<'in-service' | 'all' | 'retired'>('in-service')
 
-const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
-
-// `type` is a relation, but the roster's type filter is built from what is
-// actually loaded rather than the full taxonomy — a type nobody uses is noise in
-// a filter, and this needs no second request.
-const typeOptions = computed(() => {
-  const seen = new Map<string, string>()
-  for (const t of things.value) {
-    const type = t.expand?.type as RecordType | undefined
-    if (type) seen.set(type.id, type.name)
-  }
-  return [...seen.entries()]
-    .map(([id, label]) => ({ id, label }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-})
-
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   return things.value.filter((t) => {
     if (customerFilter.value && t.customer !== customerFilter.value) return false
-    if (typeFilter.value && t.type !== typeFilter.value) return false
+    if (typeFilter.value && (t.expand?.type as RecordType | undefined)?.name !== typeFilter.value) return false
     if (statusFilter.value === 'in-service' && t.retired) return false
     if (statusFilter.value === 'retired' && !t.retired) return false
     if (!q) return true
@@ -128,25 +116,20 @@ onMounted(() => {
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-    <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2">
-      <input
-        v-model="search"
-        type="search"
-        placeholder="Filter by name, code, type, location…"
-        class="input input-bordered input-sm w-full sm:w-72"
-      />
-      <div class="w-full sm:w-52">
-        <SearchSelect v-model="customerFilter" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
-      </div>
-      <div class="w-full sm:w-52">
-        <SearchSelect v-model="typeFilter" :options="typeOptions" size="sm" empty-label="All types" placeholder="Type…" />
-      </div>
+    <RosterFilters
+      v-model:search="search"
+      v-model:customer="customerFilter"
+      v-model:type="typeFilter"
+      :items="things"
+      :customers="customers"
+      search-placeholder="Filter by name, code, type, location…"
+    >
       <select v-model="statusFilter" class="select select-bordered select-sm w-full sm:w-40">
         <option value="in-service">In service</option>
         <option value="all">All</option>
         <option value="retired">Retired</option>
       </select>
-    </div>
+    </RosterFilters>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 

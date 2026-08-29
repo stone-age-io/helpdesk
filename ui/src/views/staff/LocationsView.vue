@@ -5,11 +5,15 @@
 // staff can create/edit via the detail view (migration 1813000000); only delete
 // stays admin-only. Rows click through to the detail/edit view; the shared
 // ResponsiveList gives the dense desktop table + stacked mobile cards.
+//
+// Filters come from the shared RosterFilters, same as Things — see that
+// component for why the type filter keys on the type NAME rather than its id.
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import type { Location } from '@/types'
+import type { Customer, Location } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
+import RosterFilters from '@/components/RosterFilters.vue'
 
 const router = useRouter()
 
@@ -24,19 +28,25 @@ const columns: Column<Location>[] = [
 ]
 
 const locations = ref<Location[]>([])
+const customers = ref<Customer[]>([])
 const loading = ref(true)
 const error = ref('')
+
 const search = ref('')
+const customerFilter = ref('')
+const typeFilter = ref('')
 
 // Client-side filter — the roster is loaded whole (getFullList, no pager), so a
 // browser-side match over the visible fields is simplest and instant.
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return locations.value
-  return locations.value.filter((l) =>
-    [l.name, l.code, l.address, l.contact, l.expand?.customer?.name]
-      .some((v) => (v || '').toLowerCase().includes(q)),
-  )
+  return locations.value.filter((l) => {
+    if (customerFilter.value && l.customer !== customerFilter.value) return false
+    if (typeFilter.value && l.expand?.type?.name !== typeFilter.value) return false
+    if (!q) return true
+    return [l.name, l.code, l.address, l.contact, l.expand?.type?.name, l.expand?.customer?.name]
+      .some((v) => (v || '').toLowerCase().includes(q))
+  })
 })
 
 async function load() {
@@ -53,11 +63,25 @@ async function load() {
   }
 }
 
+async function loadCustomers() {
+  try {
+    customers.value = await pb.collection('customers').getFullList<Customer>({
+      sort: 'name',
+      filter: 'active = true',
+    })
+  } catch {
+    // The filter degrades to "all customers"; the list itself still loads.
+  }
+}
+
 function openDetail(loc: Location) {
   router.push(`/staff/locations/${loc.id}`)
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadCustomers()
+})
 </script>
 
 <template>
@@ -74,7 +98,14 @@ onMounted(load)
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-    <input v-model="search" type="search" placeholder="Filter by name, customer, code, address…" class="input input-bordered input-sm w-full sm:w-72" />
+    <RosterFilters
+      v-model:search="search"
+      v-model:customer="customerFilter"
+      v-model:type="typeFilter"
+      :items="locations"
+      :customers="customers"
+      search-placeholder="Filter by name, customer, code, address…"
+    />
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
@@ -87,7 +118,7 @@ onMounted(load)
         </span>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No locations{{ search ? ' match.' : ' yet.' }}</span>
+        <span class="text-base-content/60">No locations{{ search || customerFilter || typeFilter ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

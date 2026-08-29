@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
-import type { Customer, Location, Ticket, TimeEntry, Visit } from '@/types'
+import type { Customer, Location, Thing, Ticket, TimeEntry, Visit } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 
 // Aggregate the data the app already captures — logged time, completed
 // visits, and ticket volume — over a date range, optionally scoped to one
-// customer and/or location. No new storage; just rollups the per-ticket cards
-// never surfaced. Handy for month-end billing, utilization, and spotting what
+// customer, location and/or thing. No new storage; just rollups the per-ticket
+// cards never surfaced. Handy for month-end billing, utilization, and spotting what
 // breaks most. Every rollup is exportable (per-report + Export all), and the
 // underlying time/visit rows export in detail.
 //
@@ -25,6 +25,7 @@ const error = ref('')
 // Filter option lists.
 const customers = ref<Customer[]>([])
 const locations = ref<Location[]>([])
+const things = ref<Thing[]>([])
 
 // Default to the trailing 30 days.
 function isoDate(offsetDays: number): string {
@@ -36,6 +37,7 @@ const from = ref(isoDate(-30))
 const to = ref(isoDate(0))
 const customerFilter = ref('')
 const locationFilter = ref('')
+const thingFilter = ref('')
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 // Location picker narrows to the selected customer's sites when one is chosen.
@@ -45,8 +47,22 @@ const locationOptions = computed(() => {
     : locations.value
   return list.map((l) => ({ id: l.id, label: l.name, sublabel: l.expand?.customer?.name || undefined }))
 })
+// Thing picker narrows the same way, and by site too when one is chosen — a
+// device's location is optional, so unsited gear stays offered rather than
+// vanishing behind a site scope it never claimed.
+const thingOptions = computed(() => {
+  let list = things.value
+  if (customerFilter.value) list = list.filter((t) => t.customer === customerFilter.value)
+  if (locationFilter.value) list = list.filter((t) => !t.location || t.location === locationFilter.value)
+  return list.map((t) => ({
+    id: t.id,
+    label: t.name,
+    sublabel: [t.expand?.type?.name, t.expand?.customer?.name].filter(Boolean).join(' · ') || undefined,
+  }))
+})
 const customerName = computed(() => customers.value.find((c) => c.id === customerFilter.value)?.name || '')
 const locationName = computed(() => locations.value.find((l) => l.id === locationFilter.value)?.name || '')
+const thingName = computed(() => things.value.find((t) => t.id === thingFilter.value)?.name || '')
 
 function pbTime(localDate: string, endOfDay: boolean): string {
   return new Date(`${localDate}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString().replace('T', ' ')
@@ -54,12 +70,13 @@ function pbTime(localDate: string, endOfDay: boolean): string {
 function rangeFilter(field: string): string {
   return `${field} >= '${pbTime(from.value, false)}' && ${field} <= '${pbTime(to.value, true)}'`
 }
-// Customer/location scope. `prefix` is '' for tickets (customer/location live on
+// Customer/location/thing scope. `prefix` is '' for tickets (all three live on
 // the record) and 'ticket.' for time_entries/visits (relation-hop to the ticket).
 function scopeFilter(prefix: string): string {
   const parts: string[] = []
   if (customerFilter.value) parts.push(`${prefix}customer = '${customerFilter.value}'`)
   if (locationFilter.value) parts.push(`${prefix}location = '${locationFilter.value}'`)
+  if (thingFilter.value) parts.push(`${prefix}thing = '${thingFilter.value}'`)
   return parts.join(' && ')
 }
 function and(...clauses: string[]): string {
@@ -74,17 +91,17 @@ async function load() {
       pb.collection('time_entries').getFullList<TimeEntry>({
         filter: and(rangeFilter('work_date'), scopeFilter('ticket.')),
         sort: '-work_date',
-        expand: 'staff,ticket,ticket.customer,ticket.location',
+        expand: 'staff,ticket,ticket.customer,ticket.location,ticket.thing,ticket.thing.type',
       }),
       pb.collection('visits').getFullList<Visit>({
         filter: and(`status = 'completed'`, rangeFilter('completed_at'), scopeFilter('ticket.')),
         sort: '-completed_at',
-        expand: 'assignee,ticket,ticket.customer,ticket.location',
+        expand: 'assignee,ticket,ticket.customer,ticket.location,ticket.thing,ticket.thing.type',
       }),
       pb.collection('tickets').getFullList<Ticket>({
         filter: and(rangeFilter('created'), scopeFilter('')),
         sort: '-created',
-        expand: 'category,location',
+        expand: 'category,location,thing,thing.type',
       }),
     ])
   } catch (err: any) {
@@ -96,9 +113,12 @@ async function load() {
 
 async function loadOptions() {
   try {
-    ;[customers.value, locations.value] = await Promise.all([
+    ;[customers.value, locations.value, things.value] = await Promise.all([
       pb.collection('customers').getFullList<Customer>({ sort: 'name' }),
       pb.collection('locations').getFullList<Location>({ sort: 'name', expand: 'customer' }),
+      // Retired gear included: you can't file new work against it, but reading
+      // what it cost before it was pulled is the point of keeping the row.
+      pb.collection('things').getFullList<Thing>({ sort: 'name', expand: 'customer,type' }),
     ])
   } catch {
     // Filters degrade to date-only; the rollups still load.
@@ -139,10 +159,15 @@ const byCustomer = computed(() =>
   group((_isEntry, rec) => rec.expand?.ticket?.expand?.customer?.name || ''),
 )
 
-// By location — the axis the ticket→location relation unlocks. Time and visits
-// come from work in range; tickets/installs count tickets created in range.
-// The "—" bucket is work with no location set (most reactive tickets).
-interface LocRow {
+// The axes that hang off the ticket — location, thing, thing type — roll up
+// identically: time and visits come from work done in range, tickets/installs
+// from tickets created in range, and the "—" bucket is work where the field was
+// never set (most reactive tickets). One grouper rather than three near-copies;
+// only the label and the sort differ.
+//
+// `keyOf` reads the label off a TICKET record. Entries and visits reach theirs
+// through `expand.ticket`, which is why the callers below are one-liners.
+interface AxisRow {
   label: string
   minutes: number
   billableMinutes: number
@@ -150,26 +175,48 @@ interface LocRow {
   tickets: number
   installs: number
 }
-const byLocation = computed<LocRow[]>(() => {
-  const map = new Map<string, LocRow>()
+function byTicketAxis(keyOf: (t: any) => string, sortBy: 'tickets' | 'minutes'): AxisRow[] {
+  const map = new Map<string, AxisRow>()
   const row = (label: string) => {
     const k = label || '—'
     if (!map.has(k)) map.set(k, { label: k, minutes: 0, billableMinutes: 0, visits: 0, tickets: 0, installs: 0 })
     return map.get(k)!
   }
   for (const e of entries.value) {
-    const r = row(e.expand?.ticket?.expand?.location?.name || '')
+    const r = row(keyOf(e.expand?.ticket))
     r.minutes += e.minutes
     if (!e.non_billable) r.billableMinutes += e.minutes
   }
-  for (const v of doneVisits.value) row(v.expand?.ticket?.expand?.location?.name || '').visits += 1
+  for (const v of doneVisits.value) row(keyOf(v.expand?.ticket)).visits += 1
   for (const t of tickets.value) {
-    const r = row(t.expand?.location?.name || '')
+    const r = row(keyOf(t))
     r.tickets += 1
     if (t.type === 'install') r.installs += 1
   }
-  return [...map.values()].sort((a, b) => b.tickets - a.tickets || b.minutes - a.minutes)
-})
+  // The "—" bucket sinks to the bottom regardless of size. It is usually the
+  // biggest row — most reactive tickets name no device — but "work we didn't
+  // attribute" is not an answer to "which devices cost us the most", and
+  // letting it head the table buries the row you came for.
+  return [...map.values()].sort((a, b) => {
+    if ((a.label === '—') !== (b.label === '—')) return a.label === '—' ? 1 : -1
+    return sortBy === 'minutes'
+      ? b.minutes - a.minutes || b.tickets - a.tickets
+      : b.tickets - a.tickets || b.minutes - a.minutes
+  })
+}
+
+// Where the work happens. Volume-first: a site's ticket count is the headline.
+const byLocation = computed(() => byTicketAxis((t) => t?.expand?.location?.name || '', 'tickets'))
+// What the work is ON — the question free-text `asset` could never answer, and
+// the stated reason things were promoted to a relation. Hours-first: "which
+// devices burn the most time" is the point, not which are mentioned most.
+const byThing = computed(() => byTicketAxis((t) => t?.expand?.thing?.name || '', 'minutes'))
+// The same question one level up the taxonomy: door controllers cost us N hours
+// across every customer. This is what customer-scoped types are FOR — the name
+// is shared even though each customer owns its own type row, so grouping by it
+// aggregates across the whole book of business. (Same reasoning as the roster
+// filters in RosterFilters.vue.)
+const byThingType = computed(() => byTicketAxis((t) => t?.expand?.thing?.expand?.type?.name || '', 'minutes'))
 
 const totalMinutes = computed(() => entries.value.reduce((s, e) => s + e.minutes, 0))
 const totalFieldMinutes = computed(() =>
@@ -269,6 +316,20 @@ const reports = computed<Report[]>(() => [
     rows: () => byLocation.value.map((r) => [r.label === '—' ? '(no location)' : r.label, r.tickets, r.installs, r.minutes, r.billableMinutes, r.visits]),
   },
   {
+    key: 'thing',
+    title: 'By thing',
+    filename: 'by-thing',
+    header: ['thing', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
+    rows: () => byThing.value.map((r) => [r.label === '—' ? '(no thing)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.installs, r.visits]),
+  },
+  {
+    key: 'thingtype',
+    title: 'By thing type',
+    filename: 'by-thing-type',
+    header: ['thing_type', 'minutes', 'billable_minutes', 'tickets', 'installs', 'visits'],
+    rows: () => byThingType.value.map((r) => [r.label === '—' ? '(untyped)' : r.label, r.minutes, r.billableMinutes, r.tickets, r.installs, r.visits]),
+  },
+  {
     key: 'category',
     title: 'Tickets by category',
     filename: 'tickets-by-category',
@@ -297,6 +358,7 @@ function exportAll() {
   const lines: string[] = [`Reports,${from.value} to ${to.value}`]
   if (customerName.value) lines.push(`Customer,${csvEscape(customerName.value)}`)
   if (locationName.value) lines.push(`Location,${csvEscape(locationName.value)}`)
+  if (thingName.value) lines.push(`Thing,${csvEscape(thingName.value)}`)
   lines.push('', 'Totals', 'metric,value',
     `time_minutes,${totalMinutes.value}`,
     `billable_minutes,${totalBillableMinutes.value}`,
@@ -314,7 +376,7 @@ function exportAll() {
 
 // Detail exports: the underlying time and visit rows, not the rollups.
 function exportTime() {
-  const lines = [['work_date', 'staff', 'customer', 'ticket', 'minutes', 'billable', 'on_site', 'note'].join(',')]
+  const lines = [['work_date', 'staff', 'customer', 'ticket', 'site', 'thing', 'minutes', 'billable', 'on_site', 'note'].join(',')]
   for (const e of entries.value) {
     lines.push(
       [
@@ -322,6 +384,8 @@ function exportTime() {
         e.expand?.staff?.name || '',
         e.expand?.ticket?.expand?.customer?.name || '',
         e.expand?.ticket?.number ?? '',
+        e.expand?.ticket?.expand?.location?.name || '',
+        e.expand?.ticket?.expand?.thing?.name || '',
         e.minutes,
         e.non_billable ? 'no' : 'yes',
         e.visit ? 'yes' : '',
@@ -334,7 +398,7 @@ function exportTime() {
   download(`time-detail-${suffix()}.csv`, lines)
 }
 function exportVisits() {
-  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'site', 'directions'].join(',')]
+  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'site', 'thing', 'directions'].join(',')]
   for (const v of doneVisits.value) {
     lines.push(
       [
@@ -343,6 +407,7 @@ function exportVisits() {
         v.expand?.ticket?.expand?.customer?.name || '',
         v.expand?.ticket?.number ?? '',
         v.expand?.ticket?.expand?.location?.name || '',
+        v.expand?.ticket?.expand?.thing?.name || '',
         v.location || '',
       ]
         .map(csvEscape)
@@ -352,14 +417,30 @@ function exportVisits() {
   download(`visits-detail-${suffix()}.csv`, lines)
 }
 
-// Switching to a specific customer drops a location scope it no longer owns
-// (clearing retriggers this watcher, which then loads once).
-watch([from, to, customerFilter, locationFilter], (cur, prev) => {
-  const [, , c] = cur
-  const pc = prev[2]
-  const l = locationFilter.value
-  if (c !== pc && c && l && !locations.value.some((loc) => loc.id === l && loc.customer === c)) {
-    locationFilter.value = ''
+// Narrowing the scope drops any finer selection it no longer owns: switching
+// customer can orphan both the location and the thing, and switching location
+// can orphan a sited thing. Clearing retriggers this watcher, which then loads
+// once — so each branch returns rather than falling through to load().
+watch([from, to, customerFilter, locationFilter, thingFilter], (cur, prev) => {
+  const [, , c, l] = cur
+  const [, , pc, pl] = prev
+  const thing = thingFilter.value
+    ? things.value.find((t) => t.id === thingFilter.value)
+    : undefined
+  if (c !== pc && c) {
+    if (l && !locations.value.some((loc) => loc.id === l && loc.customer === c)) {
+      locationFilter.value = ''
+      return
+    }
+    if (thing && thing.customer !== c) {
+      thingFilter.value = ''
+      return
+    }
+  }
+  // A thing with no location is filed under no site, so a site scope never
+  // orphans it — matching thingOptions.
+  if (l !== pl && l && thing?.location && thing.location !== l) {
+    thingFilter.value = ''
     return
   }
   load()
@@ -385,7 +466,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Filters: date range + customer/location scope (applies to every rollup). -->
+    <!-- Filters: date range + customer/location/thing scope (applies to every rollup). -->
     <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
       <div class="form-control w-full sm:w-auto">
         <label class="label py-1"><span class="label-text text-xs">From</span></label>
@@ -402,6 +483,10 @@ onMounted(() => {
       <div class="form-control w-full sm:w-52">
         <label class="label py-1"><span class="label-text text-xs">Location</span></label>
         <SearchSelect v-model="locationFilter" :options="locationOptions" size="sm" empty-label="All locations" placeholder="Any location…" />
+      </div>
+      <div class="form-control w-full sm:w-52">
+        <label class="label py-1"><span class="label-text text-xs">Thing</span></label>
+        <SearchSelect v-model="thingFilter" :options="thingOptions" size="sm" empty-label="All things" placeholder="Any thing…" />
       </div>
     </div>
 
@@ -507,6 +592,62 @@ onMounted(() => {
                 <tr v-if="byLocation.length === 0"><td colspan="6" class="text-base-content/50">No activity in range.</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- The device axis. Sorted by time, not count: these two answer "what is
+           costing us hours", which is why things stopped being free text. -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body p-4 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">By thing</h2>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('thing')">CSV</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Thing</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Tickets</th><th class="text-right">Visits</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in byThing" :key="r.label">
+                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'No thing' : r.label }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
+                  </tr>
+                  <tr v-if="byThing.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body p-4 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">By thing type</h2>
+              <button class="btn btn-ghost btn-xs" @click="exportOne('thingtype')">CSV</button>
+            </div>
+            <p class="text-xs text-base-content/50">
+              Grouped by type <em>name</em>, so a class of device aggregates across every
+              customer that owns one.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead><tr><th>Type</th><th class="text-right">Time</th><th class="text-right">Billable</th><th class="text-right">Tickets</th><th class="text-right">Installs</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in byThingType" :key="r.label">
+                    <td :class="{ 'text-base-content/50': r.label === '—' }">{{ r.label === '—' ? 'Untyped' : r.label }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ fmtHours(r.billableMinutes) }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
+                    <td class="text-right font-mono tabular-nums">{{ r.installs || '—' }}</td>
+                  </tr>
+                  <tr v-if="byThingType.length === 0"><td colspan="5" class="text-base-content/50">No activity in range.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

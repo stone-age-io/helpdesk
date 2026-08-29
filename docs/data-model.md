@@ -76,6 +76,18 @@ excluded), so what the customer sees matches what they'd be invoiced. Off by
 default because exposing hours is an MSP billing-model choice and hard to walk
 back.
 
+The same flag gates `GET /api/helpdesk/reports/time-by-ticket?from=&to=`, the
+batch companion that backs the portal's Service Summary. It returns
+`{enabled, minutes: {ticketId: N}}` under identical policy (`ResolveTimeScope`),
+so it exposes nothing a caller couldn't already get by hitting `time-total`
+once per ticket — it just saves the round trips. An opted-out requester gets
+`enabled: false` and an empty map rather than a 403: the honest answer is "no
+hours for you", and the portal hides its hours section instead of rendering a
+misleading zero. Customer scope is a relation hop to the ticket, since
+`time_entries` carries no customer of its own. Keyed by ticket id rather than
+pre-grouped, so the grouping logic lives in the one place that has the tickets
+expanded — the page — and this route never grows a second copy of it.
+
 ### `tickets` — the unit of work
 
 `number` (unique int, assigned by the create hook), `customer` (required),

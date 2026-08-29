@@ -24,6 +24,7 @@ const sections: NavSection[] = [
       { label: 'Visits', icon: '📅', path: '/portal/visits' },
       { label: 'Sites', icon: '📍', path: '/portal/sites' },
       { label: 'Projects', icon: '📁', path: '/portal/projects' },
+      { label: 'Summary', icon: '📈', path: '/portal/reports' },
       { label: 'New Ticket', icon: '➕', path: '/portal/tickets/new' },
     ],
   },
