@@ -101,7 +101,7 @@ func setupHarness(t *testing.T) *harness {
 	staffCol, _ := app.FindCollectionByNameOrId("staff")
 	h.agent = core.NewRecord(staffCol)
 	h.agent.Set("name", "Sam Staff")
-	h.agent.Set("email", "sam@816tech.example")
+	h.agent.Set("email", "sam@msp.example")
 	h.agent.Set("role", "agent")
 	h.agent.Set("active", true)
 	h.agent.SetPassword("test-password-123")
@@ -186,7 +186,7 @@ func TestTicketCreatedNotifiesRequesterAndStaff(t *testing.T) {
 	h := setupHarness(t)
 	h.createTicket(t, map[string]any{"requester": h.requester.Id})
 	got := h.drain(t)
-	for _, want := range []string{"rita@acme.example", "sam@816tech.example", "admin@helpdesk.local"} {
+	for _, want := range []string{"rita@acme.example", "sam@msp.example", "admin@helpdesk.local"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("ticket.created missing %s (got %v)", want, got)
 		}
@@ -216,7 +216,7 @@ func TestMachineTicketWithoutRequesterStillNotifiesStaff(t *testing.T) {
 	if slices.Contains(got, "rita@acme.example") {
 		t.Errorf("requester mailed on machine ticket: %v", got)
 	}
-	if !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("staff not mailed on machine ticket: %v", got)
 	}
 }
@@ -315,7 +315,7 @@ func TestAssignmentNotifiesAssignee(t *testing.T) {
 		t.Fatalf("assign: %v", err)
 	}
 	got := h.drain(t)
-	if !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("assignment did not mail assignee: %v", got)
 	}
 	if slices.Contains(got, "admin@helpdesk.local") {
@@ -333,7 +333,7 @@ func TestStaffCommentNotifiesRequesterOnly(t *testing.T) {
 	if !slices.Contains(got, "rita@acme.example") {
 		t.Errorf("staff comment did not mail requester: %v", got)
 	}
-	if slices.Contains(got, "sam@816tech.example") {
+	if slices.Contains(got, "sam@msp.example") {
 		t.Errorf("staff comment mailed the assignee side: %v", got)
 	}
 }
@@ -345,7 +345,7 @@ func TestRequesterCommentNotifiesAssigneeOnly(t *testing.T) {
 
 	h.createComment(t, ticket, map[string]any{"author_user": h.requester.Id})
 	got := h.drain(t)
-	if !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("requester comment did not mail assignee: %v", got)
 	}
 	if slices.Contains(got, "rita@acme.example") {
@@ -382,7 +382,7 @@ func TestVisitScheduledNotifiesRequesterAndTechnician(t *testing.T) {
 	if !slices.Contains(got, "rita@acme.example") {
 		t.Errorf("visit did not mail requester: %v", got)
 	}
-	if !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("visit did not mail technician: %v", got)
 	}
 }
@@ -413,7 +413,7 @@ func TestRequestedToScheduledSendsVisitScheduled(t *testing.T) {
 	if !slices.Contains(got, "rita@acme.example") {
 		t.Errorf("scheduling did not mail requester: %v", got)
 	}
-	if !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("scheduling did not mail technician: %v", got)
 	}
 	assertSendLog(t, h, notifications.EventTypeVisitScheduled)
@@ -430,7 +430,7 @@ func TestRescheduleSendsVisitRescheduled(t *testing.T) {
 
 	h.updateVisit(t, visit.Id, map[string]any{"scheduled_at": "2026-07-16 09:00:00.000Z"})
 	got := h.drain(t)
-	if !slices.Contains(got, "rita@acme.example") || !slices.Contains(got, "sam@816tech.example") {
+	if !slices.Contains(got, "rita@acme.example") || !slices.Contains(got, "sam@msp.example") {
 		t.Errorf("reschedule did not mail both sides: %v", got)
 	}
 	assertSendLog(t, h, notifications.EventTypeVisitRescheduled)

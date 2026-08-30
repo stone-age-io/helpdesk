@@ -48,7 +48,7 @@ func fieldServiceGraph(t *testing.T, app core.App) (ticket, tech, visit *core.Re
 	t.Helper()
 	customer := seed(t, app, "customers", map[string]any{"name": "Acme", "active": true})
 	tech = seed(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam Staff", "role": "agent", "active": true,
 	})
 	ticket = seed(t, app, "tickets", map[string]any{

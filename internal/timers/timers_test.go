@@ -46,7 +46,7 @@ func setup(t *testing.T) (*pocketbase.PocketBase, *fixtures) {
 
 	customer := seedRecord(t, app, "customers", map[string]any{"name": "Acme", "active": true})
 	staff := seedRecord(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam", "role": "agent", "active": true,
 	})
 	// tickets.Register isn't loaded here; set number manually for the unique index.
@@ -185,11 +185,11 @@ func TestStopCompletesVisit(t *testing.T) {
 func TestOwnerOrAdmin(t *testing.T) {
 	app, f := setup(t)
 	other := seedRecord(t, app, "staff", map[string]any{
-		"email": "amy@816tech.example", "password": "secret123456",
+		"email": "amy@msp.example", "password": "secret123456",
 		"name": "Amy", "role": "agent", "active": true,
 	})
 	admin := seedRecord(t, app, "staff", map[string]any{
-		"email": "boss@816tech.example", "password": "secret123456",
+		"email": "boss@msp.example", "password": "secret123456",
 		"name": "Boss", "role": "admin", "active": true,
 	})
 	requester := seedRecord(t, app, "users", map[string]any{

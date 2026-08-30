@@ -43,10 +43,10 @@ CloudMailin adapter is a drop-in later (see [Swapping providers](#swapping-provi
 
 ```
                          (customers keep emailing the pretty address)
-  requester  ──►  support@816tech.io
+  requester  ──►  support@example.com
                         │  Google Workspace auto-forward
                         ▼
-                 MX: in.816tech.io  ──►  Postmark (receive + parse MIME)
+                 MX: in.example.com  ──►  Postmark (receive + parse MIME)
                         │  HTTPS POST (clean JSON)
                         ▼
    POST /api/helpdesk/inbound/email/{provider}      ← thin adapter (auth + map)
@@ -253,7 +253,7 @@ setting — the superuser UI configures only the **From / sender address**
 (`settings.Meta.SenderAddress`, [`notifier.go`](../internal/notifications/notifier.go))
 and SMTP. So threading is achieved purely by operator config:
 
-- Set the **PocketBase sender address to the intake mailbox** (`support@816tech.io`,
+- Set the **PocketBase sender address to the intake mailbox** (`support@example.com`,
   the one forwarded to Postmark). Replies then return to it by default — no `Reply-To`
   header needed — and the `[#N]` already in every subject threads them.
 
@@ -277,7 +277,7 @@ New block, viper defaults + `HELPDESK_*` overrides, mirroring `NATSConfig`:
 inbound:
   secret: "<webhook basic-auth password>"   # empty ⇒ email ingestion disabled
   allowed_ips: []                            # optional provider egress allowlist
-  # reply_to: "support@816tech.io"           # optional escape hatch; unset ⇒ sender address is the intake mailbox
+  # reply_to: "support@example.com"          # optional escape hatch; unset ⇒ sender address is the intake mailbox
 ```
 
 `InboundConfig.Enabled()` = `secret != ""`. Disabled is valid — the app serves
@@ -309,10 +309,10 @@ Follows repo convention (`testutil.SetupApp(t)`, real PB against `t.TempDir()`):
 
 ## Operator setup (one-time, out-of-band)
 
-1. Add an inbound subdomain (`in.816tech.io`) and point its **MX** at Postmark.
+1. Add an inbound subdomain (`in.example.com`) and point its **MX** at Postmark.
 2. Create a Postmark inbound stream; set its webhook to
-   `https://helpdesk.816tech.io/api/helpdesk/inbound/email/postmark` with Basic auth.
-3. In Google Workspace, auto-forward `support@816tech.io` → the Postmark inbound
+   `https://helpdesk.example.com/api/helpdesk/inbound/email/postmark` with Basic auth.
+3. In Google Workspace, auto-forward `support@example.com` → the Postmark inbound
    address.
 4. Keep SPF/DKIM aligned for the sending domain so outbound (and any provider
    verification) passes.

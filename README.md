@@ -1,10 +1,11 @@
 # Helpdesk
 
 Service-desk application for the [Stone-Age.io](https://stone-age.io)
-ecosystem: 816tech (the platform operator / MSP) runs it to support customer
-organizations. It handles reactive support tickets **and** proactive
-project / installation / field work. One Go binary embedding PocketBase (system
-of record, REST API, auth) and a Vue 3 SPA (staff app + requester portal).
+ecosystem, run by the ecosystem's **operator** — the MSP that operates the
+platform and supports the customer organizations on it. It handles reactive
+support tickets **and** proactive project / installation / field work. One Go
+binary embedding PocketBase (system of record, REST API, auth) and a Vue 3 SPA
+(staff app + requester portal).
 
 The `helpdesk` name is kept as the technical identifier — notably the
 operator-signed `helpdesk.>` NATS contract — even though the product's scope has

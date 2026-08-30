@@ -28,7 +28,7 @@ func TestRequesterReadsOnlyOwnStatusEvents(t *testing.T) {
 		"name": "Gus", "customer": custB.Id, "active": true,
 	})
 	agent := seed(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam", "role": "agent", "active": true,
 	})
 

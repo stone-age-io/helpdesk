@@ -40,7 +40,7 @@ func setup(t *testing.T) (core.App, *fixtures) {
 
 	customer := seedRecord(t, app, "customers", map[string]any{"name": "Acme", "active": true})
 	tech := seedRecord(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam Staff", "role": "agent", "active": true,
 	})
 	// tickets.Register isn't loaded here; set number manually to satisfy

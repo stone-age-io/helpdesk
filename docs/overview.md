@@ -12,7 +12,9 @@ and [protocol.md](protocol.md) when you need a payload.
 
 ## 1. What this is
 
-`helpdesk` is 816tech's service desk. It does two jobs that most tools separate:
+`helpdesk` is the service desk the Stone-Age.io **operator** runs — the MSP that
+operates the platform and supports the customer organizations on it. It does two
+jobs that most tools separate:
 
 - **Reactive support** — something broke, someone tells you, you fix it.
 - **Proactive field work** — an installation, a rollout, a survey, a
@@ -26,6 +28,38 @@ The name is historical. The scope has grown past a help desk, but `helpdesk`
 stays as the technical identifier — most visibly the `helpdesk.>` NATS subject
 contract, which is signed by the platform operator and can't be renamed on a
 whim.
+
+### Where it sits in Stone-Age.io
+
+It is a **sibling app, not a platform feature** — its own binary, its own
+database, its own logins, running beside kiosk and access-control and borrowing
+their conventions. Four things follow from that, and they explain most of the
+design decisions you'll meet later:
+
+**The tenant is different.** On the platform, a tenant is a customer
+organization. Here the tenant is the operator: one install per MSP, with
+customers as records inside it. Those axes don't nest, which is the reason this
+isn't a module bolted onto the platform.
+
+**It holds no control-plane credentials, ever.** Staff here raise tickets and
+log hours; they cannot reach into the platform. The only platform credential the
+app carries is a NATS user scoped to `helpdesk.>` — enough to receive machine
+tickets and publish its own events, and nothing else.
+
+**It joins the platform by `code`, it does not sync.** Sites and devices are a
+local catalogue that lines up with the platform's by a shared `code`, curated
+here and bulk-loaded from an operator-run export. There is no live feed and
+there cannot be one: the platform publishes no event stream for them, and the
+alternatives all require credentials this app must never hold. The catalogue is
+also deliberately a **superset** — an MSP services gear the platform never
+onboarded, so `code` is optional.
+
+**Provenance arrives on the subject, not in the payload.** A device publishes on
+`helpdesk.>` inside its own organization's NATS account. The platform's
+managed-org export rewrites that subject to carry the org id, and the rewrite is
+signed by the operator's import — so the helpdesk reads the organization from
+the subject and ignores any org id in the message body. That's what makes a
+self-reported ticket trustworthy.
 
 ---
 
@@ -173,6 +207,10 @@ Order matters, because each step is the previous one's vocabulary:
 5. **Notification templates** — check who gets what before real mail goes out.
 6. **Intake**, if wanted: reveal a customer's webhook token, map their platform
    org id, or set their email domain.
+7. **Branding**, if wanted: point `branding.dir` at a directory holding a logo,
+   a theme, and an app name, and the install wears the operator's identity
+   without a rebuild. Nothing in the app hardcodes an operator — that's the
+   point, and it's why nothing in these docs names one either.
 
 Also per customer: `show_time_to_requester` decides whether their portal shows
 hours. Off by default — exposing hours is a billing-model choice and awkward to
@@ -198,9 +236,9 @@ Every demo login uses the password `demo12345`:
 
 | Who | Login | See |
 |---|---|---|
-| Admin | `maya@816tech.example` | everything, including admin screens |
-| Agent | `diego@816tech.example` | the desk: queue, dispatch, reports |
-| Field tech | `sam@816tech.example` | the mobile visit shell |
+| Admin | `maya@msp.example` | everything, including admin screens |
+| Agent | `diego@msp.example` | the desk: queue, dispatch, reports |
+| Field tech | `sam@msp.example` | the mobile visit shell |
 | Requester | `regina.holt@northwind.example` | the portal (Northwind has hours on) |
 
 A good first lap, as Maya:
@@ -222,10 +260,9 @@ A good first lap, as Maya:
 
 Worth knowing so you don't go looking: no SLA timers or escalation, no knowledge
 base, no canned responses, no CSAT, no ticket merge or split, no calendar sync,
-no money anywhere, and no live sync of sites and devices from the platform. That
-last one is closed, not merely unbuilt — the platform publishes no event stream
-for them, and the only read paths would require control-plane credentials this
-app must never hold. The catalogue is local and joins upstream by `code`.
+no money anywhere, and no live sync of sites and devices from the platform —
+that last one closed rather than merely unbuilt, for the reasons in
+[Where it sits in Stone-Age.io](#where-it-sits-in-stone-ageio).
 
 ---
 

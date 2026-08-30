@@ -1,4 +1,4 @@
-// Command helpdesk is the 816tech service-ticket application: an embedded
+// Command helpdesk is the Stone-Age.io service-ticket application: an embedded
 // PocketBase (system of record + REST API + auth for both identity classes)
 // serving the compiled SPA, driven by PocketBase's CLI (`helpdesk serve`).
 //

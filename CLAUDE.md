@@ -5,8 +5,9 @@ code in this repository.
 
 ## What this is
 
-`helpdesk` is 816tech's (MSP / platform operator) service-desk app for the
-Stone-Age.io ecosystem: reactive support tickets **and** proactive
+`helpdesk` is the service-desk app for the Stone-Age.io ecosystem, run by the
+ecosystem's **operator** — the MSP that operates the platform and supports the
+customer organizations on it. Reactive support tickets **and** proactive
 project / installation / field work. One Go binary (`cmd/helpdesk`) embedding
 PocketBase plus a Vue 3 SPA with two shells: the staff app (`/staff/...`) and
 the requester portal (`/portal/...`). The signature feature is machine-generated

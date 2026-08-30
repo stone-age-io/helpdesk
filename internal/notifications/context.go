@@ -126,7 +126,7 @@ func SampleContext() TicketContext {
 		CustomerID:    "custacme00000001",
 		CustomerOrgID: "org_acme000000001",
 		Requester:     PersonInfo{Name: "Rita Requester", Email: "rita@acme.example"},
-		Assignee:      PersonInfo{Name: "Sam Staff", Email: "sam@816tech.example"},
+		Assignee:      PersonInfo{Name: "Sam Staff", Email: "sam@msp.example"},
 		Comment:       &CommentInfo{AuthorName: "Sam Staff", Body: "Heading out tomorrow with a replacement motor.", ByStaff: true},
 		Visit: &VisitInfo{
 			ScheduledAt:    "2026-07-14 14:00:00.000Z",

@@ -18,7 +18,7 @@ func summaryGraph(t *testing.T, app core.App) (custA string, ticketA, ticketB *c
 	a := seed(t, app, "customers", map[string]any{"name": "Acme", "active": true, "show_time_to_requester": true})
 	b := seed(t, app, "customers", map[string]any{"name": "Globex", "active": true})
 	staffRec := seed(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam", "role": "agent", "active": true,
 	})
 	ticketA = seed(t, app, "tickets", map[string]any{"customer": a.Id, "title": "pump", "number": 1})
@@ -112,7 +112,7 @@ func scopeGraph(t *testing.T, app core.App, showTime bool) (custID string, staff
 	t.Helper()
 	cust := seed(t, app, "customers", map[string]any{"name": "Acme", "active": true, "show_time_to_requester": showTime})
 	staffRec = seed(t, app, "staff", map[string]any{
-		"email": "sam@816tech.example", "password": "secret123456",
+		"email": "sam@msp.example", "password": "secret123456",
 		"name": "Sam", "role": "agent", "active": true,
 	})
 	req = seed(t, app, "users", map[string]any{

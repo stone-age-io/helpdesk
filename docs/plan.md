@@ -27,7 +27,7 @@ For what the app actually does today, start at [`CLAUDE.md`](../CLAUDE.md) and
 
 ## Context
 
-A helpdesk/service-ticket application for the stone-age.io ecosystem: 816tech (the platform operator / MSP) runs it to support customer organizations. The unique capability is **machine-generated tickets**: things/rule-router publish events inside a customer org's NATS account on `helpdesk.>`, and the platform's managed-org export/import (shipped in platform commit `45ca1e3`) delivers them into the operator hub account as `helpdesk.{platformOrgId}.>` with unforgeable subject-based provenance. The helpdesk consumes that stream and turns events into work: tickets, comments, assignment, time entries, site visits, and outbound email.
+A helpdesk/service-ticket application for the stone-age.io ecosystem, run by the platform operator (an MSP) to support the customer organizations on it. The unique capability is **machine-generated tickets**: things/rule-router publish events inside a customer org's NATS account on `helpdesk.>`, and the platform's managed-org export/import (shipped in platform commit `45ca1e3`) delivers them into the operator hub account as `helpdesk.{platformOrgId}.>` with unforgeable subject-based provenance. The helpdesk consumes that stream and turns events into work: tickets, comments, assignment, time entries, site visits, and outbound email.
 
 **Architecture decisions (settled in discussion):**
 - **Separate standalone PocketBase app** (sibling to kiosk/access-control), NOT a platform feature — helpdesk agents must never hold control-plane credentials, and the tenancy axes differ (platform tenant = customer org; helpdesk tenant = the MSP).

@@ -43,16 +43,16 @@ type staffFixture struct {
 }
 
 var staffMembers = []staffFixture{
-	{Key: "maya", Email: "maya@816tech.example", Name: "Maya Alvarez", Role: "admin"},
-	{Key: "diego", Email: "diego@816tech.example", Name: "Diego Santos", Role: "agent"},
-	{Key: "priya", Email: "priya@816tech.example", Name: "Priya Nair", Role: "agent"},
-	{Key: "sam", Email: "sam@816tech.example", Name: "Sam Okafor", Role: "field"},
-	{Key: "tomas", Email: "tomas@816tech.example", Name: "Tomas Brandt", Role: "field"},
-	{Key: "iris", Email: "iris@816tech.example", Name: "Iris Kowalski", Role: "agent"},
-	{Key: "hank", Email: "hank@816tech.example", Name: "Hank Delgado", Role: "field"},
-	{Key: "noor", Email: "noor@816tech.example", Name: "Noor Haddad", Role: "agent"},
-	{Key: "vic", Email: "vic@816tech.example", Name: "Vic Ashford", Role: "field"},
-	{Key: "gwen", Email: "gwen@816tech.example", Name: "Gwen Mbeki", Role: "admin"},
+	{Key: "maya", Email: "maya@msp.example", Name: "Maya Alvarez", Role: "admin"},
+	{Key: "diego", Email: "diego@msp.example", Name: "Diego Santos", Role: "agent"},
+	{Key: "priya", Email: "priya@msp.example", Name: "Priya Nair", Role: "agent"},
+	{Key: "sam", Email: "sam@msp.example", Name: "Sam Okafor", Role: "field"},
+	{Key: "tomas", Email: "tomas@msp.example", Name: "Tomas Brandt", Role: "field"},
+	{Key: "iris", Email: "iris@msp.example", Name: "Iris Kowalski", Role: "agent"},
+	{Key: "hank", Email: "hank@msp.example", Name: "Hank Delgado", Role: "field"},
+	{Key: "noor", Email: "noor@msp.example", Name: "Noor Haddad", Role: "agent"},
+	{Key: "vic", Email: "vic@msp.example", Name: "Vic Ashford", Role: "field"},
+	{Key: "gwen", Email: "gwen@msp.example", Name: "Gwen Mbeki", Role: "admin"},
 }
 
 type requesterFixture struct {
