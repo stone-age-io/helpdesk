@@ -25,6 +25,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { pb } from '@/pb'
 import type { Ticket, Visit } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
+import ReportTable, { type ReportColumn } from '@/components/ReportTable.vue'
+import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
 
 const tickets = ref<Ticket[]>([])
 const doneVisits = ref<Visit[]>([])
@@ -42,8 +44,15 @@ function isoDate(offsetDays: number): string {
   d.setDate(d.getDate() + offsetDays)
   return d.toISOString().slice(0, 10)
 }
-const from = ref(isoDate(-90))
-const to = ref(isoDate(0))
+// The range rides the URL, like every other filtered board in the app. Both
+// ends are ALWAYS written rather than omitted at their default — the same
+// exception staff Reports takes, and for the same reason: "the trailing 90
+// days" means something different the day after you send the link, and this is
+// the one portal page whose whole purpose is being sent to somebody.
+const q = useQueryValue()
+const from = ref(q('from') || isoDate(-90))
+const to = ref(q('to') || isoDate(0))
+useQuerySync({ from, to })
 
 function pbTime(localDate: string, endOfDay: boolean): string {
   return new Date(`${localDate}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString().replace('T', ' ')
@@ -192,6 +201,36 @@ function fmtHours(m: number): string {
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m`
 }
 
+// --- column specs ---
+// Every rollup here renders through the same ReportTable the staff Reports view
+// uses, so the two pages format a count, an hours figure and the unattributed
+// row identically — and this page stops carrying its own copy of the
+// proportional bar, the "—" styling and the numeric alignment. The measure
+// carrying `bar` is the one each rollup is sorted by; pointing it anywhere else
+// would fight the row order rather than reinforce it.
+//
+// The hours column is appended, never blanked: a customer whose account has not
+// opted into seeing time gets a table with one fewer column, not a column of
+// dashes that hints at a figure being withheld.
+const H = { numeric: true, hours: true } as const
+const N = { numeric: true } as const
+function axisColumns(dimension: string): ReportColumn[] {
+  return [
+    { key: 'label', label: dimension },
+    { key: 'tickets', label: 'Tickets', ...N, bar: true },
+    { key: 'open', label: 'Open', ...N },
+    { key: 'visits', label: 'Visits', ...N },
+    ...(hoursEnabled.value ? [{ key: 'minutes', label: 'Billable time', ...H }] : []),
+  ]
+}
+const siteColumns = computed(() => axisColumns('Location'))
+const deviceColumns = computed(() => axisColumns('Thing'))
+const categoryColumns: ReportColumn[] = [
+  { key: 'label', label: 'Category' },
+  { key: 'count', label: 'Tickets', ...N, bar: true },
+  { key: 'open', label: 'Still open', ...N },
+]
+
 // --- CSV ---
 // One file, mirroring the staff "Export all": range header, totals, then a
 // titled section per table. The hours column is omitted entirely when hours are
@@ -299,96 +338,44 @@ onMounted(load)
         </div>
       </div>
 
-      <!-- items-start, not the default stretch: a grid row sizes to its tallest
-           cell, so a short thing table beside a long location one would otherwise
-           be padded out with dead space to match. -->
-      <div v-if="showSites || showDevices" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <div v-if="showSites" class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">By location</h2>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Location</th>
-                    <th class="text-right">Tickets</th>
-                    <th class="text-right">Open</th>
-                    <th class="text-right">Visits</th>
-                    <th v-if="hoursEnabled" class="text-right">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in bySite" :key="r.label">
-                    <td>
-                      <router-link v-if="r.id" :to="`/portal/tickets?location=${r.id}`" class="link link-hover">{{ r.label }}</router-link>
-                      <span v-else class="text-base-content/50">No location</span>
-                    </td>
-                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                    <td v-if="hoursEnabled" class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <!-- Stacked, single column — the one place this deliberately parts company
+           with staff Reports, which tabs its rollups. That view has seven of
+           which six are noise at any moment; this one has three, two of them
+           conditional, and a quarterly summary is read top to bottom and
+           exported whole. Side by side was also where the heights disagreed. -->
+      <div v-if="showSites" class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4 space-y-2">
+          <h2 class="font-semibold text-sm">By location</h2>
+          <ReportTable :columns="siteColumns" :rows="bySite" null-label="No location" empty="Nothing filed in this range.">
+            <template #label="{ row }">
+              <router-link v-if="row.id" :to="`/portal/tickets?location=${row.id}`" class="link link-hover">{{ row.label }}</router-link>
+              <span v-else class="text-base-content/50">No location</span>
+            </template>
+          </ReportTable>
         </div>
+      </div>
 
-        <div v-if="showDevices" class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">By thing</h2>
-            <div class="overflow-x-auto">
-              <table class="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Thing</th>
-                    <th class="text-right">Tickets</th>
-                    <th class="text-right">Open</th>
-                    <th class="text-right">Visits</th>
-                    <th v-if="hoursEnabled" class="text-right">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in byDevice" :key="r.label">
-                    <td>
-                      <router-link v-if="r.id" :to="`/portal/tickets?thing=${r.id}`" class="link link-hover">{{ r.label }}</router-link>
-                      <span v-else class="text-base-content/50">No thing</span>
-                    </td>
-                    <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
-                    <td class="text-right font-mono tabular-nums">{{ r.visits || '—' }}</td>
-                    <td v-if="hoursEnabled" class="text-right font-mono tabular-nums">{{ fmtHours(r.minutes) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <div v-if="showDevices" class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4 space-y-2">
+          <h2 class="font-semibold text-sm">By thing</h2>
+          <ReportTable :columns="deviceColumns" :rows="byDevice" null-label="No thing" empty="Nothing filed in this range.">
+            <template #label="{ row }">
+              <router-link v-if="row.id" :to="`/portal/tickets?thing=${row.id}`" class="link link-hover">{{ row.label }}</router-link>
+              <span v-else class="text-base-content/50">No thing</span>
+            </template>
+          </ReportTable>
         </div>
       </div>
 
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body p-4 space-y-2">
           <h2 class="font-semibold text-sm">By category</h2>
-          <div class="overflow-x-auto">
-            <table class="table table-sm">
-              <thead>
-                <tr><th>Category</th><th class="text-right">Tickets</th><th class="text-right">Still open</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in byCategory" :key="r.label">
-                  <td>
-                    <CategoryBadge v-if="r.label !== 'Uncategorized'" :name="r.label" :color="r.color" />
-                    <span v-else class="text-base-content/50">Uncategorized</span>
-                  </td>
-                  <td class="text-right font-mono tabular-nums">{{ r.count }}</td>
-                  <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
-                </tr>
-                <tr v-if="byCategory.length === 0">
-                  <td colspan="3" class="text-base-content/50">Nothing filed in this range.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <ReportTable :columns="categoryColumns" :rows="byCategory" empty="Nothing filed in this range.">
+            <template #label="{ row }">
+              <CategoryBadge v-if="row.label !== 'Uncategorized'" :name="row.label" :color="row.color" />
+              <span v-else class="text-base-content/50">Uncategorized</span>
+            </template>
+          </ReportTable>
         </div>
       </div>
     </template>

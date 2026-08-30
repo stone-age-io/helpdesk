@@ -60,7 +60,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
       <h1 class="text-2xl font-bold">Dashboard</h1>
       <router-link to="/portal/tickets/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Ticket</router-link>
@@ -72,32 +72,32 @@ onUnmounted(() => {
       <!-- Each tile links to the tickets view pre-filtered to what it counts.
            "Needs reply" is a peer tile alongside the status counts — present but
            no longer a lead banner. -->
-      <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 w-full">
+      <div class="stats stats-vertical sm:stats-horizontal shadow-sm bg-base-100 w-full">
         <router-link to="/portal/tickets?awaiting=1" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Needs reply</div>
-          <div class="stat-value text-warning">{{ needsReply }}</div>
+          <div class="stat-value text-2xl tabular-nums text-warning">{{ needsReply }}</div>
         </router-link>
         <router-link to="/portal/tickets?status=open" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Open</div>
-          <div class="stat-value text-info">{{ counts.open }}</div>
+          <div class="stat-value text-2xl tabular-nums text-info">{{ counts.open }}</div>
         </router-link>
         <router-link to="/portal/tickets?status=in_progress" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">In Progress</div>
-          <div class="stat-value text-primary">{{ counts.in_progress }}</div>
+          <div class="stat-value text-2xl tabular-nums text-primary">{{ counts.in_progress }}</div>
         </router-link>
         <router-link to="/portal/tickets?status=waiting" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Waiting</div>
-          <div class="stat-value text-warning">{{ counts.waiting }}</div>
+          <div class="stat-value text-2xl tabular-nums text-warning">{{ counts.waiting }}</div>
         </router-link>
         <router-link to="/portal/tickets?status=resolved" class="stat hover:bg-base-200 transition-colors">
           <div class="stat-title">Resolved</div>
-          <div class="stat-value text-success">{{ counts.resolved }}</div>
+          <div class="stat-value text-2xl tabular-nums text-success">{{ counts.resolved }}</div>
         </router-link>
       </div>
 
       <div class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title text-base">Recent Tickets</h2>
+        <div class="card-body p-4 space-y-2">
+          <h2 class="font-semibold text-sm">Recent Tickets</h2>
           <div class="divide-y divide-base-200">
             <TicketListRow v-for="t in recent" :key="t.id" :ticket="t" :to="`/portal/tickets/${t.id}`" show-age />
             <p v-if="recent.length === 0" class="py-3 text-sm text-base-content/50">

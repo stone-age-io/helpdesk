@@ -4,6 +4,13 @@
 // 1813000000); delete stays admin. The LocationPicker sets lat/lng, which also
 // power a maps "Navigate" deep link — coordinates preferred, the free-text
 // address as fallback so a location with neither still degrades gracefully.
+//
+// LAYOUT: the record first (Details beside the map — two cards of about equal
+// height), then Metadata full width because its height is whatever the type's
+// schema says, then the two read-only cards as their own pair. Everything below
+// the map used to be stacked in the right-hand column, which meant one column
+// carried four cards against the other's one and the page ran as a single tall
+// stack with dead space beside it.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
@@ -32,6 +39,9 @@ const record = ref<Location | null>(null)
 const customer = ref<Customer | null>(null)
 const customers = ref<Customer[]>([])
 const tickets = ref<Ticket[]>([])
+// Total behind the page of ten, so the card can offer "View all" only when
+// there is actually more to see.
+const ticketTotal = ref(0)
 // The gear installed here. ThingDetailView has answered "every ticket for this
 // thing" since the relation existed; this is the other direction, and it is the
 // one a tech standing on site asks first — scan the door, see what is on it.
@@ -120,6 +130,14 @@ const activeSchema = computed(() => {
   return types.value.find((t) => t.id === form.value.type)?.metadata_schema || null
 })
 
+// A locked record with no metadata hides the card entirely rather than spending
+// one on "No metadata recorded" — most locations never grow a field, and this
+// page is read to find out what is installed here.
+const metadataEmpty = computed(() => {
+  const m = form.value.metadata
+  return !m || Object.keys(m).length === 0
+})
+
 // Prefer coordinates; fall back to the free-text address. Empty when neither
 // is set, which hides the Navigate control.
 const navigateUrl = computed(() => {
@@ -200,12 +218,12 @@ async function load() {
       editing.value = false
       customer.value = (loc.expand?.customer as Customer) || null
       await loadScoped(loc.customer)
-      tickets.value = (
-        await pb.collection('tickets').getList<Ticket>(1, 10, {
-          filter: `location = '${id.value}'`,
-          sort: '-created',
-        })
-      ).items
+      const ticketPage = await pb.collection('tickets').getList<Ticket>(1, 10, {
+        filter: `location = '${id.value}'`,
+        sort: '-created',
+      })
+      tickets.value = ticketPage.items
+      ticketTotal.value = ticketPage.totalItems
       // Retired gear included deliberately, same reasoning as the scanner: you
       // cannot file against it, but "what used to be on this door" is a question
       // a tech asks on site. The row carries its own badge.
@@ -403,86 +421,115 @@ watch(() => route.params.id, load)
         </div>
       </div>
 
-      <!-- Map + coordinates -->
-      <div class="space-y-4">
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body space-y-2">
-            <h2 class="card-title text-base">Location &amp; map</h2>
-            <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" v-model:address="form.address" :disabled="!editing || saving" />
-            <div class="flex gap-2">
-              <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
-              <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
-            </div>
+      <!-- Map + coordinates. Half the width, beside Details, because those two
+           are the record: identity and contact on the left, where it physically
+           is on the right, and they run to about the same height. -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body space-y-2">
+          <h2 class="card-title text-base">Location &amp; map</h2>
+          <LocationPicker v-model:lat="form.lat" v-model:lng="form.lng" v-model:address="form.address" :disabled="!editing || saving" />
+          <div class="flex gap-2">
+            <input v-model.number="form.lat" type="number" step="any" placeholder="Latitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
+            <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- Metadata -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            <h2 class="card-title text-base">Metadata</h2>
-            <p class="text-xs text-base-content/60 mb-2">
-              <template v-if="activeSchema">Fields defined by this location's type.</template>
-              <template v-else>
-                Free-form fields. Give the type a metadata schema to get typed inputs instead.
-              </template>
+    <!-- Metadata. Full width and on its own row: it is part of the record like
+         the two cards above, but its height is set by whatever the type's
+         schema declares, so pinning it into either column made that column the
+         taller one for a reason nothing on the page explains.
+
+         Hidden entirely in read mode when there is nothing in it. A locked
+         record used to spend a whole card saying "No metadata recorded" — true,
+         and not worth the room on a page whose job is to answer what is
+         installed here. Editing always shows it, because that is when you would
+         be adding the first field. -->
+    <div v-if="editing || !metadataEmpty" class="card bg-base-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title text-base">Metadata</h2>
+        <p class="text-xs text-base-content/60 mb-2">
+          <template v-if="activeSchema">Fields defined by this location's type.</template>
+          <template v-else>
+            Free-form fields. Give the type a metadata schema to get typed inputs instead.
+          </template>
+        </p>
+        <MetadataEditor
+          ref="metadataEditor"
+          v-model="form.metadata"
+          :schema="activeSchema"
+          :disabled="!editing || saving"
+        />
+      </div>
+    </div>
+
+    <!-- What is here, and what has happened here. These two used to be stacked
+         under the map in the right-hand column, which left that column carrying
+         four cards against the left's one — the record's own fields ran out
+         after a screen and the rest of the page was a single tall stack with a
+         column of dead space beside it. They are a pair (what is installed /
+         what went wrong), they are read rather than edited, and they belong
+         below the record rather than beside half of it. -->
+    <div v-if="isEdit" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <!-- Things installed here -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="card-title text-base">Things here</h2>
+            <!-- The list is complete (getFullList), so this is a count and not
+                 a "see more" link — a location holds a handful of things, not a
+                 roster's worth. -->
+            <span v-if="things.length" class="text-xs text-base-content/50">{{ things.length }}</span>
+          </div>
+          <div class="divide-y divide-base-200">
+            <router-link
+              v-for="t in things"
+              :key="t.id"
+              :to="`/staff/things/${t.id}`"
+              class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+            >
+              <span class="font-mono text-xs text-base-content/50 w-20 truncate">{{ t.code || '—' }}</span>
+              <span class="flex-1 truncate">{{ t.name }}</span>
+              <span v-if="t.expand?.type?.name" class="badge badge-sm badge-soft hidden sm:inline-flex">
+                {{ t.expand.type.name }}
+              </span>
+              <span v-if="t.retired" class="badge badge-sm badge-soft">Retired</span>
+            </router-link>
+            <p v-if="things.length === 0" class="py-3 text-sm text-base-content/50">
+              No things are filed at this location yet.
             </p>
-            <MetadataEditor
-              ref="metadataEditor"
-              v-model="form.metadata"
-              :schema="activeSchema"
-              :disabled="!editing || saving"
-            />
           </div>
         </div>
+      </div>
 
-        <!-- Devices installed here -->
-        <div v-if="isEdit" class="card bg-base-100 shadow-sm">
-          <div class="card-body">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="card-title text-base">Things here</h2>
-              <!-- The list is complete (getFullList), so this is a count and not
-                   a "see more" link — a location holds a handful of things, not a
-                   roster's worth. -->
-              <span v-if="things.length" class="text-xs text-base-content/50">{{ things.length }}</span>
-            </div>
-            <div class="divide-y divide-base-200">
-              <router-link
-                v-for="t in things"
-                :key="t.id"
-                :to="`/staff/things/${t.id}`"
-                class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
-              >
-                <span class="font-mono text-xs text-base-content/50 w-20 truncate">{{ t.code || '—' }}</span>
-                <span class="flex-1 truncate">{{ t.name }}</span>
-                <span v-if="t.expand?.type?.name" class="badge badge-sm badge-soft hidden sm:inline-flex">
-                  {{ t.expand.type.name }}
-                </span>
-                <span v-if="t.retired" class="badge badge-sm badge-soft">Retired</span>
-              </router-link>
-              <p v-if="things.length === 0" class="py-3 text-sm text-base-content/50">
-                No things are filed at this location yet.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tickets at this site -->
-        <div v-if="isEdit" class="card bg-base-100 shadow-sm">
-          <div class="card-body">
+      <!-- Tickets at this location -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-2">
             <h2 class="card-title text-base">Recent tickets here</h2>
-            <div class="divide-y divide-base-200">
-              <router-link
-                v-for="t in tickets"
-                :key="t.id"
-                :to="`/staff/tickets/${t.id}`"
-                class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
-              >
-                <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
-                <span class="flex-1 truncate">{{ t.title }}</span>
-                <TicketBadges :status="t.status" :priority="t.priority" />
-              </router-link>
-              <p v-if="tickets.length === 0" class="py-3 text-sm text-base-content/50">No tickets at this location yet.</p>
-            </div>
+            <!-- Unlike Things above, this list IS a page of a longer one, so it
+                 gets the "View all →" the thing detail already uses. The queue's
+                 location picker is not gated on the customer filter (only its
+                 thing picker is), so the id alone lands with a live control. -->
+            <router-link
+              v-if="ticketTotal > tickets.length"
+              :to="`/staff/tickets?location=${id}`"
+              class="text-xs link link-hover"
+            >View all {{ ticketTotal }} →</router-link>
+          </div>
+          <div class="divide-y divide-base-200">
+            <router-link
+              v-for="t in tickets"
+              :key="t.id"
+              :to="`/staff/tickets/${t.id}`"
+              class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+            >
+              <span class="font-mono text-xs text-base-content/50 w-10">#{{ t.number }}</span>
+              <span class="flex-1 truncate">{{ t.title }}</span>
+              <TicketBadges :status="t.status" :priority="t.priority" />
+            </router-link>
+            <p v-if="tickets.length === 0" class="py-3 text-sm text-base-content/50">No tickets at this location yet.</p>
           </div>
         </div>
       </div>

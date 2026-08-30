@@ -17,6 +17,9 @@ const aging = ref({ d0_2: 0, d2_7: 0, d7plus: 0 })
 // it, so a number that disagreed with the queue it opened would be worse than
 // no tile at all.
 const dueCounts = ref<Record<string, number>>({})
+// Nothing due at all is the normal state for an install that has not adopted
+// target dates; the card says so rather than spending itself on three zeros.
+const dueTotal = computed(() => Object.values(dueCounts.value).reduce((s, n) => s + n, 0))
 // New-ticket inflow, oldest→newest over the last 8 weeks (created-based).
 const weeks = ref<number[]>([])
 const weekMax = computed(() => Math.max(...weeks.value, 1))
@@ -142,98 +145,133 @@ onUnmounted(() => {
         </router-link>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <!-- Backlog aging: how old is the open work? -->
-        <div class="card bg-base-100 shadow-sm">
+      <!-- Main + rail, the same shape the ticket detail and the new-ticket form
+           already use. These cards used to sit in a two-column grid with the
+           agent's own queue underneath them, which put the one thing on this
+           page you act on below the fold — and left an odd card with a hole
+           beside it, since three does not divide by two. The rail is read once
+           a morning; the main column is read all day. -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <div class="lg:col-span-2 card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">Backlog age</h2>
-            <!-- Links, like the tiles above: these look identical to them, so
-                 leaving them inert made the card promise a click it could not
-                 honour. The queue's `age` buckets use the same created-based
-                 boundaries as the counts here, and its status defaults to
-                 active, so the number and the queue it opens agree. -->
-            <div class="stats stats-horizontal bg-base-100 w-full">
-              <router-link to="/staff/tickets?age=0-2" class="stat px-3 hover:bg-base-200 transition-colors">
-                <div class="stat-title text-xs">0–2 days</div>
-                <div class="stat-value text-2xl tabular-nums text-success">{{ aging.d0_2 }}</div>
-              </router-link>
-              <router-link to="/staff/tickets?age=2-7" class="stat px-3 hover:bg-base-200 transition-colors">
-                <div class="stat-title text-xs">2–7 days</div>
-                <div class="stat-value text-2xl tabular-nums text-warning">{{ aging.d2_7 }}</div>
-              </router-link>
-              <router-link to="/staff/tickets?age=7plus" class="stat px-3 hover:bg-base-200 transition-colors">
-                <div class="stat-title text-xs">Over 7 days</div>
-                <div class="stat-value text-2xl tabular-nums text-error">{{ aging.d7plus }}</div>
-              </router-link>
-            </div>
-            <p class="text-xs text-base-content/50">Active tickets by age since created.</p>
-          </div>
-        </div>
-
-        <!-- Due dates: what did we commit to, and are we late? The mirror of
-             Backlog age — that card looks backwards from creation, this one
-             forwards to the date somebody agreed to. Buckets, counts and the
-             queue these link into all come from @/due, so unlike the age card
-             next door there is no second copy of the boundaries to drift. -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">Due</h2>
-            <div class="stats stats-horizontal bg-base-100 w-full">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="font-semibold text-sm">My Active Tickets</h2>
+              <!-- Every other number on this page is a door into a pre-filtered
+                   queue; this list was the one that wasn't. -->
               <router-link
-                v-for="(b, i) in DUE_BUCKETS"
-                :key="b.value"
-                :to="`/staff/tickets?due=${b.value}`"
-                class="stat px-3 hover:bg-base-200 transition-colors"
-              >
-                <div class="stat-title text-xs">{{ b.tileLabel }}</div>
-                <!-- Overdue is the only one that is bad news; the other two are
-                     just work ahead, so they stay neutral rather than inventing
-                     a severity the date does not carry. -->
-                <div
-                  class="stat-value text-2xl tabular-nums"
-                  :class="i === 0 ? 'text-error' : 'text-base-content'"
-                >
-                  {{ dueCounts[b.value] ?? 0 }}
-                </div>
-              </router-link>
+                v-if="auth.record?.id"
+                :to="`/staff/tickets?assignee=${auth.record.id}`"
+                class="text-xs link link-hover"
+              >View all →</router-link>
             </div>
-            <p class="text-xs text-base-content/50">Active tickets with a target date.</p>
+            <div class="divide-y divide-base-200">
+              <TicketListRow v-for="t in mine" :key="t.id" :ticket="t" :to="`/staff/tickets/${t.id}`" show-customer />
+              <p v-if="mine.length === 0" class="py-3 text-sm text-base-content/50">Nothing assigned to you. Nice.</p>
+            </div>
           </div>
         </div>
 
-        <!-- Inflow: new tickets per week, last 8 weeks. -->
-        <div class="card bg-base-100 shadow-sm">
-          <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">New tickets / week</h2>
-            <!-- The count sits above each bar rather than in a tooltip. Hover is
-                 not a thing on the phone this app is also read on, and a chart
-                 whose only numbers are hover-only has no numbers there at all —
-                 every bar in Reports is likewise a reading aid beside a value,
-                 never the sole carrier of it. The label takes its own row so the
-                 bar scales against the track that is left, not the whole card. -->
-            <div class="flex items-end gap-1 h-28">
-              <div v-for="(n, i) in weeks" :key="i" class="flex-1 h-full flex flex-col items-center gap-1">
-                <span class="text-[10px] leading-none tabular-nums text-base-content/50">{{ n }}</span>
-                <div class="w-full flex-1 min-h-0 flex items-end">
-                  <div
-                    class="w-full bg-primary/70 hover:bg-primary rounded-t transition-all"
-                    :style="{ height: Math.max((n / weekMax) * 100, 3) + '%' }"
-                    aria-hidden="true"
-                  ></div>
+        <!-- Rail. These carry compact label→value rows rather than the nested
+             `stats` blocks they held in the two-column layout: a third-width
+             column has no room for the stat register's padding, and three of
+             them at that scale would push the agent's queue right back off the
+             fold. The tiles row above keeps the Reports register — that is
+             where the shared scale lives — and the colours here are still the
+             TicketBadges palette, so a number reads as the chip it opens. -->
+        <div class="space-y-4">
+          <!-- Backlog aging: how old is the open work? -->
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body p-4 gap-1">
+              <h2 class="font-semibold text-sm mb-1">Backlog age</h2>
+              <!-- Links, like the tiles above: these look identical to them, so
+                   leaving them inert made the card promise a click it could not
+                   honour. The queue's `age` buckets use the same created-based
+                   boundaries as the counts here, and its status defaults to
+                   active, so the number and the queue it opens agree. -->
+              <router-link
+                to="/staff/tickets?age=0-2"
+                class="flex items-baseline justify-between gap-2 -mx-2 px-2 py-1 rounded hover:bg-base-200 transition-colors"
+              >
+                <span class="text-sm text-base-content/70">0–2 days</span>
+                <span class="text-xl font-semibold tabular-nums text-success">{{ aging.d0_2 }}</span>
+              </router-link>
+              <router-link
+                to="/staff/tickets?age=2-7"
+                class="flex items-baseline justify-between gap-2 -mx-2 px-2 py-1 rounded hover:bg-base-200 transition-colors"
+              >
+                <span class="text-sm text-base-content/70">2–7 days</span>
+                <span class="text-xl font-semibold tabular-nums text-warning">{{ aging.d2_7 }}</span>
+              </router-link>
+              <router-link
+                to="/staff/tickets?age=7plus"
+                class="flex items-baseline justify-between gap-2 -mx-2 px-2 py-1 rounded hover:bg-base-200 transition-colors"
+              >
+                <span class="text-sm text-base-content/70">Over 7 days</span>
+                <span class="text-xl font-semibold tabular-nums text-error">{{ aging.d7plus }}</span>
+              </router-link>
+              <p class="text-xs text-base-content/50 mt-1">Active tickets by age since created.</p>
+            </div>
+          </div>
+
+          <!-- Due dates: what did we commit to, and are we late? The mirror of
+               Backlog age — that card looks backwards from creation, this one
+               forwards to the date somebody agreed to. Buckets, counts and the
+               queue these link into all come from @/due, so unlike the age card
+               above there is no second copy of the boundaries to drift. -->
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body p-4 gap-1">
+              <h2 class="font-semibold text-sm mb-1">Due</h2>
+              <!-- An install that sets no target dates would otherwise spend the
+                   card on three zeros in the same register the counts that
+                   matter use. Say what is actually true instead. -->
+              <p v-if="dueTotal === 0" class="text-sm text-base-content/50 py-1">
+                No target dates set on active tickets.
+              </p>
+              <template v-else>
+                <router-link
+                  v-for="(b, i) in DUE_BUCKETS"
+                  :key="b.value"
+                  :to="`/staff/tickets?due=${b.value}`"
+                  class="flex items-baseline justify-between gap-2 -mx-2 px-2 py-1 rounded hover:bg-base-200 transition-colors"
+                >
+                  <span class="text-sm text-base-content/70">{{ b.tileLabel }}</span>
+                  <!-- Overdue is the only one that is bad news; the other two are
+                       just work ahead, so they stay neutral rather than inventing
+                       a severity the date does not carry. -->
+                  <span
+                    class="text-xl font-semibold tabular-nums"
+                    :class="i === 0 ? 'text-error' : 'text-base-content'"
+                  >{{ dueCounts[b.value] ?? 0 }}</span>
+                </router-link>
+              </template>
+              <p class="text-xs text-base-content/50 mt-1">Active tickets with a target date.</p>
+            </div>
+          </div>
+
+          <!-- Inflow: new tickets per week, last 8 weeks. -->
+          <div class="card bg-base-100 shadow-sm">
+            <div class="card-body p-4 space-y-2">
+              <h2 class="font-semibold text-sm">New tickets / week</h2>
+              <!-- The count sits above each bar rather than in a tooltip. Hover is
+                   not a thing on the phone this app is also read on, and a chart
+                   whose only numbers are hover-only has no numbers there at all —
+                   every bar in Reports is likewise a reading aid beside a value,
+                   never the sole carrier of it. The label takes its own row so the
+                   bar scales against the track that is left, not the whole card. -->
+              <div class="flex items-end gap-1 h-24">
+                <div v-for="(n, i) in weeks" :key="i" class="flex-1 h-full flex flex-col items-center gap-1">
+                  <span class="text-[10px] leading-none tabular-nums text-base-content/50">{{ n }}</span>
+                  <div class="w-full flex-1 min-h-0 flex items-end">
+                    <div
+                      class="w-full bg-primary/70 hover:bg-primary rounded-t transition-all"
+                      :style="{ height: Math.max((n / weekMax) * 100, 3) + '%' }"
+                      aria-hidden="true"
+                    ></div>
+                  </div>
                 </div>
               </div>
+              <p class="text-xs text-base-content/50">Last 8 weeks (oldest → newest).</p>
             </div>
-            <p class="text-xs text-base-content/50">Last 8 weeks (oldest → newest).</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="card bg-base-100 shadow-sm">
-        <div class="card-body p-4 space-y-2">
-          <h2 class="font-semibold text-sm">My Active Tickets</h2>
-          <div class="divide-y divide-base-200">
-            <TicketListRow v-for="t in mine" :key="t.id" :ticket="t" :to="`/staff/tickets/${t.id}`" show-customer />
-            <p v-if="mine.length === 0" class="py-3 text-sm text-base-content/50">Nothing assigned to you. Nice.</p>
           </div>
         </div>
       </div>

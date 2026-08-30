@@ -77,7 +77,7 @@ onMounted(load)
         <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }} ({{ countOf(s) }})</option>
       </select>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
         <button
           v-for="p in filtered"
           :key="p.id"

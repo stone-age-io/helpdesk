@@ -582,6 +582,17 @@ other direction, and it is the one asked first on site — scan the door, see
 what is on it. Retired gear is listed (badged), same reasoning as the scanner:
 you cannot file against it, but "what *used* to be here" is a real question.
 
+Its page is organised as **the record, then what is here**: Details beside the
+map (two cards of about equal height), Metadata full width on its own row, then
+Things here beside Recent tickets here. Everything from the map down used to be
+stacked inside the right-hand column of a two-column grid, so one column carried
+four cards against the other's one — the record's fields ran out after a screen
+and the rest of the page was a single tall stack with a column of dead space
+next to it. Metadata takes the full-width row because its height is whatever the
+type's `metadata_schema` declares, which is exactly the thing that makes
+whichever column holds it the taller one; in read mode it is hidden entirely
+when empty, rather than spending a card on "No metadata recorded".
+
 `RosterFilters.vue` is the search + customer + type row shared by the Locations
 and Things rosters, and it settles a question worth not re-opening: type filters
 key on the type **name**, not its id. `thing_types`/`location_types` are
@@ -625,6 +636,20 @@ are read minutes apart and six trivial divergences added up to "different app".
 What does *not* transfer is colour: the tiles carry the `TicketBadges` status /
 priority palette so a tile reads as the chip you will meet in the queue, while
 Reports' measures (hours, counts) have no semantic scale and stay neutral.
+
+Below the tiles it is **main + rail**, the shape the ticket detail and the
+new-ticket form already use: My Active Tickets at two-thirds, and Backlog age /
+Due / inflow stacked in the third. The three rail cards used to sit in a
+two-column grid with the agent's own queue underneath them, which cost twice —
+three cards do not divide by two, so the chart sat half-width with a hole beside
+it, and the one thing on the page you *act* on started below the fold under two
+cards and a chart read once a morning. The rail cards trade the nested `stats`
+blocks for compact label→value rows: a third-width column has no room for the
+stat register's padding, and three of them at that scale would push the queue
+straight back off the fold. The tiles row is where the shared Reports register
+lives, and the rail keeps the palette, so its numbers still read as the chips
+they open. Due says "no target dates set" rather than rendering three zeros in
+the register the counts that matter use.
 Every number on the page is a door into a pre-filtered queue, Backlog age
 included — three inert numbers styled exactly like five links promised a click
 nothing honoured, which is why `tickets` grew an `age` filter. Its buckets are
@@ -673,8 +698,8 @@ should not fall to a stray `text-*`.
 
 `useQuerySync` (`composables/useQuerySync.ts`) mirrors filter state into the URL
 on every filtered board in the app — the three staff ones (queue, Reports,
-Dispatch) and, since the portal grew its own catalog surfaces, the four portal
-ones (tickets, visits, projects, things). The staff boards already
+Dispatch) and, since the portal grew its own catalog surfaces, the five portal
+ones (tickets, visits, projects, things, Summary). The staff boards already
 *read* their filters from the query (that is how a dashboard tile or a
 "View all →" arrives pre-filtered); only the write-back was missing, so a
 filtered board could not be linked, survive a reload, or come back when you
@@ -723,7 +748,27 @@ history is the point of keeping the row). `/portal/reports` is the
 customer-facing Service Summary: tickets, visits and location/thing/category
 rollups over a range, all from collections the requester can already read, plus
 a billable-hours column that appears only when their customer opted in. It never
-names a technician, same as the portal visit and project views.
+names a technician, same as the portal visit and project views. Its three
+rollups render through the same `ReportTable.vue` staff Reports uses, so a
+count, an hours figure and the unattributed row format identically on both and
+this page carries no second copy of the proportional bar. It **does not tab**
+them, which is the one deliberate divergence: staff has seven rollups of which
+six are noise at any moment, this has three (two conditional), and a quarterly
+summary is read top to bottom and exported whole. The hours column is appended
+when hours are on rather than blanked when they are off — a column of dashes
+hints at a figure being withheld.
+
+The **intake form is one column and deliberately not the staff form's main +
+rail.** That rail exists because an agent files thirty tickets a day and needs
+eleven triage fields adjacent to the body; a requester files two a year and has
+seven, five of them optional, so a rail would give the optional half equal
+weight to the one required field and make a two-minute errand look like
+paperwork. What it needed was shape, not a second column: two sections (the
+problem, then "Where and what"), and each catalog picker on one row with the
+free-text fallback it belongs to — the relation + `_note` pairing the schema
+already has, which stacking them vertically hid. A row collapses to one
+full-width control when its other half isn't there (no catalog, or a thing
+already picked).
 
 The requester gets **both catalog axes as first-class surfaces** —
 `/portal/locations`, `/portal/things`, and a read-only detail view for each.
@@ -752,12 +797,25 @@ re-deriving:
   type and parent are facts about their own property and do show. Visits, as
   everywhere else in the portal, never name a technician.
 - **Locations stays a card grid while Things is a `ResponsiveList`**, which is a
-  decision rather than drift: a table row cannot hold the "coming up" block, and
-  that block is the entire reason the Locations page exists. Things has no
-  per-row block and reads better dense.
+  decision rather than drift: a location catalog is bounded by physical reality
+  (five, a few dozen at the top end) where Things is a forty-row catalog that
+  reads better dense, and the card carries an address, the next visit and two
+  count launchers — more slots than a row has at phone width. What the card no
+  longer does is *grow with the schedule*: it shows the soonest visit and rolls
+  the rest into Visits, which owns the full filterable history. Cards that grew
+  a row per booking, in a grid missing `items-start`, were what made that page
+  ragged — one location with two visits set the row height and its address-less
+  neighbour was padded out to match. Every slot on the card now renders whether
+  or not it has content, so two cards in a row differ only by how long their
+  text is. The address slot reserves its line with a space rather than a dash: a
+  sub-location legitimately has no address of its own, and a "—" under the title
+  reads as a stray mark rather than as an absence.
 
 Portal filters ride the URL through the same `useQuerySync` as the staff boards
-(tickets, visits, projects, things) — see that section for the three rules. Two
+(tickets, visits, projects, things, Summary) — see that section for the three
+rules; Summary takes the same always-write-the-range exception staff Reports
+does, and for a sharper version of the reason, since a customer summary is a
+thing you send to somebody. Two
 traps it surfaces are worth stating once, because both fail silently. A boolean
 ref must be mirrored as a **computed `'1' | ''`**, never as the ref: `String(true)`
 is `'true'`, which a `=== '1'` read rejects, so the flag writes a param that

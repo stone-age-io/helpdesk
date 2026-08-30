@@ -276,21 +276,25 @@ onMounted(loadOptions)
               <label class="label py-1"><span class="label-text text-xs">Project</span></label>
               <SearchSelect v-model="form.project" :options="projectOptions" size="sm" empty-label="None" placeholder="Attach to a project…" :disabled="loading || !form.customer" />
             </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Thing note</span></label>
-              <input v-model="form.thing_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Thing text / from intake" :disabled="loading" />
-            </div>
+            <!-- Each relation sits directly above the free-text note it falls
+                 back to, which is the relationship the schema has. The rail used
+                 to read Project → Thing note → Location → Thing → Location note,
+                 so the two halves of each pair were separated by the other pair. -->
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location</span></label>
               <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Pick a location…" create-label="New location" :disabled="loading || !form.customer" @create="createLocation" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
+              <input v-model="form.location_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Access hints / where" :disabled="loading" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Thing</span></label>
               <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Pick a thing…" create-label="New thing" :disabled="loading || !form.customer" @create="createThing" />
             </div>
             <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Location note</span></label>
-              <input v-model="form.location_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Access hints / where" :disabled="loading" />
+              <label class="label py-1"><span class="label-text text-xs">Thing note</span></label>
+              <input v-model="form.thing_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Thing text / from intake" :disabled="loading" />
             </div>
           </div>
         </div>

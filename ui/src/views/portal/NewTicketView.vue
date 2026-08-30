@@ -125,141 +125,174 @@ async function submit() {
 </script>
 
 <template>
+  <!-- One column, deliberately NOT the staff form's main + rail. That rail
+       exists because an agent files thirty tickets a day and needs eleven
+       triage fields adjacent to the body; a requester files two a year and has
+       seven, five of them optional. A rail would give the optional half equal
+       visual weight to the one required field and make a two-minute errand look
+       like paperwork — and filing the ticket is the whole point.
+       What the form needed instead was shape: two sections, and each catalog
+       picker paired on one row with the free-text fallback it belongs to. -->
   <div class="space-y-4 max-w-2xl mx-auto">
     <div>
       <h1 class="text-2xl font-bold">New Ticket</h1>
       <p class="text-sm text-base-content/60 mt-1">Tell us what's going on — our team will follow up by email.</p>
     </div>
 
-    <form class="card bg-base-100 shadow-sm" @submit.prevent="submit">
-      <div class="card-body space-y-4">
-        <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
+    <form class="space-y-4" @submit.prevent="submit">
+      <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
-        <div class="form-control">
-          <label class="label" for="nt-title">
-            <span class="label-text">What do you need help with? <span class="text-error">*</span></span>
-            <span class="label-text-alt text-base-content/50">{{ title.length }}/{{ TITLE_MAX }}</span>
-          </label>
-          <input
-            id="nt-title"
-            v-model="title"
-            type="text"
-            class="input input-bordered"
-            required
-            :maxlength="TITLE_MAX"
-            :disabled="loading"
-            placeholder="Short summary, e.g. “Badge reader offline at the north door”"
-          />
-        </div>
-
-        <div class="form-control">
-          <label class="label" for="nt-body"><span class="label-text">Details</span></label>
-          <textarea
-            id="nt-body"
-            v-model="body"
-            rows="6"
-            class="textarea textarea-bordered"
-            placeholder="What happened? What did you expect? When did it start?"
-            :disabled="loading"
-          ></textarea>
-        </div>
-
-        <div class="form-control">
-          <label class="label"><span class="label-text">How urgent is this?</span></label>
-          <div class="join" role="group" aria-label="Priority">
-            <button
-              v-for="p in TICKET_PRIORITIES"
-              :key="p"
-              type="button"
-              class="btn btn-sm join-item capitalize"
-              :class="priority === p ? 'btn-primary' : 'btn-outline'"
-              :aria-pressed="priority === p"
+      <!-- Section 1: the problem. Everything required lives here. -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body space-y-4">
+          <div class="form-control">
+            <label class="label" for="nt-title">
+              <span class="label-text">What do you need help with? <span class="text-error">*</span></span>
+              <span class="label-text-alt text-base-content/50">{{ title.length }}/{{ TITLE_MAX }}</span>
+            </label>
+            <input
+              id="nt-title"
+              v-model="title"
+              type="text"
+              class="input input-bordered"
+              required
+              :maxlength="TITLE_MAX"
               :disabled="loading"
-              @click="priority = p"
-            >
-              {{ p }}
-            </button>
+              placeholder="Short summary, e.g. “Badge reader offline at the north door”"
+            />
           </div>
-          <span class="label"><span class="label-text-alt text-base-content/50">{{ priorityHint[priority] }}</span></span>
-        </div>
 
-        <div v-if="hasLocations" class="form-control">
-          <label class="label"><span class="label-text">Which location? <span class="text-base-content/40">(optional)</span></span></label>
-          <SearchSelect
-            v-model="locationId"
-            :options="locationOptions"
-            :disabled="loading"
-            empty-label="Not listed / not sure"
-            placeholder="Search your locations…"
-          />
-        </div>
+          <div class="form-control">
+            <label class="label" for="nt-body"><span class="label-text">Details</span></label>
+            <textarea
+              id="nt-body"
+              v-model="body"
+              rows="5"
+              class="textarea textarea-bordered"
+              placeholder="What happened? What did you expect? When did it start?"
+              :disabled="loading"
+            ></textarea>
+          </div>
 
-        <div class="form-control">
-          <label class="label" for="nt-location">
-            <span class="label-text">
-              {{ hasLocations ? 'Room or area' : 'Location' }}
-              <span class="text-base-content/40">(optional)</span>
-            </span>
-          </label>
-          <input
-            id="nt-location"
-            v-model="locationNote"
-            type="text"
-            class="input input-bordered"
-            maxlength="200"
-            :disabled="loading"
-            :placeholder="
-              hasLocations
-                ? 'Room, floor, or door — narrows it down for the technician'
-                : 'Building, room, or area — helps us send someone to the right place'
-            "
-          />
-        </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text">How urgent is this?</span></label>
+            <div class="join" role="group" aria-label="Priority">
+              <button
+                v-for="p in TICKET_PRIORITIES"
+                :key="p"
+                type="button"
+                class="btn btn-sm join-item capitalize"
+                :class="priority === p ? 'btn-primary' : 'btn-outline'"
+                :aria-pressed="priority === p"
+                :disabled="loading"
+                @click="priority = p"
+              >
+                {{ p }}
+              </button>
+            </div>
+            <span class="label"><span class="label-text-alt text-base-content/50">{{ priorityHint[priority] }}</span></span>
+          </div>
 
-        <div v-if="hasThings" class="form-control">
-          <label class="label">
-            <span class="label-text">Which thing? <span class="text-base-content/40">(optional)</span></span>
-            <span v-if="locationId" class="label-text-alt text-base-content/50">Things at that location first</span>
-          </label>
-          <SearchSelect
-            v-model="thingId"
-            :options="thingOptions"
-            :disabled="loading"
-            empty-label="Not listed / not sure"
-            placeholder="Search your equipment…"
-          />
+          <div class="form-control">
+            <label class="label"><span class="label-text">Attachments <span class="text-base-content/40">(optional)</span></span></label>
+            <FileInput v-model:files="files" :disabled="loading" />
+          </div>
         </div>
+      </div>
 
-        <div v-if="showThingNote" class="form-control">
-          <label class="label" for="nt-thing">
-            <span class="label-text">
-              {{ hasThings ? 'Not listed? Describe it' : 'Equipment' }}
-              <span class="text-base-content/40">(optional)</span>
-            </span>
-          </label>
-          <input
-            id="nt-thing"
-            v-model="thingNote"
-            type="text"
-            class="input input-bordered"
-            maxlength="200"
-            :disabled="loading"
-            placeholder="e.g. “the beige card reader by reception”"
-          />
-        </div>
+      <!-- Section 2: where and what. Every field here is optional, so it reads
+           as a second, lighter step rather than four more things stacked under
+           the required one. Each axis is its own row: the catalog picker beside
+           the free-text fallback that belongs to it, which is the relationship
+           the schema has (relation + _note) and the one the stacked layout hid.
+           A row collapses to a single full-width control when its other half
+           isn't there — no catalog, or a thing already picked. -->
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body space-y-3">
+          <div>
+            <h2 class="font-semibold text-sm">Where and what</h2>
+            <p class="text-xs text-base-content/60 mt-1">
+              Optional, but it helps us send the right person to the right place.
+            </p>
+          </div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">Attachments <span class="text-base-content/40">(optional)</span></span></label>
-          <FileInput v-model:files="files" :disabled="loading" />
-        </div>
+          <div class="grid gap-3" :class="hasLocations ? 'sm:grid-cols-2' : ''">
+            <div v-if="hasLocations" class="form-control">
+              <label class="label py-1"><span class="label-text">Which location? <span class="text-base-content/40">(optional)</span></span></label>
+              <SearchSelect
+                v-model="locationId"
+                :options="locationOptions"
+                :disabled="loading"
+                empty-label="Not listed / not sure"
+                placeholder="Search your locations…"
+              />
+            </div>
 
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn-ghost" :disabled="loading" @click="router.back()">Cancel</button>
-          <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
-            <span v-if="loading" class="loading loading-spinner loading-sm"></span>
-            Submit
-          </button>
+            <div class="form-control">
+              <label class="label py-1" for="nt-location">
+                <span class="label-text">
+                  {{ hasLocations ? 'Room or area' : 'Location' }}
+                  <span class="text-base-content/40">(optional)</span>
+                </span>
+              </label>
+              <input
+                id="nt-location"
+                v-model="locationNote"
+                type="text"
+                class="input input-bordered"
+                maxlength="200"
+                :disabled="loading"
+                :placeholder="
+                  hasLocations
+                    ? 'Room, floor, or door'
+                    : 'Building, room, or area — helps us send someone to the right place'
+                "
+              />
+            </div>
+          </div>
+
+          <div class="grid gap-3" :class="hasThings && showThingNote ? 'sm:grid-cols-2' : ''">
+            <div v-if="hasThings" class="form-control">
+              <label class="label py-1">
+                <span class="label-text">Which thing? <span class="text-base-content/40">(optional)</span></span>
+                <span v-if="locationId" class="label-text-alt text-base-content/50">At that location first</span>
+              </label>
+              <SearchSelect
+                v-model="thingId"
+                :options="thingOptions"
+                :disabled="loading"
+                empty-label="Not listed / not sure"
+                placeholder="Search your equipment…"
+              />
+            </div>
+
+            <div v-if="showThingNote" class="form-control">
+              <label class="label py-1" for="nt-thing">
+                <span class="label-text">
+                  {{ hasThings ? 'Not listed? Describe it' : 'Equipment' }}
+                  <span class="text-base-content/40">(optional)</span>
+                </span>
+              </label>
+              <input
+                id="nt-thing"
+                v-model="thingNote"
+                type="text"
+                class="input input-bordered"
+                maxlength="200"
+                :disabled="loading"
+                placeholder="e.g. “the beige card reader by reception”"
+              />
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-ghost" :disabled="loading" @click="router.back()">Cancel</button>
+        <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
+          <span v-if="loading" class="loading loading-spinner loading-sm"></span>
+          Submit
+        </button>
       </div>
     </form>
   </div>
