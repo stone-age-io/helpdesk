@@ -239,6 +239,13 @@ func (s *seeder) seedCustomers() error {
 	for _, c := range customers {
 		rec, _, err := s.ensure("customers", "name = {:n}", dbx.Params{"n": c.Name}, func(r *core.Record) {
 			r.Set("name", c.Name)
+			// The fixture Key is already a lowercase single-word slug, so it is
+			// the tenant code as-is. Set for every demo customer, not only the
+			// platform-mapped ones: the code is what token 2 of the outbound NATS
+			// subject carries, and a customer without one is skipped by the
+			// publish channel — a showcase instance whose event stream is silent
+			// for five of eight customers demonstrates the wrong thing.
+			r.Set("code", c.Key)
 			r.Set("active", true)
 			r.Set("email_domain", c.Domain)
 			r.Set("show_time_to_requester", c.ShowTime)

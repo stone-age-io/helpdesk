@@ -20,7 +20,7 @@ delivers those into the operator hub account with the org id injected as
 token 2:
 
 ```
-helpdesk.{platformOrgId}.tickets.create
+helpdesk.{orgCode}.tickets.create
 ```
 
 The injection is the provenance mechanism: the subject rewrite is signed by
@@ -49,8 +49,8 @@ leaves room for `comment` / `resolve` later without a subject migration.
 
 Behavior:
 
-- **Unknown org** (no customer row with that `platform_org_id`): the event
-  is logged (`ingest: no customer mapped for platform org`) and acked. Map
+- **Unknown org** (no customer row with that `code`): the event
+  is logged (`ingest: no customer mapped for organization code`) and acked. Map
   the customer in the SPA and later events flow; the missed event is not
   replayed.
 - **`dedupe_key`**: if a ticket with the same key exists, the event is
@@ -105,16 +105,31 @@ email; the two are configured and gated independently per template.
 ### Subjects
 
 ```
-helpdesk.{customerId}.events.{event_type}
+helpdesk.{customerCode}.events.{event_type}
 ```
 
-- `{customerId}` is the ticket's `customer` relation id — always present
-  (required field) and token-safe. It is **not** the platform org id
-  (`platform_org_id` is optional, so it would leave a hole); the org id rides
-  the payload instead when known.
+- `{customerCode}` is `customers.code` — the ecosystem's tenant token, the same
+  handle token 2 carries on the way **in**, and the same one the platform stamps
+  on its operator-signed subject rewrite (ADR 0002 in `platform-docs`). Both
+  directions of the boundary name a tenant the same way, so a consumer can join
+  helpdesk events to platform data without a mapping table.
+- A customer with **no code is not published for**. The event is skipped and the
+  reason recorded on its `notification_send_log` row. There is deliberately no
+  fallback to the customer's record id: a token that is sometimes a shared code
+  and sometimes one app's local primary key is not a token, because a consumer
+  cannot tell which it is holding. Set `customers.code` to turn the channel on
+  for that tenant.
+- `platform_org_id` is **not** in the subject — it is optional, so it would leave
+  a hole; it rides the payload instead when known.
 - `{event_type}` is the notification event (`ticket.created`,
   `ticket.status_changed`, `visit.scheduled`, …); its embedded dot supplies the
   trailing `domain.verb` tokens.
+
+> **Changed.** Token 2 was the ticket's `customer` relation id until ADR 0002.
+> That was always present and token-safe, but it put this app's own primary key
+> in a subject crossing to other applications — so any consumer joining these
+> events to anything else needed a mapping table only this database could
+> produce.
 
 Token 3 is the literal `events`, which is what keeps this stream disjoint from
 the ingest stream (`helpdesk.*.tickets.>`): `events` ≠ `tickets`, so JetStream

@@ -275,14 +275,24 @@ func (n *Notifier) publish(eventType string, rec *core.Record, data any) error {
 		return nil
 	}
 	ctx, ok := data.(TicketContext)
-	if !ok || ctx.CustomerID == "" {
+	if !ok {
 		// Every built-in event is ticket-rooted, so this is defensive: a
-		// non-ticket payload or a missing customer id can't form a valid
-		// subject, so skip rather than publish garbage.
+		// non-ticket payload can't form a valid subject, so skip rather than
+		// publish garbage.
 		n.writeLog(eventType, rec.Id, "", SendStatusSkipped, "", ChannelNATS, summaryOf(data))
 		return nil
 	}
-	subject := n.subj.EventSubject(ctx.CustomerID, eventType)
+	if ctx.CustomerCode == "" {
+		// No tenant token, so no subject. Deliberately not falling back to the
+		// customer id: see the CustomerCode comment on TicketContext. The reason
+		// is recorded on the send log row so an operator can find every event a
+		// missing code cost them, rather than inferring it from silence.
+		slog.Warn("notifications: customer has no code — set customers.code to publish this event",
+			"event", eventType, "customer", ctx.Customer, "ref", rec.Id)
+		n.writeLog(eventType, rec.Id, "", SendStatusSkipped, "customer has no code", ChannelNATS, summaryOf(data))
+		return nil
+	}
+	subject := n.subj.EventSubject(ctx.CustomerCode, eventType)
 	env := ctx.toEnvelope(eventType, timeNowUTC().Format(time.RFC3339))
 	payload, err := json.Marshal(env)
 	if err != nil {

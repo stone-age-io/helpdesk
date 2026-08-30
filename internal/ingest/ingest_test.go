@@ -20,6 +20,10 @@ func setup(t *testing.T) (*pocketbase.PocketBase, *Consumer, *core.Record) {
 	customer := core.NewRecord(col)
 	customer.Set("name", "Acme Corp")
 	customer.Set("active", true)
+	// The tenant token on subject token 2 (ADR 0002). platform_org_id is set too
+	// so a test that regressed to resolving by it would still fail: the two must
+	// not be interchangeable.
+	customer.Set("code", "acme")
 	customer.Set("platform_org_id", "org123")
 	if err := app.Save(customer); err != nil {
 		t.Fatalf("save customer: %v", err)
@@ -42,7 +46,7 @@ func countTickets(t *testing.T, app core.App) int {
 func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	app, c, customer := setup(t)
 
-	out := c.Project("helpdesk.org123.tickets.create",
+	out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"pump fault","body":"overcurrent","priority":"high","thing":"pump-7","location":"line-3"}`))
 	if out != Ack {
 		t.Fatalf("Project = %v, want Ack", out)
@@ -55,7 +59,7 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("customer"); got != customer.Id {
 		t.Errorf("customer: got %q, want %q", got, customer.Id)
 	}
-	if got := rec.GetString("origin_subject"); got != "helpdesk.org123.tickets.create" {
+	if got := rec.GetString("origin_subject"); got != "helpdesk.acme.tickets.create" {
 		t.Errorf("origin_subject: got %q", got)
 	}
 	if got := rec.GetString("priority"); got != "high" {
@@ -92,7 +96,7 @@ func TestProjectResolvesCategoryByKey(t *testing.T) {
 	}
 
 	// Known key → classified.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"a","category":"pumps"}`)); out != Ack {
 		t.Fatalf("known category: %v", out)
 	}
@@ -105,7 +109,7 @@ func TestProjectResolvesCategoryByKey(t *testing.T) {
 	}
 
 	// Unknown key → created but unclassified (no drop, no error).
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"b","category":"nonexistent"}`)); out != Ack {
 		t.Fatalf("unknown category: %v", out)
 	}
@@ -133,10 +137,10 @@ func TestProjectDedupeKeyIsIdempotent(t *testing.T) {
 	app, c, _ := setup(t)
 	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
 
-	if out := c.Project("helpdesk.org123.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
 		t.Fatalf("first: %v", out)
 	}
-	if out := c.Project("helpdesk.org123.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
 		t.Fatalf("second: %v", out)
 	}
 	if n := countTickets(t, app); n != 1 {
@@ -147,11 +151,11 @@ func TestProjectDedupeKeyIsIdempotent(t *testing.T) {
 func TestProjectRejectsGarbage(t *testing.T) {
 	app, c, _ := setup(t)
 	cases := map[string][2]string{
-		"bad json":        {"helpdesk.org123.tickets.create", `{"title":`},
-		"missing title":   {"helpdesk.org123.tickets.create", `{"body":"no title"}`},
-		"unknown verb":    {"helpdesk.org123.tickets.resolve", `{"title":"x"}`},
+		"bad json":        {"helpdesk.acme.tickets.create", `{"title":`},
+		"missing title":   {"helpdesk.acme.tickets.create", `{"body":"no title"}`},
+		"unknown verb":    {"helpdesk.acme.tickets.resolve", `{"title":"x"}`},
 		"unparseable":     {"helpdesk.tickets.create", `{"title":"x"}`},
-		"invalid priority": {"helpdesk.org123.tickets.create", `{"title":"prio","priority":"catastrophic"}`},
+		"invalid priority": {"helpdesk.acme.tickets.create", `{"title":"prio","priority":"catastrophic"}`},
 	}
 	for name, c2 := range cases {
 		if out := c.Project(c2[0], []byte(c2[1])); out != Ack {
@@ -184,7 +188,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Matching code → the structured relation is set.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"a","location_code":"BLDG-C"}`)); out != Ack {
 		t.Fatalf("matching code: %v", out)
 	}
@@ -197,7 +201,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"b","location_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("unknown code: %v", out)
 	}
@@ -213,7 +217,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Free-text location wins the note even alongside an unresolved code.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"cc","location":"rear dock","location_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("freetext+code: %v", out)
 	}
@@ -236,7 +240,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Matching code → the structured relation is set.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"a","thing_code":"PUMP-7"}`)); out != Ack {
 		t.Fatalf("matching code: %v", out)
 	}
@@ -249,7 +253,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"b","thing_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("unknown code: %v", out)
 	}
@@ -265,7 +269,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Free-text thing wins the note even alongside an unresolved code.
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"cc","thing":"the big pump","thing_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("freetext+code: %v", out)
 	}
@@ -287,12 +291,68 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	if err := app.Save(thing); err != nil {
 		t.Fatalf("update thing: %v", err)
 	}
-	if out := c.Project("helpdesk.org123.tickets.create",
+	if out := c.Project("helpdesk.acme.tickets.create",
 		[]byte(`{"title":"dd","thing_code":"PUMP-7"}`)); out != Ack {
 		t.Fatalf("placed thing: %v", out)
 	}
 	recD, _ := app.FindFirstRecordByFilter("tickets", "title = 'dd'")
 	if got := recD.GetString("location"); got != "" {
 		t.Errorf("resolved thing should not backfill ticket location, got %q", got)
+	}
+}
+
+// The subject's org token is changing shape: it has always been the platform's
+// PocketBase org id, and under ADR 0002 it is the organization code.
+//
+// The transition is over: the platform_org_id fallback is gone, and this pins
+// that it stays gone. The harness customer carries BOTH a code and a
+// platform_org_id, so a regression that reinstated the fallback — or resolved
+// against the wrong column outright — fails the second subtest instead of
+// quietly widening what the subject means.
+func TestProjectResolvesCustomerByCodeOnly(t *testing.T) {
+	app, c, customer := setup(t)
+
+	t.Run("the organization code resolves", func(t *testing.T) {
+		subject := "helpdesk.acme.tickets.create"
+		if out := c.Project(subject, []byte(`{"title":"by-code"}`)); out != Ack {
+			t.Fatalf("Project = %v, want Ack", out)
+		}
+		rec, err := app.FindFirstRecordByFilter("tickets", "title = 'by-code'")
+		if err != nil {
+			t.Fatalf("ticket not created: %v", err)
+		}
+		if got := rec.GetString("customer"); got != customer.Id {
+			t.Errorf("customer: got %q, want %q", got, customer.Id)
+		}
+		if got := rec.GetString("origin_subject"); got != subject {
+			t.Errorf("origin_subject: got %q, want %q", got, subject)
+		}
+	})
+
+	t.Run("the platform org id no longer resolves", func(t *testing.T) {
+		before := countTickets(t, app)
+		// "org123" IS this customer's platform_org_id. It must not be a tenant
+		// token: one subject position resolving against two columns is the
+		// ambiguity ADR 0002 removed.
+		if out := c.Project("helpdesk.org123.tickets.create", []byte(`{"title":"by-id"}`)); out != Ack {
+			t.Fatalf("Project = %v, want Ack", out)
+		}
+		if after := countTickets(t, app); after != before {
+			t.Errorf("ticket count changed %d -> %d; platform_org_id still resolves as a tenant token", before, after)
+		}
+	})
+}
+
+// A code belonging to no customer is an unmapped org: acked, not retried, and
+// no ticket.
+func TestProjectUnknownCodeAcksWithoutTicket(t *testing.T) {
+	app, c, _ := setup(t)
+
+	before := countTickets(t, app)
+	if out := c.Project("helpdesk.not-a-tenant.tickets.create", []byte(`{"title":"x"}`)); out != Ack {
+		t.Fatalf("Project = %v, want Ack", out)
+	}
+	if after := countTickets(t, app); after != before {
+		t.Errorf("ticket count changed %d -> %d, want no ticket", before, after)
 	}
 }

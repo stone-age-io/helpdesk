@@ -171,7 +171,7 @@ func SampleEnvelope(eventType string) (subject string, env EventEnvelope, ok boo
 		}
 	}
 	// A placeholder tenant token, matching the subject hint on the editor
-	// toggle — the real second token is the ticket's customer id.
-	subject = subjects.Default().EventSubject("<customer>", eventType)
+	// toggle — the real second token is the customer's code.
+	subject = subjects.Default().EventSubject("<customer-code>", eventType)
 	return subject, ctx.toEnvelope(eventType, sampleOccurredAt), true
 }

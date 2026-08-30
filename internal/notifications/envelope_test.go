@@ -29,7 +29,7 @@ func TestSampleEnvelopePerEventBlocks(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: SampleEnvelope not ok", c.et)
 		}
-		if want := "helpdesk.<customer>.events." + c.et; subject != want {
+		if want := "helpdesk.<customer-code>.events." + c.et; subject != want {
 			t.Errorf("%s: subject = %q, want %q", c.et, subject, want)
 		}
 		if env.Schema != EnvelopeSchema || env.Version != EnvelopeVersion || env.EventType != c.et {

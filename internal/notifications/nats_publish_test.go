@@ -71,7 +71,7 @@ func TestPublishTicketCreatedEnvelope(t *testing.T) {
 	}
 	m := msgs[0]
 
-	wantSubject := "helpdesk." + h.customer.Id + ".events.ticket.created"
+	wantSubject := "helpdesk." + h.customer.GetString("code") + ".events.ticket.created"
 	if m.subject != wantSubject {
 		t.Errorf("subject = %q, want %q", m.subject, wantSubject)
 	}
@@ -220,7 +220,7 @@ func TestVisitCompletedPublishesNATSOnly(t *testing.T) {
 		t.Fatalf("expected 1 visit.completed publish, got %d", len(msgs))
 	}
 	msg := msgs[0]
-	if want := "helpdesk." + h.customer.Id + ".events.visit.completed"; msg.subject != want {
+	if want := "helpdesk." + h.customer.GetString("code") + ".events.visit.completed"; msg.subject != want {
 		t.Errorf("subject = %q, want %q", msg.subject, want)
 	}
 
@@ -258,5 +258,48 @@ func TestPublishFailureDoesNotBlockEmail(t *testing.T) {
 	}
 	if got := fake.captured(); len(got) != 1 {
 		t.Errorf("expected 1 publish attempt, got %d", len(got))
+	}
+}
+
+// A customer with no code has no tenant token, so there is no subject to
+// publish on. The event is skipped rather than published under a fallback, and
+// the skip is recorded so an operator can find what a missing code cost them.
+//
+// This is the one behaviour that would be easy to "fix" back into a fallback on
+// the customer id, which is exactly what ADR 0002 removed: a token that is
+// sometimes a shared code and sometimes this app's primary key leaves a
+// consumer unable to tell which it is holding.
+func TestPublishSkippedWithoutCustomerCode(t *testing.T) {
+	h := setupHarness(t)
+	h.customer.Set("code", "")
+	if err := h.app.Save(h.customer); err != nil {
+		t.Fatalf("clear customer code: %v", err)
+	}
+
+	fake := &fakePublisher{}
+	h.notifier.SetPublisher(fake)
+	h.enablePublish(t, "ticket.created", map[string]any{"publish_nats": true})
+
+	h.createTicket(t, map[string]any{"requester": h.requester.Id})
+	h.drain(t)
+
+	if msgs := fake.captured(); len(msgs) != 0 {
+		t.Fatalf("expected no publish without a customer code, got %d: %+v", len(msgs), msgs)
+	}
+
+	// Email is a separate channel and must be unaffected by the NATS skip.
+	rows, err := h.app.FindRecordsByFilter("notification_send_log",
+		"channel = 'nats' && event_type = 'ticket.created'", "", 0, 0)
+	if err != nil {
+		t.Fatalf("read send log: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 nats send-log row, got %d", len(rows))
+	}
+	if got := rows[0].GetString("status"); got != "skipped" {
+		t.Errorf("status = %q, want skipped", got)
+	}
+	if got := rows[0].GetString("error"); got == "" {
+		t.Error("skip reason is empty; an operator cannot tell why it was skipped")
 	}
 }

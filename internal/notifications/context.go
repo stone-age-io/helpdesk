@@ -56,9 +56,19 @@ type VisitInfo struct {
 type TicketContext struct {
 	Ticket   TicketInfo
 	Customer string // customer (company) name
-	// CustomerID is the tickets.customer relation id — the always-present,
-	// token-safe tenant token for the outbound NATS subject.
+	// CustomerID is the tickets.customer relation id. It rides the payload as
+	// this app's own primary key; it is NOT the subject's tenant token.
 	CustomerID string
+	// CustomerCode is customers.code — the ecosystem's tenant token, and what
+	// token 2 of the outbound subject carries (ADR 0002 in platform-docs).
+	//
+	// It is optional, and a publish is skipped when it is empty rather than
+	// falling back to CustomerID. A tenant token that is sometimes an
+	// ecosystem-wide code and sometimes one app's local primary key is not a
+	// token at all: a consumer could not tell which it was holding, and the two
+	// namespaces have no reason to stay disjoint. Better a logged skip that
+	// names the missing code.
+	CustomerCode string
 	// CustomerOrgID is customers.platform_org_id, empty for customers not
 	// mapped to a platform org. Rides the NATS payload (never the subject,
 	// since it's optional).
@@ -124,6 +134,7 @@ func SampleContext() TicketContext {
 		},
 		Customer:      "Acme Corp",
 		CustomerID:    "custacme00000001",
+		CustomerCode:  "acme",
 		CustomerOrgID: "org_acme000000001",
 		Requester:     PersonInfo{Name: "Rita Requester", Email: "rita@acme.example"},
 		Assignee:      PersonInfo{Name: "Sam Staff", Email: "sam@msp.example"},

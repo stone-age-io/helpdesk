@@ -2,10 +2,10 @@
 // consumer on the hub-side HELPDESK_EVENTS stream that projects
 // machine-published events into ticket records (kiosk controller pattern).
 //
-// Provenance: the customer org id is parsed from subject token 2 — injected
+// Provenance: the organization code is parsed from subject token 2 — injected
 // by the platform's operator-signed export/import — and NEVER from the
 // payload. An event whose org has no mapped customer is logged and acked;
-// once the operator sets the customer's platform_org_id, later events flow.
+// once the operator sets the customer's code, later events flow.
 package ingest
 
 import (
@@ -155,17 +155,16 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 		return Ack
 	}
 
-	customer, err := c.app.FindFirstRecordByFilter(
-		"customers", "platform_org_id = {:org}", dbx.Params{"org": orgID})
-	if err != nil {
-		if !isNotFound(err) {
-			slog.Warn("ingest: customer lookup failed", "org", orgID, "err", err)
-			return Retry
-		}
+	customer, retry := resolveCustomer(c.app, orgID)
+	if retry {
+		return Retry
+	}
+	if customer == nil {
 		// Unmapped org: the operator hasn't linked this platform org to a
 		// customer yet. Ack — the event is gone, but the mapping gap is loud
 		// in the logs and later events flow once it's fixed.
-		slog.Warn("ingest: no customer mapped for platform org — set customers.platform_org_id", "org", orgID, "subject", subject)
+		slog.Warn("ingest: no customer mapped for organization code — set customers.code",
+			"org", orgID, "subject", subject)
 		return Ack
 	}
 
@@ -267,6 +266,37 @@ func (c *Consumer) resolveCategory(key string) string {
 		return ""
 	}
 	return cat.Id
+}
+
+// resolveCustomer maps subject token 2 — the organization code — to a customer.
+// Returns (nil, false) for an unmapped org and (nil, true) when the caller
+// should retry rather than ack.
+//
+// Code only. The token was the platform's PocketBase org id until ADR 0002, and
+// a `platform_org_id` fallback carried both shapes through the transition; it
+// is gone now that no deployment emits ids. Keeping it would have meant one
+// subject token that resolves against two columns forever, which is the
+// ambiguity the ADR exists to remove — and a dead lookup on every unmapped
+// event.
+//
+// `platform_org_id` itself stays on the collection. It answers a different
+// question ("is this customer actually a platform organization"), which is real
+// for a service desk whose customer list is a superset of the control plane's.
+func resolveCustomer(app core.App, token string) (*core.Record, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, false
+	}
+	rec, err := app.FindFirstRecordByFilter(
+		"customers", "code = {:org}", dbx.Params{"org": token})
+	if err != nil {
+		if !isNotFound(err) {
+			slog.Warn("ingest: customer lookup failed", "org", token, "err", err)
+			return nil, true
+		}
+		return nil, false
+	}
+	return rec, false
 }
 
 // resolveLocation maps a location code to a locations id within the customer.

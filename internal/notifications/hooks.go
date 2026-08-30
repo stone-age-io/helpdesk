@@ -228,13 +228,15 @@ func buildTicketContext(app core.App, ticket *core.Record) TicketContext {
 			Type:     ticket.GetString("type"),
 			URL:      ticketURL(app, ticket.Id),
 		},
-		// Read the customer id straight off the ticket (required relation) so
-		// the subject tenant token survives even a dangling customer record.
+		// Read the customer id straight off the ticket (required relation) so the
+		// payload carries it even for a dangling customer record. The subject's
+		// tenant token is CustomerCode, which needs the record below.
 		CustomerID:    ticket.GetString("customer"),
 		occurrenceKey: ticket.Id + ":" + ticket.GetString("updated"),
 	}
 	if customer, err := app.FindRecordById("customers", ticket.GetString("customer")); err == nil {
 		ctx.Customer = customer.GetString("name")
+		ctx.CustomerCode = customer.GetString("code")
 		ctx.CustomerOrgID = customer.GetString("platform_org_id")
 	}
 	if id := ticket.GetString("requester"); id != "" {

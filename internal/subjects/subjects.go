@@ -9,7 +9,7 @@
 // delivers those into the operator hub account with the org id injected as
 // token 2:
 //
-//	helpdesk.{platformOrgId}.tickets.create
+//	helpdesk.{orgCode}.tickets.create
 //
 // That injection is the provenance mechanism: the subject is rewritten by
 // the operator-signed import, so a customer cannot spoof another org's id —
@@ -41,7 +41,7 @@ const VerbCreate = "create"
 
 // EventsToken is the third subject token for the outbound notification stream:
 //
-//	helpdesk.{customerId}.events.{event_type}
+//	helpdesk.{customerCode}.events.{event_type}
 //
 // It MUST differ from the ingest stream's third token ("tickets") — that
 // difference is the whole disjointness guarantee. Two JetStream streams may
@@ -89,17 +89,29 @@ func (s Subjects) StreamWildcards() []string {
 // EventSubject builds the hub-side outbound subject for one notification
 // event:
 //
-//	helpdesk.{customerId}.events.{event_type}
+//	helpdesk.{customerCode}.events.{event_type}
 //
-// customerId is the tickets.customer relation id — always present (required
-// field) and token-safe (PocketBase ids are alphanumeric). eventType is the
-// notification event type ("ticket.created", "visit.scheduled"); its embedded
-// dot supplies the trailing domain.verb tokens, so no separate mapping is
-// needed. platform_org_id is deliberately NOT in the subject — it is optional
-// on customers, so it would leave a hole for every unmapped customer; it rides
-// the payload instead.
-func (s Subjects) EventSubject(customerID, eventType string) string {
-	return fmt.Sprintf("%s.%s.%s.%s", s.App(), customerID, EventsToken, eventType)
+// customerCode is customers.code — the ecosystem's tenant token, the same
+// handle token 2 carries on the way IN and the same one the platform stamps on
+// its operator-signed rewrite (ADR 0002 in platform-docs). Both directions of
+// the boundary now name a tenant the same way.
+//
+// It used to be the tickets.customer relation id, which was always present and
+// token-safe but was this app's own primary key sitting in a subject that
+// crosses to other applications — the exact thing ADR 0002 exists to remove. A
+// consumer joining helpdesk events to anything else had to be handed a mapping
+// table that only this database could produce.
+//
+// The code is optional, so a customer without one cannot be published for; the
+// notifier skips and logs rather than falling back to the id, because a token
+// that is sometimes a shared code and sometimes a local key is not a token.
+//
+// eventType is the notification event type ("ticket.created",
+// "visit.scheduled"); its embedded dot supplies the trailing domain.verb
+// tokens, so no separate mapping is needed. platform_org_id is deliberately NOT
+// in the subject — it rides the payload.
+func (s Subjects) EventSubject(customerCode, eventType string) string {
+	return fmt.Sprintf("%s.%s.%s.%s", s.App(), customerCode, EventsToken, eventType)
 }
 
 // EventStreamWildcards is the HELPDESK_NOTIFICATIONS stream's subject set: every
@@ -111,7 +123,7 @@ func (s Subjects) EventStreamWildcards() []string {
 
 // ParseTicketEvent splits a hub-side subject into its org id and verb:
 //
-//	{app}.{platformOrgId}.tickets.{verb} -> orgID, verb, true
+//	{app}.{orgCode}.tickets.{verb} -> orgCode, verb, true
 //
 // ok is false for anything else (wrong app, wrong shape). The org id comes
 // exclusively from here — it is the signed, unforgeable part of the event.

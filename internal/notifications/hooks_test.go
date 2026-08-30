@@ -82,6 +82,10 @@ func setupHarness(t *testing.T) *harness {
 	custCol, _ := app.FindCollectionByNameOrId("customers")
 	h.customer = core.NewRecord(custCol)
 	h.customer.Set("name", "Acme Corp")
+	// The tenant token on the outbound NATS subject. Without it the publish
+	// channel skips by design, so every NATS test needs it set —
+	// TestPublishSkippedWithoutCustomerCode covers the unset case deliberately.
+	h.customer.Set("code", "acme")
 	h.customer.Set("active", true)
 	if err := app.Save(h.customer); err != nil {
 		t.Fatalf("save customer: %v", err)
