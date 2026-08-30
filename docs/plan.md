@@ -21,6 +21,15 @@ docs win:
 - Tickets gained a two-stage `resolved` → `closed` lifecycle with auto-close, a
   billable/non-billable time ledger, start/stop timers, effort estimates, and
   an `awaiting_requester` nudge.
+- **Subject token 2 is no longer the platform org id.** Everywhere below that
+  says `helpdesk.{platformOrgId}.>` or resolves against
+  `customers.platform_org_id`, read `customers.code` instead (migration
+  `1828000000`, ADR 0002 in `platform-docs`) — the same token now names the
+  tenant in *both* directions. `platform_org_id` survives, but only to record
+  that a customer is a platform organization. See [protocol.md](protocol.md).
+- Sites and devices grew **printable QR labels and an in-app scanner**, whose
+  payload is the bare `code`; the field shell reaches both plus the scanner
+  behind its **More** tab.
 
 For what the app actually does today, start at [`CLAUDE.md`](../CLAUDE.md) and
 [data-model.md](data-model.md).

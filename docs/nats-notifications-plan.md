@@ -5,7 +5,13 @@ document is the implementation plan for adding a second delivery channel to the
 notification subsystem — publishing a fixed, typed JSON envelope to JetStream
 alongside (and independent of) email.
 
-It says "seven event types" throughout; there are now **eight**. Migration
+Two things it says are now wrong. The subject below is
+`helpdesk.{customerId}.events.{event_type}`; token 2 became **`customers.code`**
+in migration `1828000000` (ADR 0002 in `platform-docs`), so both directions of
+the boundary name a tenant the same way, and a customer without a code is
+skipped rather than published under a fallback.
+
+And it says "seven event types" throughout; there are now **eight**. Migration
 `1817000000` added `visit.completed`, which is the one event that ships
 email-disabled and NATS-enabled — completion is already visible to humans via
 the ticket's status and comments, but "work done on site" is exactly the signal

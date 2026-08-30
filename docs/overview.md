@@ -56,10 +56,17 @@ onboarded, so `code` is optional.
 
 **Provenance arrives on the subject, not in the payload.** A device publishes on
 `helpdesk.>` inside its own organization's NATS account. The platform's
-managed-org export rewrites that subject to carry the org id, and the rewrite is
-signed by the operator's import — so the helpdesk reads the organization from
-the subject and ignores any org id in the message body. That's what makes a
-self-reported ticket trustworthy.
+managed-org export rewrites that subject to carry the organization's **code**,
+and the rewrite is signed by the operator's import — so the helpdesk reads the
+tenant from the subject and ignores any org identifier in the message body.
+That's what makes a self-reported ticket trustworthy.
+
+That token used to be the platform's internal organization id, which meant the
+ecosystem had two different names for a tenant depending on which direction you
+were looking (ADR 0002 in `platform-docs`). It is now `customers.code` in both
+directions — the same handle sites and devices already joined on — so a consumer
+can line helpdesk events up with platform data without a mapping table only this
+database could produce.
 
 ---
 
@@ -140,6 +147,32 @@ whenever you like. Type changes how the app behaves, so it's a fixed pair. The
 rule, if you're extending: **enums for what the code branches on, collections
 for what only humans read.**
 
+### A code is the same name everywhere
+
+Sites and devices carry an optional `code` (`DOOR-1`, `AP-HS-GYM`). It is the
+one name the whole ecosystem agrees on: a machine intake resolves it, the
+platform knows the same record by it, and — printed as a QR label from the
+record's detail view — it is what a tech scans in the hallway to land on that
+record's history.
+
+The label payload is the **bare code**: no web address, no customer, no
+"thing-or-site" marker. That is a security property, not a shortcut. A sticker
+on a wall is something a stranger can replace, and a payload containing a URL
+would let a forged sticker send a person to arbitrary content. A bare in-system
+identifier means the worst a forged label achieves is opening the wrong record
+inside an app you were already signed in to — which is also why scanning happens
+**inside the app** (`/staff/scan`) and never through a plain camera.
+
+Two consequences you'll see in the UI. Codes are resolved **globally, then
+disambiguated** — staff have no customer of their own, and `DOOR-1` is the code
+every customer independently invents, so a match list with a picker is the
+honest answer where a silent guess would be a different tenant's door. And every
+label prints its code in readable text next to the symbol, because the sticker
+will eventually be scratched, greasy, or in a closet too dark to focus in;
+typing the code into the scanner is a first-class path, not a fallback.
+
+A record with no code gets no label button. The payload *is* the code.
+
 ### Work arrives four ways
 
 | Source | How |
@@ -190,23 +223,44 @@ The working day:
 ### Field techs — the mobile shell
 
 Techs get a different shell on the same login (the `field` role steers the UI;
-it is *not* a permission boundary — field techs are still staff). Today's
-visits, then per visit: **Arrive → timer runs → Complete**. Completing stamps
-the visit and can close out the timer into a time entry in one action.
+it is *not* a permission boundary — field techs are still staff). Same
+`/staff/*` URLs, different chrome, so every link keeps working.
+
+The core loop is today's visits, then per visit: **Arrive → timer runs →
+Complete**. Completing stamps the visit and can close out the timer into a time
+entry in one action.
+
+The phone bar is `Today · Schedule · Tickets · Time · More`. Five thumb targets
+is the most a phone takes and there are eight destinations, so the fifth slot is
+a door rather than a place: **More** holds Scan, Sites and Devices under "Look
+up", and Projects under "Work" (the one destination read *between* jobs rather
+than during one). On a desktop the sidebar lists all of it flat.
+
+Sites and Devices offer a **My scheduled sites** toggle that narrows the roster
+to the customers this tech has scheduled visits at. It only appears if they have
+any — a dispatcher or admin never meets a control that would filter their roster
+to nothing.
 
 ### Admins — setting up a new install
 
 Order matters, because each step is the previous one's vocabulary:
 
-1. **Customers** first — everything hangs off them.
+1. **Customers** first — everything hangs off them. Give a customer its `code`
+   here if it exists on the platform: that one field is what the NATS subject
+   carries in both directions, so machine intake and outbound events both stay
+   dark without it (an event for a code-less customer is skipped, with the
+   reason on the send-log row).
 2. **Location types** and **thing types**, then **locations** and **things**.
    Types are per-customer; give them a `code` matching the platform if the
-   customer is on it.
+   customer is on it. Codes are also what QR labels carry, so a record you
+   intend to put a sticker on needs one.
 3. **Requesters** — portal logins, each tied to one customer.
 4. **Categories** — start from the seeded set and prune.
 5. **Notification templates** — check who gets what before real mail goes out.
-6. **Intake**, if wanted: reveal a customer's webhook token, map their platform
-   org id, or set their email domain.
+6. **Intake**, if wanted: reveal a customer's webhook token, or set their email
+   domain. NATS intake needs nothing beyond the `code` from step 1 —
+   `platform_org_id` is no longer the routing key, it only records that this
+   customer *is* a platform organization.
 7. **Branding**, if wanted: point `branding.dir` at a directory holding a logo,
    a theme, and an app name, and the install wears the operator's identity
    without a rebuild. Nothing in the app hardcodes an operator — that's the
@@ -249,7 +303,15 @@ A good first lap, as Maya:
 3. Open a ticket with a site and a device, and follow its links out into the
    filtered history for each.
 4. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
-5. Sign in as Regina and compare: same tickets, no internal notes, no
+5. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
+   4″ × 2″ and tick *RFID stock* to reveal the inlay keep-out the artwork
+   straddles. Then **Scan** → type that code in the manual field: one match goes
+   straight to the record. Try `DOOR-1`-style codes shared across customers and
+   you'll get the picker instead.
+6. Sign in as Sam and the shell changes shape: today's visits, and **More** →
+   Sites / Devices with the *My scheduled sites* toggle narrowing to just his
+   customers.
+7. Sign in as Regina and compare: same tickets, no internal notes, no
    technician names, and a service summary with billable hours because
    Northwind is opted in. Sign in as `anita.rao@harborview.example` and the
    hours are simply absent — Harborview isn't.

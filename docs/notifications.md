@@ -26,8 +26,12 @@ The same eight events drive both channels; each template gates them
 
 - **`enabled`** — send email to the resolved recipient classes.
 - **`publish_nats`** — publish a fixed JSON envelope to
-  `helpdesk.{customerId}.events.{event_type}` (see `docs/protocol.md` →
-  *NATS notification events*). No template text is involved — the envelope is a
+  `helpdesk.{customerCode}.events.{event_type}` (see `docs/protocol.md` →
+  *NATS notification events*). Token 2 is `customers.code` — the ecosystem's
+  tenant handle, the same token the *inbound* subject carries, so both
+  directions of the boundary name a tenant the same way. A customer with no
+  code is **skipped, not published under a fallback**, and the reason lands on
+  the send-log row. No template text is involved — the envelope is a
   versioned, code-defined contract for machine consumers, so a template edit
   can't produce malformed JSON. Off by default; opt in per event.
 

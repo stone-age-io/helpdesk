@@ -54,8 +54,14 @@ staff roster and pickers.
 
 ### `customers` — the company directory
 
-`name` (unique), `active`, `platform_org_id` (unique when set — maps a
-customer to the NATS subject org token), `webhook_token` (hidden; the inbound
+`name` (unique), `active`, `code` (optional, unique when set, added
+`1828000000` — the **tenant token of the ecosystem's public namespace**, ADR
+0002 in `platform-docs`: what subject token 2 carries in both directions, and
+the handle a consumer joins helpdesk events to platform data on),
+`platform_org_id` (unique when set — no longer the subject token; it answers
+the different question "is this customer actually a platform organization",
+which stays real for a desk whose customer list is a **superset** of the
+control plane's), `webhook_token` (hidden; the inbound
 webhook secret), `email_domain` (optional, unique when set, added `1823000000` —
 the customer's own mail domain, used to route inbound email from an unregistered
 sender to this tenant; normalized and blocked from shared providers like
@@ -358,6 +364,17 @@ ticket's `thing`; an unmatched code falls back to `thing_note`, no auto-stub
 independently — a resolved thing does **not** backfill the ticket's location,
 even though it has one.
 
+`code` on both `things` and `locations` has a third job beyond the intake join:
+it is the **entire payload of the printed QR label** (ADR 0002 — no host, no
+customer, no kind token) and therefore what `/staff/scan` resolves. A record
+with no code gets no label button, because the payload *is* the code. Codes are
+resolved **globally and then disambiguated**, never within a customer context:
+`staff` carry no `customer` field, so there is no ambient tenant, and `DOOR-1`
+is exactly the code every customer independently invents. The separate
+`(customer, code)` indexes on the two collections mean one customer may
+legitimately hold both a site and a device under one code; the scanner searches
+both and shows a picker rather than a confident wrong answer.
+
 Deliberately a **superset** of the platform's catalog: `code` is nullable because
 MSP work covers printers, door strikes and customer switches that were never
 onboarded to the control plane. There is no live sync and there cannot be one —
@@ -427,7 +444,9 @@ and visits but never the `lead`/crew). create/update `StaffRule`; delete
 `notification_templates`, `notification_dedupe`, `notification_send_log` —
 lifted from the kiosk notifier. See `docs/notifications.md`. Two channels per
 template: `enabled` (email) and `publish_nats` (publish a JSON envelope to
-`helpdesk.{customerId}.events.{event_type}`, migration `1814000000`);
+`helpdesk.{customerCode}.events.{event_type}`, migration `1814000000`; token 2
+became `customers.code` in `1828000000`, and a customer without one is skipped
+rather than published under a fallback);
 `notification_send_log.channel` (`email` | `nats`) records which path each row
 is for.
 
@@ -438,6 +457,9 @@ These unique indexes are load-bearing, not just performance:
 - `tickets.number` — the collision backstop for the sequential-number hook.
 - `tickets.dedupe_key` (partial, `!= ''`) — absorbs NATS redelivery and
   webhook retries; a duplicate key is acked/answered without a second ticket.
+- `customers.code` (partial, `!= ''`) — the tenant token resolves to exactly one
+  customer. Partial because a customer the platform never onboarded has no code
+  until an operator assigns one, and SQLite treats `''` as a value.
 - `customers.platform_org_id` (partial) — one customer per platform org.
 - `customers.webhook_token` (partial) — token uniquely selects a customer.
 - `customers.email_domain` (partial, `!= ''`) — a mail domain maps to one tenant.

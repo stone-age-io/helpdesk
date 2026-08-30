@@ -88,8 +88,13 @@ func createCustomersCollection(app core.App) (*core.Collection, error) {
 	customers := core.NewBaseCollection("customers")
 	customers.Fields.Add(&core.TextField{Name: "name", Required: true})
 	customers.Fields.Add(&core.BoolField{Name: "active"})
-	// Maps this customer to a platform organization for NATS-ingested tickets:
-	// the org id token in the hub-side subject helpdesk.{platform_org_id}.>.
+	// Maps this customer to a platform organization.
+	//
+	// SUPERSEDED as the routing key by `code` in 1828000000 (ADR 0002): subject
+	// token 2 is `customers.code`, not this. The field stays because it answers
+	// a question the code cannot — "is this customer actually a platform
+	// organization" — for a desk whose customer list is a superset of the
+	// control plane's.
 	customers.Fields.Add(&core.TextField{Name: "platform_org_id"})
 	// Shared secret for the inbound webhook route (/api/helpdesk/inbound/{token}).
 	// Hidden: never leaves the server via the record API; staff use the reveal route.

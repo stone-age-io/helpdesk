@@ -14,10 +14,14 @@ grown past a help desk.
 The differentiating capability is **machine-generated tickets**: things and
 rule-router publish events inside a customer org's NATS account on
 `helpdesk.>`, the platform's managed-org export delivers them into the
-operator hub account as `helpdesk.{platformOrgId}.>` with unforgeable
+operator hub account as `helpdesk.{orgCode}.>` with unforgeable
 subject-based provenance, and the helpdesk's durable JetStream consumer
 turns them into tickets. Humans use the portal, staff app, or the
 authenticated webhook.
+
+Token 2 is the **organization code** — the ecosystem's one globally unique
+identifier, and the same handle sites, devices and outbound events all name a
+tenant by (ADR 0002 in `platform-docs`).
 
 **New here?** [docs/overview.md](docs/overview.md) is the map — the handful of
 ideas the app is built on, what each role actually does day to day, and a
@@ -38,6 +42,11 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   volume by category and source, scopeable to one customer, site or device);
   and admin for requesters, staff, categories, record types, and notification
   templates.
+- **Field shell**: the same `/staff/*` routes in phone-shaped chrome —
+  `Today · Schedule · Tickets · Time · More`, where **More** holds the scanner,
+  Sites and Devices. Sites and Devices offer a *My scheduled sites* narrowing
+  that only appears for staff who actually have scheduled visits, so it can
+  never leave a dispatcher staring at an empty roster.
 - **Requester portal**: a company dashboard, a searchable list of their own
   tickets, threaded ticket detail with attachments, a new-ticket form that can
   name the site and device, filters and a Sites page over those two axes, a
@@ -65,6 +74,15 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   and deliberately not live-synced: the platform publishes no event stream for
   things, and the only alternatives are a control-plane credential (forbidden
   here) or an edge KV mirror.
+- **QR labels and scanning**: print an operator-branded label for any site or
+  device that has a code, sized in millimetres to real stock (2″ × 1″ and
+  4″ × 2″, both reserving the centred RFID inlay keep-out so one layout prints
+  on plain or RFID media). Scan it back at `/staff/scan`. The payload is the
+  **bare code** — no host, no customer, no kind token — so a forged sticker
+  can't send a person to arbitrary content, and codes resolve *globally* with a
+  picker on collision rather than inside a sticky customer context. Every label
+  prints its code in readable text, and typing it is a first-class path.
+  Rationale: ADR 0002 in `platform-docs`.
 - **Time & billing inputs**: minutes logged by hand or via a start/stop timer
   (one open session per agent, DB-enforced), each entry flagged billable or not
   so reports can show a write-off rate. Minutes only — billing math stays in
@@ -77,9 +95,13 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   (needs-scheduling bucket + day-grouped list), and work it from a mobile-first
   visit view (Arrive → live timer → Complete). Requesters see their visits
   read-only in the portal.
-- **Customers directory**: platform-org mapping for NATS ingestion,
-  per-customer webhook tokens (admin reveal/rotate), a mail domain for email
-  intake, and a per-customer toggle for showing logged time to requesters.
+- **Customers directory**: a `code` — the ecosystem's tenant token, carried by
+  the NATS subject in **both** directions and the handle a consumer joins
+  helpdesk events to platform data on — plus per-customer webhook tokens (admin
+  reveal/rotate), a mail domain for email intake, and a per-customer toggle for
+  showing logged time to requesters. (`platform_org_id` remains, but only to
+  record that a customer *is* a platform organization; it stopped being the
+  routing key with ADR 0002.)
 - **Outbound notifications, two channels**: eight events (ticket created /
   assigned / commented / status changed, visit scheduled / rescheduled /
   canceled / completed) fired from record hooks. **Email** uses DB-stored
