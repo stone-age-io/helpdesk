@@ -20,7 +20,15 @@ const staff = ref<Staff[]>([])
 const customers = ref<Customer[]>([])
 const locations = ref<Location[]>([])
 const projects = ref<Project[]>([])
-const loading = ref(false)
+// `loading` covers the FIRST paint only — it is the one moment there is nothing
+// worth preserving, so swapping the page for a spinner is free. Every later
+// refresh sets `busyVisits` instead and leaves the DOM mounted: unmounting the
+// filter bar to reload the list under it collapsed the page, and the browser
+// clamped the scroll position to the shorter document (measured: 1400 → 361 on
+// a single status change), so changing a filter threw away your place in the
+// board you were reading.
+const loading = ref(true)
+const busyVisits = ref(false)
 const error = ref('')
 
 // Filters (initial values may come from the URL query). Requested visits
@@ -72,6 +80,29 @@ const requestedSorted = computed(() =>
     return ra !== rb ? ra - rb : a.created.localeCompare(b.created)
   }),
 )
+
+// The bucket is an inbox worked top-down, so it is capped rather than paged —
+// nobody goes to page 4 of "needs scheduling"; you schedule from the top and the
+// list shrinks. The badge above still carries the true total.
+//
+// This is a RENDER cap and cannot become a query one: the priority order is
+// computed here because a PocketBase relation-hop sort on a select orders
+// alphabetically (high < low < normal < urgent). Fetching only the first N by
+// `created` would strand an urgent visit on a page nobody asked for and it would
+// never reach the top of the list it is supposed to lead.
+const REQUESTED_PREVIEW = 8
+const requestedExpanded = ref(false)
+const requestedVisible = computed(() =>
+  requestedExpanded.value ? requestedSorted.value : requestedSorted.value.slice(0, REQUESTED_PREVIEW),
+)
+
+// Collapsed state persists per browser, like the queue's saved views: a
+// dispatcher living in the week board wants this out of the way, one triaging
+// wants it open. Defaults to open — it is the inbox, and hiding a backlog by
+// default is how it gets forgotten.
+const REQUESTED_OPEN_KEY = 'helpdesk:dispatchRequestedOpen'
+const requestedOpen = ref(localStorage.getItem(REQUESTED_OPEN_KEY) !== '0')
+watch(requestedOpen, (open) => localStorage.setItem(REQUESTED_OPEN_KEY, open ? '1' : '0'))
 
 // Scheduled visits grouped by local day, chronological within each.
 const dayGroups = computed(() => {
@@ -173,27 +204,42 @@ function currentFilter(): string {
   return view.value === 'list' ? buildFilter() : buildCalendarFilter()
 }
 
-async function load(quiet = false) {
-  if (!quiet) loading.value = true
+// The two lists load independently. The requested bucket's query is a constant
+// (`status = 'requested'`) that no filter on this page touches, so refetching it
+// whenever someone picked a technician or stepped to the next week was work that
+// could never change its result.
+async function loadRequested() {
+  try {
+    requested.value = await pb.collection('visits').getFullList<Visit>({
+      filter: `status = 'requested'`,
+      sort: 'created',
+      expand: 'ticket,ticket.customer,ticket.location',
+    })
+  } catch (err: any) {
+    error.value = err?.message || 'Failed to load visits'
+  }
+}
+
+async function loadVisits(quiet = false) {
+  if (!quiet) busyVisits.value = true
   error.value = ''
   try {
-    ;[requested.value, visits.value] = await Promise.all([
-      pb.collection('visits').getFullList<Visit>({
-        filter: `status = 'requested'`,
-        sort: 'created',
-        expand: 'ticket,ticket.customer,ticket.location',
-      }),
-      pb.collection('visits').getFullList<Visit>({
-        filter: currentFilter(),
-        sort: 'scheduled_at',
-        expand: 'ticket,ticket.customer,ticket.location,assignee',
-      }),
-    ])
+    visits.value = await pb.collection('visits').getFullList<Visit>({
+      filter: currentFilter(),
+      sort: 'scheduled_at',
+      expand: 'ticket,ticket.customer,ticket.location,assignee',
+    })
   } catch (err: any) {
     error.value = err?.message || 'Failed to load visits'
   } finally {
-    if (!quiet) loading.value = false
+    busyVisits.value = false
   }
+}
+
+// Anything that can change a visit's status crosses both lists — scheduling a
+// requested visit moves it from one to the other — so those callers reload both.
+async function reloadAll(quiet = false) {
+  await Promise.all([loadRequested(), loadVisits(quiet)])
 }
 
 async function loadFilterOptions() {
@@ -251,7 +297,7 @@ function exportCsv() {
 // scheduled one rescheduled/completed, all without leaving the board.
 const openVisitId = ref<string | null>(null)
 
-watch([technician, customer, location, project, status, from, to, view, focusDate], () => load())
+watch([technician, customer, location, project, status, from, to, view, focusDate], () => loadVisits())
 
 // Keep the mode in the URL so a reload or shared link lands on the same view.
 watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } }))
@@ -261,14 +307,15 @@ watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'list' 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined
 function scheduleReload() {
   clearTimeout(reloadTimer)
-  reloadTimer = setTimeout(() => load(true), 800)
+  reloadTimer = setTimeout(() => reloadAll(true), 800)
 }
 
 let unsubscribe: (() => void) | null = null
 
 onMounted(async () => {
-  load()
   loadFilterOptions()
+  await reloadAll(true)
+  loading.value = false
   try {
     unsubscribe = await pb.collection('visits').subscribe('*', scheduleReload)
   } catch {
@@ -294,20 +341,45 @@ onUnmounted(() => {
            dispatcher's inbox, ordered by ticket priority then age. Click a
            row to schedule it in place. -->
       <section class="space-y-2">
-        <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60">
-          Needs scheduling
+        <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60 flex items-center gap-2">
+          <button
+            type="button"
+            class="flex items-center gap-2 hover:text-base-content transition-colors"
+            :aria-expanded="requestedOpen"
+            @click="requestedOpen = !requestedOpen"
+          >
+            <span class="text-[10px] w-2" aria-hidden="true">{{ requestedOpen ? '▼' : '▶' }}</span>
+            Needs scheduling
+          </button>
+          <!-- The true total, always — the list below may be capped or collapsed,
+               but a backlog you cannot see the size of is one you under-react to. -->
           <span v-if="requestedSorted.length" class="badge-soft badge-soft-warning align-middle">{{ requestedSorted.length }}</span>
         </h2>
-        <ResponsiveList v-if="requestedSorted.length" :items="requestedSorted" :columns="requestedColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
-          <template #cell-priority="{ item }"><TicketBadges :priority="item.expand?.ticket?.priority" /></template>
-        </ResponsiveList>
-        <p v-else class="text-sm text-base-content/50">Nothing waiting on a dispatcher.</p>
+        <template v-if="requestedOpen">
+          <p v-if="requestedSorted.length === 0" class="text-sm text-base-content/50">Nothing waiting on a dispatcher.</p>
+          <template v-else>
+            <ResponsiveList :items="requestedVisible" :columns="requestedColumns" @row-click="(v: Visit) => (openVisitId = v.id)">
+              <template #cell-priority="{ item }"><TicketBadges :priority="item.expand?.ticket?.priority" /></template>
+            </ResponsiveList>
+            <button
+              v-if="requestedSorted.length > REQUESTED_PREVIEW"
+              type="button"
+              class="btn btn-ghost btn-xs"
+              @click="requestedExpanded = !requestedExpanded"
+            >
+              {{ requestedExpanded ? 'Show fewer' : `Show all ${requestedSorted.length}` }}
+            </button>
+          </template>
+        </template>
       </section>
 
       <!-- Scheduled work: list (day-grouped) · week board · month overview. -->
       <section class="space-y-2">
         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center">
-          <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60 sm:mr-auto">Visits</h2>
+          <h2 class="font-semibold text-sm uppercase tracking-wide text-base-content/60 sm:mr-auto flex items-center gap-2">
+            Visits
+            <span v-if="busyVisits" class="loading loading-spinner loading-xs" aria-label="Refreshing"></span>
+          </h2>
           <div class="join">
             <button class="btn btn-sm join-item" :class="view === 'list' ? 'btn-active' : ''" @click="view = 'list'">List</button>
             <button class="btn btn-sm join-item" :class="view === 'week' ? 'btn-active' : ''" @click="view = 'week'">Week</button>
@@ -341,6 +413,10 @@ onUnmounted(() => {
           </button>
         </div>
 
+        <!-- Only the results dim while refreshing. The filter bar above stays
+             mounted, which is what keeps the scroll position and the focus on
+             the control you just used. -->
+        <div class="space-y-2 transition-opacity" :class="busyVisits ? 'opacity-50' : ''">
         <!-- List: day-grouped flat rows -->
         <template v-if="view === 'list'">
           <p v-if="dayGroups.length === 0" class="text-sm text-base-content/50">No visits match.</p>
@@ -384,9 +460,14 @@ onUnmounted(() => {
           @next="shift(1)"
           @today="goToday"
         />
+        </div>
       </section>
     </template>
 
-    <VisitDetailDrawer :visit-id="openVisitId" :staff="staff" @close="openVisitId = null" @changed="load" />
+    <!-- `changed` carries no payload, so binding `load` directly passed
+         `undefined` as its `quiet` argument and every visit scheduled from the
+         drawer flashed the board and lost your scroll position. Reload quietly:
+         the drawer is already showing the outcome. -->
+    <VisitDetailDrawer :visit-id="openVisitId" :staff="staff" @close="openVisitId = null" @changed="reloadAll(true)" />
   </div>
 </template>
