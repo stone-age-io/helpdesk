@@ -533,6 +533,35 @@ squashed every real device into the left quarter of the track. Grids holding
 side-by-side cards need `items-start` — a grid row otherwise stretches to its
 tallest cell and pads the short card with dead space.
 
+The staff **Dashboard** is written in the Reports register on purpose — same
+stat scale, shadow, card padding, headings and page rhythm — because the two
+are read minutes apart and six trivial divergences added up to "different app".
+What does *not* transfer is colour: the tiles carry the `TicketBadges` status /
+priority palette so a tile reads as the chip you will meet in the queue, while
+Reports' measures (hours, counts) have no semantic scale and stay neutral.
+Every number on the page is a door into a pre-filtered queue, Backlog age
+included — three inert numbers styled exactly like five links promised a click
+nothing honoured, which is why `tickets` grew an `age` filter. Its buckets are
+`[0,2d) · [2d,7d) · [7d,∞)`, evaluated **per query** (a tab left open overnight
+would otherwise keep measuring from whenever it loaded), and the labels say
+"2–7", not "3–7": the middle bucket opens at two days, and while the count
+stood alone the mislabel was invisible — beside an Age column it is the first
+thing you see. Charts print their values rather than hiding them in `title`
+tooltips; hover does not exist on the phone this app is also read on, so a
+hover-only count is no count at all.
+
+`SearchSelect.vue` is the typeahead behind ~40 pickers, and two of its
+decisions are easy to undo by accident. Its popup is **not** tied to the input:
+filter inputs sit in `sm:w-52` columns, and daisyUI's menu lays each row out as
+`display: grid; grid-auto-flow: column`, so a `w-full` popup made label and
+sublabel split 13rem and truncate — cutting exactly the half that
+disambiguates, two of a customer's sites both reading "Brightpath…". The list
+sizes to its content and stacks the two, and the explicit `flex` on the row is
+load-bearing (grid ignores `flex-direction`, so `flex-col` alone is inert). It
+is also a hand-rolled ARIA combobox: the highlight is announced through
+`aria-activedescendant` rather than by moving focus, because focus has to stay
+in the input for typing to work.
+
 The **portal** reads the site/device axes as well as writing them. Intake offers
 a picker per axis (customer-scoped by the collection rules, so no client filter
 is needed or trustworthy), with devices at the chosen site sorted to the top but

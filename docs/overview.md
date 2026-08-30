@@ -207,16 +207,20 @@ only if you've opted that customer in.
 
 The working day:
 
-1. **Queue** — filter by status, priority, assignee, customer, category, site,
-   device. Save the filters you use daily as views.
-2. **Triage** — set category, type, project, and an effort estimate. If a change
+1. **Dashboard** — where `/staff` lands you: counts by status, the urgent and
+   unassigned piles, how much of the backlog is going stale, and inflow over
+   the last eight weeks. Every number is a link into the queue that produced
+   it, so it's a set of doors rather than a scoreboard.
+2. **Queue** — filter by status, priority, assignee, customer, category, site,
+   device, and backlog age. Save the filters you use daily as views.
+3. **Triage** — set category, type, project, and an effort estimate. If a change
    shouldn't email anyone, the UI can send it quietly.
-3. **Work it** — comment publicly (tick *Request a reply* when you genuinely
+4. **Work it** — comment publicly (tick *Request a reply* when you genuinely
    need the customer, which is what drives their prompt) or leave an internal
    note nobody outside sees.
-4. **Log time** — type the minutes, or run the start/stop timer and let it
+5. **Log time** — type the minutes, or run the start/stop timer and let it
    round.
-5. **Dispatch** — schedule a visit from the ticket or the Dispatch board. A
+6. **Dispatch** — schedule a visit from the ticket or the Dispatch board. A
    scheduled visit must have both a time and a technician; that's the one rule
    the server enforces.
 
@@ -297,21 +301,24 @@ Every demo login uses the password `demo12345`:
 
 A good first lap, as Maya:
 
-1. **Reports** → *Thing type* — which classes of device cost the most hours.
-2. **Reports** → *Customer*, then flip to *Staff* — the totals above stay put;
+1. **Dashboard** — the landing screen. Click *Over 7 days* under Backlog age
+   and land in the queue filtered to exactly those tickets; the count and the
+   queue agree because both cut the backlog at the same boundary.
+2. **Reports** → *Thing type* — which classes of device cost the most hours.
+3. **Reports** → *Customer*, then flip to *Staff* — the totals above stay put;
    they're the denominator each table is read against.
-3. Open a ticket with a site and a device, and follow its links out into the
+4. Open a ticket with a site and a device, and follow its links out into the
    filtered history for each.
-4. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
-5. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
+5. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
+6. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
    4″ × 2″ and tick *RFID stock* to reveal the inlay keep-out the artwork
    straddles. Then **Scan** → type that code in the manual field: one match goes
    straight to the record. Try `DOOR-1`-style codes shared across customers and
    you'll get the picker instead.
-6. Sign in as Sam and the shell changes shape: today's visits, and **More** →
+7. Sign in as Sam and the shell changes shape: today's visits, and **More** →
    Sites / Devices with the *My scheduled sites* toggle narrowing to just his
    customers.
-7. Sign in as Regina and compare: same tickets, no internal notes, no
+8. Sign in as Regina and compare: same tickets, no internal notes, no
    technician names, and a service summary with billable hours because
    Northwind is opted in. Sign in as `anita.rao@harborview.example` and the
    hours are simply absent — Harborview isn't.
