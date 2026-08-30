@@ -3,15 +3,27 @@
 // lat/lng v-models so the parent form's numeric inputs stay the source of truth
 // and the map merely visualizes/edits them. Three ways to set the pin: search a
 // place (explicit — Enter or the button, never debounced, to respect
-// Nominatim's usage policy), click the map, or drag the pin. Both the tiles and
-// the geocoder are public OSM endpoints hit from the browser, so this needs
-// internet and degrades to manual lat/lng entry when offline.
+// Nominatim's usage policy), click the map, or drag the pin. The basemap
+// (OpenFreeMap) and the geocoder (Nominatim) are both public endpoints hit from
+// the browser, so this needs internet and degrades to manual lat/lng entry when
+// offline.
 //
 // Adapted from the access-control sibling's LocationPicker; the map setup is
 // inlined (helpdesk needs one draggable pin, not the sibling's marker layer).
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+// maplibre-gl is held at v5 on purpose. v5 inlines its tile-parsing worker into
+// dist/maplibre-gl.js; v6 splits it out and resolves it as a sibling file
+// (`new URL('./maplibre-gl-worker.mjs', import.meta.url)`) that Vite never emits
+// once the library is bundled into a hashed chunk. Nothing throws and nothing
+// reaches the console — the style still loads and its background layer still
+// paints, so water, landuse, roads and labels vanish together and the map reads
+// as a flat sheet of theme colour rather than as a failure. v5 is also the
+// version OpenFreeMap's own quick start pins. Mirrors the platform's pin.
+import 'maplibre-gl/dist/maplibre-gl.css'
+// Side-effect import: registers L.maplibreGL and augments the leaflet module types.
+import '@maplibre/maplibre-gl-leaflet'
 import { fixLeafletIcons } from '@/utils/leafletIcons'
 import { theme } from '@/theme'
 
@@ -26,10 +38,30 @@ const address = defineModel<string>('address', { required: true })
 // works as a location display, but the pin can't be moved and search is off.
 const props = defineProps<{ disabled?: boolean }>()
 
-const TILE_LIGHT = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-const TILE_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+// Basemap styles. Keyless, and vector rather than raster.
+//
+// Both of the raster sources this used had to move: CARTO put its basemaps
+// behind an API key and is retiring them, and the light layer was calling
+// tile.openstreetmap.org directly, which the OSMF tile usage policy does not
+// allow for a product. OpenFreeMap replaces both — no key, no request cap,
+// commercial use permitted, and self-hostable if a deployment ever cannot reach
+// tiles.openfreemap.org. Lifted from the platform, which moved first.
+//
+// These are MapLibre style documents, not {z}/{x}/{y} templates (OpenFreeMap
+// publishes no raster endpoint), so the basemap renders through L.maplibreGL
+// onto a WebGL canvas instead of L.tileLayer. The draggable pin above it is
+// unchanged Leaflet. fiord is a designed dark style, so the brightness lift a
+// dark raster layer would want is neither needed nor safe: the GL canvas lands
+// in .leaflet-tile-pane, so a filter there would wash out the whole basemap.
+const STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/bright'
+const STYLE_DARK = 'https://tiles.openfreemap.org/styles/fiord'
+// OpenFreeMap's style JSON carries no `attribution` on its sources, so MapLibre
+// renders no credit of its own and ODbL still requires one. It goes on the map's
+// attribution control at init rather than on the layer: it is the same for both
+// styles, and L.maplibreGL's options are typed as MapLibre's own, which have no
+// Leaflet `attribution` key.
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &middot; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> &middot; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 const DEFAULT_CENTER: [number, number] = [39.8283, -98.5795]
 const DEFAULT_ZOOM = 4
 
@@ -49,7 +81,7 @@ const searchError = ref('')
 const results = ref<NominatimResult[]>([])
 
 let map: L.Map | null = null
-let tileLayer: L.TileLayer | null = null
+let basemapLayer: L.MaplibreGL | null = null
 let marker: L.Marker | null = null
 // Recenter at most once (on the first non-zero coordinates, e.g. an edit-mode
 // record load) — never on every manual keystroke.
@@ -68,12 +100,14 @@ function setCoords(la: number, ln: number) {
 
 function applyTiles() {
   if (!map) return
-  if (tileLayer) map.removeLayer(tileLayer)
-  tileLayer = L.tileLayer(theme.value === 'dark' ? TILE_DARK : TILE_LIGHT, {
-    attribution: TILE_ATTRIBUTION,
-    maxZoom: 19,
+  if (basemapLayer) map.removeLayer(basemapLayer)
+  // attributionControl: false — the credit lives on the Leaflet control (set
+  // once at init), not on a second one MapLibre would draw itself.
+  basemapLayer = L.maplibreGL({
+    style: theme.value === 'dark' ? STYLE_DARK : STYLE_LIGHT,
+    attributionControl: false,
   })
-  tileLayer.addTo(map)
+  basemapLayer.addTo(map)
 }
 
 function placeMarker(la: number, ln: number) {
@@ -159,8 +193,13 @@ onMounted(() => {
   map = L.map(mapEl.value, {
     center: hasCoords.value ? [lat.value, lng.value] : DEFAULT_CENTER,
     zoom: hasCoords.value ? 17 : DEFAULT_ZOOM,
+    // Was an L.tileLayer option; the GL layer supplies no zoom bounds, and
+    // without this Leaflet would zoom in without limit.
+    maxZoom: 19,
     zoomControl: true,
   })
+  map.attributionControl.setPrefix(false)
+  map.attributionControl.addAttribution(TILE_ATTRIBUTION)
   applyTiles()
   centered = hasCoords.value
   if (hasCoords.value) placeMarker(lat.value, lng.value)
@@ -239,7 +278,9 @@ watch(() => props.disabled, (d) => {
 
     <p class="text-xs leading-relaxed text-base-content/60">
       <template v-if="!disabled">Search for a place, click the map, or drag the pin to set coordinates. </template>
-      Map &amp; geocoding by
+      Map by
+      <a href="https://openfreemap.org" target="_blank" rel="noopener" class="link">OpenFreeMap</a>,
+      geocoding by
       <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" class="link">OpenStreetMap</a>
       (needs internet).
     </p>

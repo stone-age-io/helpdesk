@@ -1,1 +1,0 @@
-import{s as y,l as c,m as f}from"./index-CYPDC0qh.js";function l(){const e=c();return(t,u="")=>typeof e.query[t]=="string"?e.query[t]:u}function p(e,t={}){const u=c(),n=f(),a=Object.keys(e);y(Object.values(e),()=>{const s={...u.query};for(const o of a){const r=String(e[o].value??"");s[o]=r&&r!==(t[o]??"")?r:void 0}n.replace({query:s}).catch(()=>{})})}export{l as a,p as u};

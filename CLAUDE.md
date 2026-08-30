@@ -504,7 +504,8 @@ per-record file cap). Full design: `docs/email-ingestion.md`.
 
 **UI** (`ui/`): Vue 3 + Vite + Pinia + Tailwind + daisyUI (custom light/dark
 theme + soft badges, `ui/tailwind.config.js` + `.badge-soft*` in
-`src/style.css`) + Leaflet (lazy-loaded location map picker), PocketBase JS
+`src/style.css`) + Leaflet over an OpenFreeMap basemap (lazy-loaded location
+map picker), PocketBase JS
 SDK, same-origin (`new PocketBase('/')`). One login page tries `staff`
 then falls back to `users`; router guards by auth collection
 (`meta.requires`), plus `meta.adminOnly` for admin surfaces (staff,
@@ -782,6 +783,25 @@ land on the active-only default it was written to escape.
   because `migrations` imports `notifications` (import cycle otherwise).
   NATS projection is tested by calling `ingest.(*Consumer).Project`
   directly — no broker in tests (sibling convention).
+- **The basemap is OpenFreeMap, and `maplibre-gl` is pinned to 5, not 6.**
+  `LocationPicker` moved off raster tiles because both of its sources had to go:
+  CARTO put its rasters behind an API key and is retiring them, and the light
+  layer was calling `tile.openstreetmap.org` directly, which the OSMF tile usage
+  policy does not allow for a product. OpenFreeMap is keyless, uncapped,
+  commercial-use-permitted and self-hostable — but it publishes no raster
+  endpoint, so the basemap is a MapLibre style document rendered through
+  `L.maplibreGL` onto a **WebGL canvas**; the draggable pin over it is unchanged
+  Leaflet. The cost is real and worth knowing: MapLibre adds ~275 kB gzipped to
+  the `LocationDetailView` route chunk, which is lazy so it reaches only staff
+  who open a location. The pin matters more than it looks: v5 inlines its
+  tile-parsing worker, v6 resolves it as a sibling file Vite never emits once the
+  library is in a hashed chunk, and **nothing throws and nothing reaches the
+  console** — the style loads and its background layer paints, so water, landuse,
+  roads and labels vanish together and the map reads as a flat sheet of theme
+  colour rather than as a failure. v5 is also what OpenFreeMap's own quick start
+  pins. Mirrors the platform and access-control. Revisit when
+  `@maplibre/maplibre-gl-leaflet` documents v6 rather than merely permitting it
+  in `peerDependencies`.
 - **gotcha**: `.gitignore` anchors the built binary as `/helpdesk` — a bare
   `helpdesk` pattern would ignore `cmd/helpdesk/` too (this bit us once).
   Similarly `config.Load` must not `SetConfigType`, or viper matches the

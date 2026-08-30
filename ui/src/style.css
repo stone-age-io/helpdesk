@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep the basemap attribution to one line.
+ *
+ * The credit that ODbL requires is three names long and the map it sits on is a
+ * form field, not a page — left to wrap it grows upward across the pin.
+ *
+ * Truncated rather than abbreviated: the credit is a licence obligation, so the
+ * full text stays in the DOM, and hover or keyboard focus expands it.
+ *
+ * No dark-mode basemap filter here on purpose. CARTO's dark_all needed a
+ * brightness lift; its replacement, OpenFreeMap's fiord, is a designed dark
+ * style. A filter would now be harmful — L.maplibreGL renders into
+ * .leaflet-tile-pane, so it would wash out the whole basemap. */
+.leaflet-control-attribution {
+  max-width: calc(100% - 4rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaflet-control-attribution:hover,
+.leaflet-control-attribution:focus-within {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+}
+
 /* Soft badges: a ~12% tint of a semantic hue with darker same-hue text, in
    place of daisyUI's saturated solid fills. One visual language for both
    status and priority — status carries a leading state dot (--sd-dot), set
