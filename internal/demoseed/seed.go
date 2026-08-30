@@ -144,6 +144,7 @@ func Run(app core.App, opts Options) (*Result, error) {
 		{"people", s.seedPeople},
 		{"categories", s.loadCategories},
 		{"projects", s.seedProjects},
+		{"maintenance", s.seedMaintenancePlans},
 		{"tickets", s.seedTickets},
 	}
 	for _, step := range steps {
@@ -449,6 +450,48 @@ func (s *seeder) seedProjects() error {
 			return err
 		}
 		s.projects[p.Key] = rec.Id
+	}
+	return nil
+}
+
+// seedMaintenancePlans fills the recurrence layer. The plans are seeded but
+// deliberately NOT generated from — running the generator here would make the
+// seeded ticket count non-deterministic and mint tickets whose ages the backdate
+// pass never touches. `helpdesk maintenance-run` is one command away, and
+// watching a plan produce its ticket is the more useful demo anyway.
+func (s *seeder) seedMaintenancePlans() error {
+	for _, p := range maintenancePlans {
+		cust := s.customers[p.Customer]
+		_, _, err := s.ensure("maintenance_plans", "customer = {:c} && title = {:t}",
+			dbx.Params{"c": cust, "t": p.Title}, func(r *core.Record) {
+				r.Set("customer", cust)
+				r.Set("title", p.Title)
+				r.Set("body", p.Body)
+				r.Set("interval_days", p.IntervalDays)
+				r.Set("lead_time_days", p.LeadTimeDays)
+				r.Set("anchor", p.Anchor)
+				r.Set("next_due", s.dateOnly(p.NextDueDays))
+				r.Set("priority", p.Priority)
+				r.Set("paused", p.Paused)
+				if p.EstimatedMinutes > 0 {
+					r.Set("estimated_minutes", p.EstimatedMinutes)
+				}
+				if id := s.things[p.Thing]; id != "" {
+					r.Set("thing", id)
+				}
+				if id := s.locations[p.Location]; id != "" {
+					r.Set("location", id)
+				}
+				if id := s.staff[p.Assignee]; id != "" {
+					r.Set("assignee", id)
+				}
+				if id := s.categories[p.Category]; id != "" {
+					r.Set("category", id)
+				}
+			})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

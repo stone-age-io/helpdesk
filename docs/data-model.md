@@ -100,9 +100,11 @@ expanded — the page — and this route never grows a second copy of it.
 `title`, `body`, `status` (`open` | `in_progress` | `waiting` | `resolved` |
 `closed`), `priority` (`low` | `normal` | `high` | `urgent`), `assignee`
 (→ staff), `requester` (→ users, optional — machine tickets have none),
-`source` (`portal` | `agent` | `nats` | `webhook` | `email`; `email` added
-`1823000000`), `origin_subject` (the full hub-side NATS subject, provenance for
-machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
+`source` (`portal` | `agent` | `nats` | `webhook` | `email` | `maintenance`;
+`email` added `1823000000`, `maintenance` — the preventive-maintenance
+scheduler — added `1829000000`, since none of the others honestly described a
+ticket the cron opened), `origin_subject` (the full hub-side NATS subject,
+provenance for machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
 carries the inbound email `Message-ID`), `attachments` (≤6 files),
 `category` (→ ticket_categories, optional — see below), `type` (`reactive` |
 `planned`, default `reactive` via the create hook),
@@ -126,6 +128,14 @@ source of truth. `resolved_at` (datetime, optional, added `1821000000`) — stam
 by the `internal/tickets` guard when the ticket enters `resolved`, cleared when
 it leaves (mirrors visits' `completed_at`); it gives the auto-close cron a
 trustworthy age. Nil unless currently resolved.
+`due_at` (date, optional, added `1829000000`) — the target date, and pointedly
+**not an SLA clock**: nothing measures it, nothing escalates off it, and only a
+human writes it (or the maintenance generator, copying its plan's `next_due`).
+SLA timers and escalation remain out of scope; this is the plain date somebody
+agreed to. Audited like the other workflow fields. `maintenance_plan`
+(→ maintenance_plans, optional, same migration) — set only on a generated
+ticket. It is the "is the last one still open" guard, the completion hook's way
+back to the plan, and the generated-ticket history on the plan detail view.
 
 **Two-stage terminal.** `resolved` and `closed` are *not* synonyms: `resolved`
 is a grace window (a requester comment reopens it), `closed` is final (requesters
@@ -145,7 +155,10 @@ Rules:
   `requester` = themselves, no `assignee`, `source = 'portal'`, and none of
   `category` / `type` / `project` / `estimated_minutes` (all pinned in the create
   rule so the portal can't forge them — classification, the grouping fields, and
-  the effort estimate are triage, i.e. staff actions).
+  the effort estimate are triage, i.e. staff actions). `1829000000` adds
+  `due_at` and `maintenance_plan` to that list: a target date is a commitment
+  staff make, and attaching a ticket to a service schedule is not a requester's
+  call.
 
   `location` and `thing` are the exception, since `1825000000`: a requester
   **may** set both, because they are not judgements about the work but facts
@@ -413,6 +426,56 @@ Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)` 
 a requester's ticket may render a typed metadata field, so the schema has to be
 readable; create/update/delete `AdminRule`, matching `ticket_categories`.
 
+### `maintenance_plans` — preventive-maintenance schedules (added `1829000000`)
+
+`customer` (required), `title` (required) and `body` — the ticket this plan will
+open — plus the triage it stamps on every one: `category`, `assignee`,
+`priority`, `estimated_minutes`, and the `thing` / `location` / `project` it is
+about (all optional; no cascade delete, so retiring a device never deletes the
+schedule that services it). The schedule itself is `interval_days` (required,
+≥ 1), `anchor`, `lead_time_days`, `next_due` and `paused`.
+
+Like `projects`, this is a planning layer **above** the ticket → visit → time
+ledger: its only output is an ordinary ticket, and the collection could be
+dropped without breaking anything already recorded — only future generation
+would stop.
+
+**The two anchors.** `anchor` picks the behaviour, and each stays simple because
+each has exactly **one writer** of `next_due`:
+
+- `schedule` — the cron owns it, advancing by whole `interval_days` at
+  generation until it lands in the future. "Quarterly" stays quarterly however
+  late the visit ran. A plan dormant for a year yields one ticket on the next
+  real slot, not a year of backlog.
+- `completion` — the cron **parks** the plan (clears `next_due`), and the
+  `internal/maintenance` ticket hook sets it to `resolved_at + interval_days`
+  when the generated ticket resolves. "Every 90 days after last service."
+
+An empty `next_due` therefore means *parked*, not "no date", and the generator's
+`next_due != ''` filter is what makes a completion-anchored plan **structurally
+unable** to stack up work. The skip-if-still-open guard consequently only ever
+runs on `schedule` plans, which still advance when they skip — one inspection
+nobody did must not become four open tickets, and a plan that never advances
+falls permanently behind the calendar it tracks.
+
+`paused` rather than `active`, the `things.retired` / `time_entries.non_billable`
+idiom: a Go bool's zero value is `false`, so an `active` field would make every
+hand-created and seeded plan arrive inactive and be skipped silently.
+
+Generation runs from a daily cron (`maintenance_generate`, 03:45 — after
+`auto_close_resolved` so a plan whose ticket was auto-closed at 03:30 restarts
+the same night) and on demand via `helpdesk maintenance-run`, the
+catch-up path for an install that was down at fire time. It is idempotent per
+occurrence through `tickets.dedupe_key` (see below), and deliberately does
+**not** suppress notifications — a new preventive ticket is real news, unlike
+the administrative auto-close.
+
+Rules: list/view/create/update `StaffRule`, delete `AdminRule` — the split
+`1813000000` gave locations, because the person who learns a site needs
+quarterly service is usually the tech standing in it. Read is staff-only: the
+generated tickets already give requesters everything that matters, and a plan
+carries `assignee`, the MSP roster the portal visit and project views hide.
+
 ### `projects` — installation / field-work container (added `1812000000`)
 
 `number` (unique int, assigned by the `internal/projects` create hook),
@@ -457,6 +520,10 @@ These unique indexes are load-bearing, not just performance:
 - `tickets.number` — the collision backstop for the sequential-number hook.
 - `tickets.dedupe_key` (partial, `!= ''`) — absorbs NATS redelivery and
   webhook retries; a duplicate key is acked/answered without a second ticket.
+  It carries preventive-maintenance occurrences too, as
+  `pm:{planId}:{YYYY-MM-DD}` (`1829000000`), which is what makes the daily cron
+  and a hand-run `helpdesk maintenance-run` safe to overlap: the same plan
+  occurrence can only ever produce one ticket.
 - `customers.code` (partial, `!= ''`) — the tenant token resolves to exactly one
   customer. Partial because a customer the platform never onboarded has no code
   until an operator assigns one, and SQLite treats `''` as a value.

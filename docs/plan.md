@@ -30,6 +30,11 @@ docs win:
 - Sites and devices grew **printable QR labels and an in-app scanner**, whose
   payload is the bare `code`; the field shell reaches both plus the scanner
   behind its **More** tab.
+- **Preventive maintenance** shipped (`maintenance_plans` + a nightly cron), and
+  tickets gained a `due_at`. The "SLA timers out of scope" line below still
+  holds exactly as written: `due_at` is an inert date with no clock, no breach
+  state and no escalation. A fifth `source`, `maintenance`, marks the tickets
+  the scheduler opens. See [data-model.md](data-model.md).
 
 For what the app actually does today, start at [`CLAUDE.md`](../CLAUDE.md) and
 [data-model.md](data-model.md).

@@ -26,6 +26,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/demoseed"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
+	"github.com/stone-age-io/helpdesk/internal/maintenance"
 	"github.com/stone-age-io/helpdesk/internal/natsx"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/projects"
@@ -69,8 +70,13 @@ func main() {
 	// its sequential number and audit trail exactly as a real one does.
 	demoseed.RegisterCommand(app)
 
+	// `helpdesk maintenance-run` performs the daily generation sweep on demand —
+	// the catch-up path after downtime, since PB's cron is process-local.
+	maintenance.RegisterCommand(app)
+
 	tickets.Register(app)
 	projects.Register(app)
+	maintenance.Register(app)
 	visits.Register(app)
 	timers.Register(app)
 	activity.Register(app)
@@ -120,6 +126,24 @@ func main() {
 			}
 		})
 	}
+
+	// Daily preventive-maintenance sweep: materialize a ticket for every plan
+	// that has come due. Unconditional — an install with no plans has nothing to
+	// generate and a single plan is paused with one toggle, so a config flag
+	// would be a second disable mechanism for the same thing.
+	//
+	// Ordering matters: this runs AFTER auto_close_resolved so a
+	// completion-anchored plan whose ticket was auto-closed at 03:30 restarts its
+	// clock the same night instead of waiting a day. A fire missed to downtime is
+	// caught up with `helpdesk maintenance-run`.
+	app.Cron().Add("maintenance_generate", "45 3 * * *", func() {
+		created, skipped, err := maintenance.Generate(app, time.Now().UTC())
+		if err != nil {
+			log.Printf("maintenance generate: %v", err)
+		} else if created > 0 || skipped > 0 {
+			log.Printf("maintenance generate: created %d ticket(s), skipped %d plan(s) still open", created, skipped)
+		}
+	})
 
 	// NATS resources brought up only when actually serving (not for
 	// migrate/superuser subcommands) and torn down on terminate.

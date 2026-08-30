@@ -4,6 +4,7 @@ import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Ticket } from '@/types'
 import TicketListRow from '@/components/TicketListRow.vue'
+import { DUE_BUCKETS, activeDueFilter } from '@/due'
 
 const auth = useAuthStore()
 
@@ -11,6 +12,11 @@ const counts = ref({ open: 0, in_progress: 0, waiting: 0, urgent: 0, unassigned:
 // Backlog aging: active tickets bucketed by age since creation. Answers
 // "how much is going stale?" — the dashboard's point-in-time counts can't.
 const aging = ref({ d0_2: 0, d2_7: 0, d7plus: 0 })
+// Target dates over the active backlog. The buckets and their filters come from
+// @/due, shared with the queue's `due` filter — these tiles link straight into
+// it, so a number that disagreed with the queue it opened would be worse than
+// no tile at all.
+const dueCounts = ref<Record<string, number>>({})
 // New-ticket inflow, oldest→newest over the last 8 weeks (created-based).
 const weeks = ref<number[]>([])
 const weekMax = computed(() => Math.max(...weeks.value, 1))
@@ -48,6 +54,10 @@ async function load(quiet = false) {
       countOf(`${active} && created < '${c7}'`),
     ])
     aging.value = { d0_2: a02, d2_7: a37, d7plus: a7 }
+
+    // Due buckets, counted with the very same clauses the queue filters on.
+    const dueTotals = await Promise.all(DUE_BUCKETS.map((b) => countOf(activeDueFilter(b.value))))
+    dueCounts.value = Object.fromEntries(DUE_BUCKETS.map((b, i) => [b.value, dueTotals[i]]))
 
     // Inflow: tickets created per week for the last 8 weeks, one fetch,
     // bucketed client-side (oldest bucket first).
@@ -157,6 +167,37 @@ onUnmounted(() => {
               </router-link>
             </div>
             <p class="text-xs text-base-content/50">Active tickets by age since created.</p>
+          </div>
+        </div>
+
+        <!-- Due dates: what did we commit to, and are we late? The mirror of
+             Backlog age — that card looks backwards from creation, this one
+             forwards to the date somebody agreed to. Buckets, counts and the
+             queue these link into all come from @/due, so unlike the age card
+             next door there is no second copy of the boundaries to drift. -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body p-4 space-y-2">
+            <h2 class="font-semibold text-sm">Due</h2>
+            <div class="stats stats-horizontal bg-base-100 w-full">
+              <router-link
+                v-for="(b, i) in DUE_BUCKETS"
+                :key="b.value"
+                :to="`/staff/tickets?due=${b.value}`"
+                class="stat px-3 hover:bg-base-200 transition-colors"
+              >
+                <div class="stat-title text-xs">{{ b.tileLabel }}</div>
+                <!-- Overdue is the only one that is bad news; the other two are
+                     just work ahead, so they stay neutral rather than inventing
+                     a severity the date does not carry. -->
+                <div
+                  class="stat-value text-2xl tabular-nums"
+                  :class="i === 0 ? 'text-error' : 'text-base-content'"
+                >
+                  {{ dueCounts[b.value] ?? 0 }}
+                </div>
+              </router-link>
+            </div>
+            <p class="text-xs text-base-content/50">Active tickets with a target date.</p>
           </div>
         </div>
 

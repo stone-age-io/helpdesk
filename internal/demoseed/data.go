@@ -675,3 +675,49 @@ var workNotes = []string{
 	"Follow-up check after the earlier fix.",
 	"Rework after the initial attempt did not hold.",
 }
+
+// ------------------------------------------------------------- maintenance
+
+// maintenanceFixture is a preventive-maintenance schedule. Thing/Location are
+// the fixture keys used elsewhere in this file (a thing's Code, a location's
+// Code); Assignee is a staff key.
+//
+// NextDueDays is an offset from the seed run, so a demo instance always has one
+// plan overdue, one due imminently, and one comfortably ahead — otherwise every
+// plan reads the same and the Due tiles on the dashboard are all zero.
+type maintenanceFixture struct {
+	Customer, Title, Body, Thing, Location, Assignee, Category, Priority, Anchor string
+	IntervalDays, LeadTimeDays, NextDueDays, EstimatedMinutes                    int
+	Paused                                                                       bool
+}
+
+var maintenancePlans = []maintenanceFixture{
+	// Calendar-anchored and overdue: the case the dashboard's Overdue tile and
+	// the queue's red Due column exist to surface.
+	{Customer: "northwind", Title: "Quarterly door controller service", Thing: "RDR-01",
+		Body:   "Check strike alignment, clean the reader face, verify fail-secure behaviour, log firmware.",
+		Anchor: "schedule", IntervalDays: 90, LeadTimeDays: 7, NextDueDays: -3,
+		Assignee: "maya", Priority: "normal", EstimatedMinutes: 60},
+	// Calendar-anchored, due inside the lead window — generates on the next run.
+	{Customer: "ironbridge", Title: "Line 3 vibration sensor calibration", Thing: "VIB-3A",
+		Body:   "Calibrate the line 3 vibration sensor against the reference block; record drift.",
+		Anchor: "schedule", IntervalDays: 30, LeadTimeDays: 5, NextDueDays: 2,
+		Assignee: "gwen", Priority: "high", EstimatedMinutes: 120},
+	// Completion-anchored: the clock starts when the filter is actually changed,
+	// not on a calendar. The other half of the anchor story.
+	{Customer: "brightpath", Title: "Clinic HVAC filter change", Location: "BP-WEST",
+		Body:   "Swap return-air filters; note the differential pressure before and after.",
+		Anchor: "completion", IntervalDays: 60, NextDueDays: 9,
+		Assignee: "noor", Priority: "low", EstimatedMinutes: 45},
+	// Comfortably ahead — most plans look like this most of the time.
+	{Customer: "galewind", Title: "Annual substation RTU inspection", Location: "GW-SUB-A",
+		Body:   "Full RTU inspection: enclosure seals, battery health, comms margin, firmware level.",
+		Anchor: "schedule", IntervalDays: 365, LeadTimeDays: 14, NextDueDays: 96,
+		Assignee: "gwen", Priority: "normal", EstimatedMinutes: 240},
+	// Paused, so the roster's "Show paused" toggle has something to reveal and
+	// the generator has something to correctly ignore.
+	{Customer: "lakeside", Title: "Semester AP firmware review", Location: "LS-CENTRAL-HS",
+		Body:   "Review AP firmware levels against the vendor's supported matrix.",
+		Anchor: "schedule", IntervalDays: 180, NextDueDays: -20, Paused: true,
+		Assignee: "priya", Priority: "low", EstimatedMinutes: 90},
+}

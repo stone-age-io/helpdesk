@@ -72,7 +72,7 @@ database could produce.
 
 ## 2. The mental model
 
-Six ideas. Everything else is detail.
+Eight ideas. Everything else is detail.
 
 ### A ticket is the unit of work
 
@@ -93,6 +93,26 @@ behaves differently:
 
 `planned` covers far more than installs: replacements, decommissions, surveys,
 PM rounds, a remote firmware campaign. If you scheduled it, it's planned.
+
+### Recurring work schedules itself
+
+A **maintenance plan** ("this door controller gets serviced every 90 days") sits
+under **Maintenance**. It is not a second kind of work — when it comes due it
+opens an ordinary `planned` ticket, and everything downstream behaves normally.
+Two ways to repeat:
+
+- **From the calendar** — quarterly stays quarterly however late the visit ran.
+- **From last completion** — the clock restarts the day the work is resolved.
+  The plan waits, showing "awaiting completion", while its ticket is open.
+
+A plan can also open its ticket a few days early, so the work is on the board
+before it's late. Generation runs nightly; `./helpdesk maintenance-run` does it
+on demand, which is how you catch up after downtime (and how you watch a plan
+work without waiting for 3:45am).
+
+Tickets carry a **due date** — the date somebody agreed to. It's a date, not a
+timer: nothing escalates off it. The queue can filter on it and the dashboard
+counts what's overdue.
 
 ### Status is a two-stage ending
 
@@ -173,7 +193,7 @@ typing the code into the scanner is a first-class path, not a fallback.
 
 A record with no code gets no label button. The payload *is* the code.
 
-### Work arrives four ways
+### Work arrives five ways
 
 | Source | How |
 |---|---|
@@ -181,6 +201,7 @@ A record with no code gets no label button. The payload *is* the code.
 | `agent` | staff raise it |
 | `email` | the customer emails; a parsing provider posts it in |
 | `nats` / `webhook` | a machine reports itself |
+| `maintenance` | a schedule comes due and opens it (see below) |
 
 The machine paths are the signature feature: a device on the Stone-Age.io
 platform can open its own ticket, and the customer it belongs to is derived from
@@ -313,15 +334,23 @@ A good first lap, as Maya:
 4. Open a ticket with a site and a device, and follow its links out into the
    filtered history for each.
 5. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
-6. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
+6. **Maintenance** — five seeded plans. Two are due, so quit the server and run
+   `./helpdesk maintenance-run`; it opens a `planned` ticket for each and steps
+   both plans forward. Run it again and nothing happens — an occurrence can only
+   generate once. Now look at *Clinic HVAC filter change*: it repeats from last
+   completion, so it reads "awaiting completion" and names the open ticket.
+   Resolve that ticket and the plan's next date lands 60 days out.
+   Back on the **Dashboard**, the *Due* card counts what you just made, and each
+   number opens the queue filtered to exactly those tickets.
+7. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
    4″ × 2″ and tick *RFID stock* to reveal the inlay keep-out the artwork
    straddles. Then **Scan** → type that code in the manual field: one match goes
    straight to the record. Try `DOOR-1`-style codes shared across customers and
    you'll get the picker instead.
-7. Sign in as Sam and the shell changes shape: today's visits, and **More** →
+8. Sign in as Sam and the shell changes shape: today's visits, and **More** →
    Sites / Devices with the *My scheduled sites* toggle narrowing to just his
    customers.
-8. Sign in as Regina and compare: same tickets, no internal notes, no
+9. Sign in as Regina and compare: same tickets, no internal notes, no
    technician names, and a service summary with billable hours because
    Northwind is opted in. Sign in as `anita.rao@harborview.example` and the
    hours are simply absent — Harborview isn't.
@@ -330,7 +359,8 @@ A good first lap, as Maya:
 
 ## 5. Deliberately not built
 
-Worth knowing so you don't go looking: no SLA timers or escalation, no knowledge
+Worth knowing so you don't go looking: no SLA timers or escalation (a ticket's
+`due_at` is a date somebody agreed to, with no clock behind it), no knowledge
 base, no canned responses, no CSAT, no ticket merge or split, no calendar sync,
 no money anywhere, and no live sync of sites and devices from the platform —
 that last one closed rather than merely unbuilt, for the reasons in

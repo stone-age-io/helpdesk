@@ -28,6 +28,8 @@ const sections: NavSection[] = [
       { label: 'Dashboard', icon: '📊', path: '/staff/dashboard' },
       { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
       { label: 'Projects', icon: '📁', path: '/staff/projects' },
+      // Beside Projects rather than in Directory: a plan is work, not a lookup.
+      { label: 'Maintenance', icon: '🔧', path: '/staff/maintenance' },
       { label: 'Dispatch', icon: '🚚', path: '/staff/dispatch' },
       { label: 'Reports', icon: '📈', path: '/staff/reports' },
     ],

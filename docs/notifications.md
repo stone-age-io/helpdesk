@@ -102,15 +102,28 @@ Four independent mechanisms, all designed to prevent noise:
 3. **`notifications.Suppress(record)`** — a server-initiated change whose news
    already went out another way (or should never be announced at all) marks
    itself silent. Honoured by **every** send hook: ticket create/update,
-   comment create, and visit create/update. Two callers today: auto-reopen (a
+   comment create, and visit create/update. Three callers today: auto-reopen (a
    requester's comment reopens a resolved ticket, but the comment mail already
-   alerted staff, so the status-change mail is skipped) and `internal/demoseed`,
-   which marks every write so seeding a showcase host can't mail 150 fictional
-   people. It originally guarded only the ticket-update hook, which made it a
-   trap — the name promises more than one event.
+   alerted staff, so the status-change mail is skipped); auto-close (an
+   administrative tidy-up, not a "we closed your ticket" message); and
+   `internal/demoseed`, which marks every write so seeding a showcase host can't
+   mail 150 fictional people. It originally guarded only the ticket-update hook,
+   which made it a trap — the name promises more than one event.
 4. **Day-keyed dedupe** — `SendIfFirst` writes `notification_dedupe` with a
    unique index on (event, ref, UTC-day), so a flapping source can't email
    the same person about the same thing twice in a day.
+
+### The deliberate non-suppression
+
+`internal/maintenance` opens tickets from a cron and pointedly does **not**
+call `Suppress` — the opposite call from auto-close, which sits two crons
+earlier in the same 03:xx window. Auto-close is administrative tidying nobody
+needs to hear about; a newly opened preventive ticket is real news for whoever
+has to do the work. It fires `ticket.created` like any other ticket, and because
+a maintenance plan has no requester, that event's requester recipient resolves
+to nothing exactly as it does for a machine ticket — so only staff are mailed.
+`internal/maintenance/notify_test.go` pins this, so adding a `Suppress` here
+(which looks like tidiness) fails loudly rather than silently going quiet.
 
 ## Template syntax
 

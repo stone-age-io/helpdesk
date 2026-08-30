@@ -153,8 +153,32 @@ requester accounts. The PocketBase dashboard (`/_`) additionally asks for
 its own superuser on first visit — that account is for schema/settings
 administration, separate from staff.
 
-## Retention
+## Scheduled jobs
 
-`notification_send_log` and `notification_dedupe` are pruned daily (03:15
-local) at 90 days — constant `sendLogRetentionDays` in
-`cmd/helpdesk/main.go`.
+Three daily crons, all wired in `cmd/helpdesk/main.go` and staggered inside the
+03:xx window. PocketBase's cron is **process-local**: if the app is down at fire
+time, that night simply doesn't happen, and the next live tick picks up from
+wherever things stand.
+
+| Time | Job | What it does | Config |
+|---|---|---|---|
+| 03:15 | `notifications_retention` | prunes `notification_send_log` + `notification_dedupe` at 90 days (`sendLogRetentionDays`) | none |
+| 03:30 | `auto_close_resolved` | promotes tickets left `resolved` past the horizon to `closed` | `auto_close_resolved_days` (`0` disables) |
+| 03:45 | `maintenance_generate` | opens a `planned` ticket for every maintenance plan that has come due | none — see below |
+
+The order is deliberate: generation runs *after* auto-close, so a
+completion-anchored plan whose ticket was auto-closed at 03:30 restarts its
+clock the same night rather than waiting a day.
+
+`maintenance_generate` has **no config knob** on purpose. An install with no
+plans has nothing to generate, and a single plan is paused with one toggle in
+the UI — a flag would be a second way to disable the same thing. To catch up
+after downtime (or to watch a plan work without waiting for 03:45):
+
+```bash
+./helpdesk maintenance-run
+```
+
+It runs the identical sweep, once, and is safe to re-run or to overlap with the
+cron: each plan occurrence can only ever produce one ticket, guarded by the
+ticket dedupe key.

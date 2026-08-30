@@ -34,7 +34,13 @@ const groups = [
   {
     title: 'Work',
     hint: '',
-    items: [{ label: 'Projects', icon: '📁', path: '/staff/projects', blurb: 'Rollouts you are on the crew for.' }],
+    items: [
+      { label: 'Projects', icon: '📁', path: '/staff/projects', blurb: 'Rollouts you are on the crew for.' },
+      // Here because the tech standing at the device is often who learns it
+      // needs servicing — the same argument that made plans staff-editable
+      // rather than admin-only.
+      { label: 'Maintenance', icon: '🔧', path: '/staff/maintenance', blurb: 'Recurring service schedules.' },
+    ],
   },
 ]
 

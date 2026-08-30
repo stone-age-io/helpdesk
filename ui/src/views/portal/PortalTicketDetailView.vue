@@ -11,6 +11,7 @@ import AttachmentList from '@/components/AttachmentList.vue'
 import FileInput from '@/components/FileInput.vue'
 import Avatar from '@/components/Avatar.vue'
 import TicketProgress from '@/components/TicketProgress.vue'
+import { formatDay } from '@/due'
 import { format, formatDistanceToNow } from 'date-fns'
 
 const route = useRoute()
@@ -339,6 +340,13 @@ onUnmounted(() => {
                 <span class="text-base-content/60">Opened</span>
                 <span>{{ format(new Date(ticket.created), 'MMM d, yyyy') }}</span>
               </div>
+              <!-- Target date, read-only. Requesters can already read the field
+                   through the collection rule, so hiding it here while exposing
+                   it in the API would be the worse of the two options. -->
+              <div v-if="ticket.due_at" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Target date</span>
+                <span>{{ formatDay(ticket.due_at, 'MMM d, yyyy') }}</span>
+              </div>
               <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
                 <span class="text-base-content/60">Updated</span>
                 <span>{{ formatDistanceToNow(new Date(ticket.updated), { addSuffix: true }) }}</span>
@@ -489,6 +497,10 @@ onUnmounted(() => {
             <div class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Opened</span>
               <span>{{ format(new Date(ticket.created), 'MMM d, yyyy') }}</span>
+            </div>
+            <div v-if="ticket.due_at" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Target date</span>
+              <span>{{ formatDay(ticket.due_at, 'MMM d, yyyy') }}</span>
             </div>
             <div v-if="ticket.updated" class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Updated</span>

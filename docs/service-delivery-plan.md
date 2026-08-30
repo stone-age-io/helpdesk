@@ -15,6 +15,14 @@ true by hand; what shipped is a curated **mirror** of the platform's `things`,
 joined by `(customer, code)`, whose source of truth lives upstream. The rest of
 that list still stands. See [data-model.md](data-model.md).
 
+Recurrence was never on that list, and migration `1829000000` added it —
+`maintenance_plans`, plus a `due_at` on tickets. It is worth reading here rather
+than as a departure, because it is the **same decision this document argues
+for, applied a second time**: a plan stores no execution data and its only
+output is an ordinary `planned` ticket, so visits, the time ledger, the audit
+trail, the portal and every report needed no changes at all. The "grouping layer
+above the ledger" pattern held. See [data-model.md](data-model.md).
+
 ## Why grow helpdesk instead of a new app
 
 An MSP / system-integrator's operational suite (control plane, access-control,

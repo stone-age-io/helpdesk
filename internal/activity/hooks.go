@@ -24,11 +24,13 @@ const (
 // auditedFields are the workflow fields whose changes are worth a timeline
 // entry: the lifecycle trio (status, priority, assignee) plus the
 // classification/grouping decisions (category, type, project, location, thing)
-// that are staff actions with real workflow meaning. Title/body edits are
+// that are staff actions with real workflow meaning, plus due_at — a target
+// date moving is a commitment changing, which is exactly what this trail is
+// for. Title/body edits are
 // deliberately excluded — too noisy, no workflow meaning. The portal read rule
 // (migration 1808000000) still scopes requesters to `field = 'status'`, so the
 // newer fields never reach the portal timeline.
-var auditedFields = []string{"status", "priority", "assignee", "category", "type", "project", "location", "thing"}
+var auditedFields = []string{"status", "priority", "assignee", "category", "type", "project", "location", "thing", "due_at"}
 
 // SetActor attributes a programmatic ticket change to a specific identity so
 // the audit hook can name it — e.g. the requester whose comment auto-reopened

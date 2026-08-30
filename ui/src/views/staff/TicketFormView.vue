@@ -34,6 +34,9 @@ const form = ref({
   thing_note: '',
   location: '',
   location_note: '',
+  // A calendar date, so '' is the empty value PocketBase wants — no timezone
+  // round-trip, matching ProjectDetailView's start_date/target_date.
+  due_at: '',
 })
 
 async function loadOptions() {
@@ -243,6 +246,10 @@ onMounted(loadOptions)
               <select v-model="form.priority" class="select select-bordered select-sm" :disabled="loading">
                 <option v-for="p in TICKET_PRIORITIES" :key="p" :value="p">{{ p }}</option>
               </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Due</span></label>
+              <input v-model="form.due_at" type="date" class="input input-bordered input-sm" :disabled="loading" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Assignee</span></label>

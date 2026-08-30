@@ -11,6 +11,7 @@ import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import Pager from '@/components/Pager.vue'
 import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
+import { DUE_BUCKETS, dueClause, formatDay, isPastDue } from '@/due'
 import { formatDistanceToNow } from 'date-fns'
 
 const router = useRouter()
@@ -44,6 +45,9 @@ const thing = ref(q('thing'))
 const type = ref<TicketType | ''>((q('type') as any) || '')
 // Backlog age since created. Deep-linked from the dashboard's Backlog age card.
 const age = ref(q('age'))
+// Target date. Deep-linked from the dashboard's Due card. Unlike `age` its
+// buckets live in @/due, shared with that card so the two provably agree.
+const due = ref(q('due'))
 const search = ref(q('search'))
 
 // The boundaries mirror the dashboard's Backlog age tiles exactly, so a tile's
@@ -102,8 +106,20 @@ const columns: Column<Ticket>[] = [
   { key: 'status', label: 'Status', sortable: true },
   { key: 'priority', label: 'Priority', sortable: true },
   { key: 'expand.assignee.name', label: 'Assignee' },
+  // Scalar, so sortable — and worth sorting: "what's due next" is the question
+  // a due date exists to answer. Blank for the many tickets that have none.
+  { key: 'due_at', label: 'Due', class: 'whitespace-nowrap', sortable: true },
   { key: 'created', label: 'Age', class: 'whitespace-nowrap text-base-content/60', sortable: true, format: (v) => formatDistanceToNow(new Date(v)) },
 ]
+
+// A due date reads as overdue only while the work is still live: resolved and
+// closed tickets are done, however late they were. Mirrors activeDueFilter in
+// @/due, which the dashboard counts with; isPastDue is shared so the row colour
+// and the filter agree on which day it is.
+function isOverdue(t: Ticket): boolean {
+  if (t.status === 'resolved' || t.status === 'closed') return false
+  return isPastDue(t.due_at)
+}
 
 // Sort state → PocketBase sort string. Clicking a column sets it; clicking
 // the active column flips direction.
@@ -115,7 +131,7 @@ const sortDir = ref<'asc' | 'desc'>(q('dir') === 'asc' ? 'asc' : 'desc')
 // its default is dynamic (field techs land on their own work) — the watcher only
 // fires on change, so nobody's own id gets written into the URL just by arriving.
 useQuerySync(
-  { status, priority, customer, category, location, thing, type, age, assignee, search, sort: sortKey, dir: sortDir },
+  { status, priority, customer, category, location, thing, type, age, due, assignee, search, sort: sortKey, dir: sortDir },
   { status: 'active', sort: 'created', dir: 'desc' },
 )
 const buildSort = () => `${sortDir.value === 'desc' ? '-' : ''}${sortKey.value}`
@@ -164,7 +180,7 @@ async function exportCsv() {
       sort: '-created',
       expand: 'customer,assignee,requester,category,location,thing',
     })
-    const header = ['number', 'title', 'customer', 'category', 'type', 'location', 'thing', 'estimated_minutes', 'status', 'priority', 'assignee', 'requester', 'source', 'created', 'updated']
+    const header = ['number', 'title', 'customer', 'category', 'type', 'location', 'thing', 'estimated_minutes', 'status', 'priority', 'assignee', 'requester', 'source', 'due_at', 'created', 'updated']
     const lines = [header.join(',')]
     for (const t of rows) {
       lines.push(
@@ -182,6 +198,7 @@ async function exportCsv() {
           t.expand?.assignee?.name || '',
           t.expand?.requester?.email || '',
           t.source,
+          t.due_at || '',
           t.created,
           t.updated || '',
         ]
@@ -228,6 +245,10 @@ function buildFilter(): string {
   if (type.value) parts.push(`type = '${type.value}'`)
   if (age.value) {
     const clause = ageClause(age.value)
+    if (clause) parts.push(`(${clause})`)
+  }
+  if (due.value) {
+    const clause = dueClause(due.value)
     if (clause) parts.push(`(${clause})`)
   }
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
@@ -307,7 +328,7 @@ watch(customer, (value) => {
   loadThings(value)
 })
 
-watch([status, priority, customer, category, location, thing, type, age, assignee, sortKey, sortDir], () => {
+watch([status, priority, customer, category, location, thing, type, age, due, assignee, sortKey, sortDir], () => {
   page.value = 1
   // Filter changes drop the selection — bulk-acting on rows that are no
   // longer visible would be a footgun. Paging keeps it (cross-page select).
@@ -327,9 +348,10 @@ interface SavedView {
   // applyView defaults every field with `|| ''` rather than assigning directly.
   thing?: string
   type: string
-  // Optional for the same reason as `thing` — views saved before the age
-  // filter existed have no such key.
+  // Optional for the same reason as `thing` — views saved before the age and
+  // due filters existed have no such key.
   age?: string
+  due?: string
   assignee: string
   search: string
   sortKey: string
@@ -360,6 +382,7 @@ function saveCurrentView() {
     thing: thing.value,
     type: type.value,
     age: age.value,
+    due: due.value,
     assignee: assignee.value,
     search: search.value,
     sortKey: sortKey.value,
@@ -379,6 +402,7 @@ function applyView(v: SavedView) {
   thing.value = v.thing || ''
   type.value = (v.type as any) || ''
   age.value = v.age || ''
+  due.value = v.due || ''
   assignee.value = v.assignee
   search.value = v.search
   sortKey.value = v.sortKey
@@ -473,6 +497,10 @@ onUnmounted(() => {
         <option value="">Any age</option>
         <option v-for="a in AGE_BUCKETS" :key="a.value" :value="a.value">{{ a.label }}</option>
       </select>
+      <select v-model="due" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">Any due date</option>
+        <option v-for="d in DUE_BUCKETS" :key="d.value" :value="d.value">{{ d.label }}</option>
+      </select>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="assignee" :options="staffOptions" size="sm" empty-label="Anyone" placeholder="Assignee…" />
       </div>
@@ -546,6 +574,14 @@ onUnmounted(() => {
       </template>
       <template #cell-category="{ item }">
         <CategoryBadge :name="item.expand?.category?.name" :color="item.expand?.category?.color" />
+      </template>
+      <!-- Blank rather than a dash for the many tickets with no due date: a
+           column of dashes reads as data. Overdue is coloured, not badged —
+           the row already carries status and priority chips. -->
+      <template #cell-due_at="{ value, item }">
+        <span v-if="value" :class="isOverdue(item) ? 'text-error font-medium' : 'text-base-content/60'">
+          {{ formatDay(value) }}
+        </span>
       </template>
       <template #cell-status="{ value }"><TicketBadges :status="value" /></template>
       <template #cell-priority="{ value }"><TicketBadges :priority="value" /></template>

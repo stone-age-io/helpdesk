@@ -238,6 +238,49 @@ its own sibling app: the project side needing its own portal/tenancy/ingestion �
 not merely re-parenting a visit. `docs/service-delivery-plan.md` has the full
 rationale.
 
+**Preventive maintenance** (`internal/maintenance`, migration `1829000000`):
+recurrence, and the last CMMS pillar this app was missing. A
+**maintenance_plan** says "this gets serviced every N days"; its only output is
+an ordinary ticket (`type = planned`, `source = maintenance`), so it is a
+planning layer *above* the ledger in exactly the sense projects are — visits,
+time, the audit trail, portal visibility, notifications and every report already
+work on tickets and needed no changes. Drop the collection and the app still
+runs; only future generation stops.
+
+`anchor` picks one of two behaviours, and each stays simple because each has
+exactly **one writer** of `next_due`: `schedule` means the cron advances it by
+whole intervals at generation ("quarterly stays quarterly however late the visit
+ran"), while `completion` means the cron **parks** the plan by clearing
+`next_due` and a ticket hook restarts it from `resolved_at + interval_days`
+("every 90 days after last service"). The generator's `next_due != ''` filter is
+what makes a parked plan invisible to it — so a completion-anchored plan is
+*structurally* unable to stack up work, and the skip-if-still-open guard only
+ever runs on `schedule` plans. A skip still advances: one inspection nobody did
+must not become four open tickets. `paused`, not `active` — the
+`things.retired` / `non_billable` idiom, so a new plan's zero value means
+"running". Idempotency reuses `tickets.dedupe_key` as `pm:{planId}:{date}`, so
+the 03:45 cron and a hand-run `helpdesk maintenance-run` (the
+catch-up path, since PB's cron is process-local) can overlap harmlessly. The
+cron runs *after* `auto_close_resolved` on purpose. Generation deliberately does
+**not** `Suppress` mail — the opposite call from auto-close, because a new
+preventive ticket is real news, and a plan has no requester so only staff are
+mailed. **No config knob**: an install with no plans generates nothing and one
+plan pauses with one toggle, so a flag would be a second disable for the same
+thing.
+
+`tickets.due_at` ships with it: a plain nullable date, **not an SLA clock**
+(timers and escalation stay out of scope) — nothing measures it and nothing
+escalates off it. It is audited, guarded staff-only in the portal create rule
+alongside the other triage fields, and surfaced as a queue column + `due` filter
+and a Dashboard card. Those buckets live in `ui/src/due.ts` and are shared by
+both, deliberately unlike the neighbouring backlog-age buckets, which are
+written twice and kept in sync only by comments. That module also owns
+`formatDay` / `isPastDue`, and the reason is a real bug caught in review:
+`due_at` is a *calendar date* stored at UTC midnight, so the `pbTime`
+local→UTC conversion that is right for `visits.scheduled_at` (an instant) shifts
+it by the offset — west of Greenwich everything due today read as overdue and
+rendered a day early. Compare and format the date half directly.
+
 **Things / types** (migration `1824000000`): the device axis, and the last
 free-text ticket field promoted to a relation. A **thing** is a subset mirror of
 the platform's `things` — minus its entire identity half (`password`, `tokenKey`,
@@ -643,7 +686,9 @@ Native SMTP/IMAP inbound (email arrives via a parsing **provider** webhook
 instead — see **Email ingestion** above), request/reply NATS service, SLA
 timers/escalation, knowledge base, canned responses, CSAT, ticket merge/split,
 magic links, multi-MSP hosting (one helpdesk instance per MSP), calendar sync for
-visits. Also: rates or dollar amounts anywhere (minutes only — billing math
+visits. `tickets.due_at` (`1829000000`) is **not** a softening of the SLA line:
+it is an inert date with no clock, no breach state and no escalation path, and
+adding any of those three is the thing that stays out of scope. Also: rates or dollar amounts anywhere (minutes only — billing math
 stays in accounting), a ledger lock on invoiced time, and **live sync of
 things/locations from the platform**, which is architecturally closed rather
 than merely unbuilt (see **Things / types**).

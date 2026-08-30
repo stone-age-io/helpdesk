@@ -36,6 +36,12 @@ const router = createRouter({
         { path: 'projects', name: 'projects', component: () => import('@/views/staff/ProjectsView.vue') },
         { path: 'projects/new', name: 'project-new', component: () => import('@/views/staff/ProjectDetailView.vue') },
         { path: 'projects/:id', name: 'project-detail', component: () => import('@/views/staff/ProjectDetailView.vue') },
+        // Not adminOnly: any staff member owns a plan, only delete is admin
+        // (gated in the detail view). `maintenance/new` MUST stay ahead of
+        // `maintenance/:id` — vue-router resolves in declaration order.
+        { path: 'maintenance', name: 'maintenance', component: () => import('@/views/staff/MaintenanceView.vue') },
+        { path: 'maintenance/new', name: 'maintenance-new', component: () => import('@/views/staff/MaintenancePlanDetailView.vue') },
+        { path: 'maintenance/:id', name: 'maintenance-detail', component: () => import('@/views/staff/MaintenancePlanDetailView.vue') },
         { path: 'visits/:id/work', name: 'visit-work', component: () => import('@/views/staff/VisitWorkView.vue') },
         { path: 'reports', name: 'reports', component: () => import('@/views/staff/ReportsView.vue') },
       { path: 'customers', name: 'customers', component: () => import('@/views/staff/CustomerListView.vue') },

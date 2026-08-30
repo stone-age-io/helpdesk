@@ -67,6 +67,15 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   at read time from the ticket ledger, never stored — the grouping layer sits
   *above* ticket → visit → time without changing it. See
   [docs/service-delivery-plan.md](docs/service-delivery-plan.md).
+- **Preventive maintenance**: `maintenance_plans` turn "every N days" into
+  ordinary `planned` tickets on a nightly cron (or on demand with
+  `./helpdesk maintenance-run`). A plan repeats either from the **calendar** or
+  from **last completion** — in the second case it parks itself while its ticket
+  is open, so it can never stack up work — and can open the ticket a few days
+  early. Another grouping layer above the ledger: its only output is a ticket,
+  so visits, time, reports and the portal needed no changes. Tickets also gained
+  a `due_at` target date, with a queue filter and dashboard counts. It is a
+  date, not an SLA clock: nothing measures it and nothing escalates.
 - **Things & locations**: a curated local catalog joined to the platform by
   `(customer, code)`, with `thing_types` / `location_types` carrying a
   `metadata_schema` so `metadata` doesn't drift into a bag of key spellings.
@@ -114,7 +123,9 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   provider's webhook — a reply carrying the `[#N]` subject token becomes a
   comment, anything else a new ticket. All idempotent. The helpdesk holds no
   mailbox credentials. See [docs/protocol.md](docs/protocol.md) and
-  [docs/email-ingestion.md](docs/email-ingestion.md).
+  [docs/email-ingestion.md](docs/email-ingestion.md). (A fifth `source`,
+  `maintenance`, is written by the scheduler above rather than arriving from
+  outside.)
 - **Demo seeding**: `./helpdesk seed-demo --confirm` fills a showcase instance
   with a backdated, idempotent ticket history. In-process Go rather than an HTTP
   script because PocketBase's autodate overwrites `created` on save — no
@@ -177,6 +188,8 @@ internal/
                      awaiting-requester, resolved_at, auto-close cron
   visits/            visit status defaulting + scheduled-visit invariant
   projects/          project numbering + derived crew / rolled-up time
+  maintenance/       preventive-maintenance recurrence: the generation sweep,
+                     the completion-anchor hook, and `maintenance-run`
   timeentries/       labor ledger + per-ticket time-total route
   timers/            start/stop timer → time entry (one open session per agent)
   activity/          ticket_events audit trail (workflow + classification)

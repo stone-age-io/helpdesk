@@ -118,7 +118,10 @@ export interface Project extends BaseRecord {
 
 export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
-export type TicketSource = 'portal' | 'agent' | 'nats' | 'webhook'
+// Provenance. `email` landed with 1823000000 and `maintenance` with
+// 1829000000 (the scheduler, which must stay distinguishable from a human at
+// the desk); both were missing here.
+export type TicketSource = 'portal' | 'agent' | 'nats' | 'webhook' | 'email' | 'maintenance'
 // Reactive (customer-initiated, reply-driven) vs. planned (anticipated
 // project / field work, tracked by visits rather than by a customer answer).
 // A FIXED enum, not a managed collection like TicketCategory: the server
@@ -171,6 +174,38 @@ export interface Ticket extends BaseRecord {
   // When the ticket entered `resolved` (cleared when it leaves). Drives the
   // auto-close cron; nil unless currently resolved.
   resolved_at?: string
+  // Target date (migration 1829000000). A date somebody agreed to — NOT an SLA
+  // clock: nothing measures it and nothing escalates off it. Staff-set, or
+  // copied from a maintenance plan's next_due by the generator.
+  due_at?: string
+  // The plan that generated this ticket, when the scheduler opened it.
+  maintenance_plan?: string
+}
+
+// Preventive-maintenance schedule (migration 1829000000). A planning layer
+// above the ledger: its only output is a ticket, and `anchor` decides who owns
+// `next_due` — `schedule` means the cron advances it by interval_days at
+// generation, `completion` means the cron parks it (empty) and the ticket hook
+// restarts it from resolved_at. `paused` rather than `active` so a new plan's
+// zero value means "running".
+export interface MaintenancePlan extends BaseRecord {
+  customer: string
+  title: string
+  body?: string
+  thing?: string
+  location?: string
+  project?: string
+  category?: string
+  assignee?: string
+  priority?: TicketPriority
+  estimated_minutes?: number
+  interval_days: number
+  anchor?: 'schedule' | 'completion'
+  lead_time_days?: number
+  // Empty means parked: never scheduled, or completion-anchored and waiting on
+  // its open ticket. The generator's query skips it either way.
+  next_due?: string
+  paused?: boolean
 }
 
 export interface TicketComment extends BaseRecord {

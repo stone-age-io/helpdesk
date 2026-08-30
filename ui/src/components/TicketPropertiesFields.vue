@@ -174,6 +174,20 @@ const navigateUrl = computed(() => {
       @update:model-value="emit('patch', { estimated_minutes: $event })"
     />
   </div>
+  <!-- Target date. A date somebody agreed to, not an SLA clock — nothing
+       measures it and nothing escalates off it. `patch` rather than
+       `update-field`: it never triggers email, so it needs no quiet header.
+       Empty clears it; `.slice(0, 10)` because PocketBase hands back a full
+       datetime and type="date" wants the day. -->
+  <div class="form-control">
+    <label class="label py-1"><span class="label-text text-xs">Due</span></label>
+    <input
+      :value="(ticket.due_at || '').slice(0, 10)"
+      type="date"
+      class="input input-bordered input-sm"
+      @change="emit('patch', { due_at: ($event.target as HTMLInputElement).value })"
+    />
+  </div>
   <label class="label cursor-pointer justify-start gap-2 py-1">
     <input
       type="checkbox"
