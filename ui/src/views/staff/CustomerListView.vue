@@ -13,7 +13,9 @@ const router = useRouter()
 
 const columns: Column<Customer>[] = [
   { key: 'name', label: 'Name' },
-  { key: 'platform_org_id', label: 'Platform Org', mobileLabel: 'Org' },
+  // The code, not platform_org_id: it is the tenant token on the NATS subject
+  // and the handle an operator copies between the two apps (ADR 0002).
+  { key: 'code', label: 'Code' },
   { key: 'active', label: 'Active', mobileLabel: 'Status' },
 ]
 
@@ -36,7 +38,7 @@ function buildFilter(): string {
   const raw = search.value.trim()
   if (!raw) return ''
   const q = raw.replace(/'/g, "\\'")
-  return `(name ~ '${q}' || platform_org_id ~ '${q}')`
+  return `(name ~ '${q}' || code ~ '${q}' || platform_org_id ~ '${q}')`
 }
 
 async function load() {
@@ -108,7 +110,7 @@ onMounted(load)
       @row-click="(c) => router.push(`/staff/customers/${c.id}`)"
     >
       <template #cell-name="{ value }"><span class="font-medium text-sm">{{ value }}</span></template>
-      <template #cell-platform_org_id="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
+      <template #cell-code="{ value }"><span class="font-mono text-xs">{{ value || '—' }}</span></template>
       <template #cell-active="{ value }"><ActiveBadge :active="value" /></template>
       <template #empty>
         <span class="text-base-content/60">No customers{{ search ? ' match.' : ' yet.' }}</span>

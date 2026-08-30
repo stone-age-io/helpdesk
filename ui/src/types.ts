@@ -33,6 +33,10 @@ export interface Requester extends BaseRecord {
 
 export interface Customer extends BaseRecord {
   name: string
+  // Tenant token of the ecosystem's public namespace: the platform organization's
+  // immutable `code`, which NATS subject token 2 carries. Optional — a customer
+  // the platform never onboarded has no code until an operator assigns one.
+  code?: string
   active: boolean
   platform_org_id?: string
   notes?: string

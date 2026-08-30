@@ -39,6 +39,9 @@ const sections: NavSection[] = [
       { label: 'Requesters', icon: '🙋', path: '/staff/requesters' },
       { label: 'Locations', icon: '📍', path: '/staff/locations' },
       { label: 'Things', icon: '🧰', path: '/staff/things' },
+      // In Directory because it is a lookup: a code read out over the phone
+      // resolves the same way a scanned one does.
+      { label: 'Scan', icon: '📷', path: '/staff/scan' },
     ],
   },
   {

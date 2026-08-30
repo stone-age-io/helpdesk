@@ -226,7 +226,7 @@ onMounted(load)
             <label v-if="form.publish_nats" class="label py-0">
               <span class="label-text-alt text-base-content/60">
                 Publishes a JSON event to
-                <code class="text-xs">helpdesk.&lt;customer&gt;.events.{{ selected.event_type }}</code>
+                <code class="text-xs">helpdesk.&lt;customer-code&gt;.events.{{ selected.event_type }}</code>
                 — <button type="button" class="link" @click="natsHelpOpen = true">see event format</button>
               </span>
             </label>

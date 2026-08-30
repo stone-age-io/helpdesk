@@ -100,7 +100,18 @@ onMounted(() => timer.load())
             </ul>
           </div>
           <span class="justify-self-center font-bold text-lg truncate">{{ brandText }}</span>
-          <div class="justify-self-end">
+          <div class="justify-self-end flex items-center">
+            <!-- Header, not a sixth bottom tab: five thumb targets is already the
+                 most a phone takes, and scanning is an action rather than a
+                 place. -->
+            <RouterLink
+              to="/staff/scan"
+              class="btn btn-ghost btn-sm px-2"
+              aria-label="Scan a label"
+              title="Scan a label"
+            >
+              <span class="text-lg" aria-hidden="true">📷</span>
+            </RouterLink>
             <ThemeToggle />
           </div>
         </div>

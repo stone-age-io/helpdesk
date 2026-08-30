@@ -353,24 +353,31 @@ parse-validates templates before save; compiled-in defaults back the
 route `/t/{id}`. **Second channel:** each template also carries a
 `publish_nats` toggle (migration `1814000000`); when on, the same event
 `dispatch` also publishes a fixed, versioned JSON envelope (`envelope.go`,
-`schema: helpdesk.event`) to `helpdesk.{customerId}.events.{event_type}` via
+`schema: helpdesk.event`) to `helpdesk.{customerCode}.events.{event_type}` via
 an injected `Publisher` (nil until NATS connects → clean no-op, independent
-of email). The channel is for MSP-internal consumers so the envelope is rich
-(no portal redaction); the human suppression rules gate email only. `channel`
-(`email`|`nats`) on the send log distinguishes rows. `docs/notifications.md`
+of email). Token 2 is `customers.code` — the ecosystem tenant token, the same
+handle the *inbound* subject carries, so both directions of the boundary name a
+tenant the same way and a consumer can join helpdesk events to platform data
+without a mapping table only this database could produce. It was the customer
+record id until ADR 0002; a customer with no code is **skipped, not published
+under a fallback** (the reason lands on the send-log row), because a token that
+is sometimes a shared code and sometimes a local primary key leaves a consumer
+unable to tell which it holds. The channel is for MSP-internal consumers so the
+envelope is rich (no portal redaction); the human suppression rules gate email
+only. `channel` (`email`|`nats`) on the send log distinguishes rows. `docs/notifications.md`
 has the full event / recipient / suppression matrix; `docs/protocol.md` has
 the outbound envelope + subject contract.
 
 **NATS ingestion** (`internal/subjects`, `internal/natsx`,
 `internal/ingest`): customer apps publish `helpdesk.tickets.create` in
 their own org account; the platform's managed-org export (platform commit
-`45ca1e3`) delivers it hub-side as `helpdesk.{platformOrgId}.tickets.create`.
+`45ca1e3`) delivers it hub-side as `helpdesk.{orgCode}.tickets.create`.
 The org id is parsed **from the subject only** (token 2) — the export's
 subject rewrite is operator-signed, so it's unforgeable; a payload org id
 would not be. The helpdesk owns its inbox stream `HELPDESK_EVENTS`
 (subjects `helpdesk.*.tickets.>`) and a durable consumer `helpdesk-ingest`.
 Projection semantics: unknown org → warn + ack (operator sets
-`customers.platform_org_id`, later events flow); `dedupe_key` + unique
+`customers.code`, later events flow); `dedupe_key` + unique
 partial index absorb redelivery/publisher retries; bad payloads ack
 (terminal). NATS is **best-effort**: connect failure logs and the app
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
@@ -420,6 +427,44 @@ then falls back to `users`; router guards by auth collection
 categories, notifications).
 `/t/:id` forwards to the right detail view by role (bounces through login
 with a `redirect` query).
+
+**QR labels and scanning** (ADR 0002 in `platform-docs`) close the loop between a
+device on a wall and its history. `QrLabelModal.vue` prints an operator-branded
+label from a thing or location detail view; `/staff/scan` (`ScanView.vue` +
+`QrScanner.vue`, `html5-qrcode`) reads one back. Four decisions worth not
+re-litigating:
+
+- **The payload is the bare `code`** — no host, no customer, no kind token. A
+  sticker in a public hallway is an attacker-writable surface, and a URL payload
+  would let a forged label send a human to arbitrary content; a bare in-system
+  identifier means the worst case is resolving a different record inside an
+  already-authenticated session. It also makes *maximum* error correction free:
+  `DOOR-1` at EC level H is a 21×21 symbol, where the URL form needs 41×41.
+- **In-app scanning only, and no resolver service.** Nothing fetches the decoded
+  string as a destination. The same component in the platform console scans the
+  same labels.
+- **Resolve globally, then disambiguate — never within a sticky customer
+  context.** `staff` have no customer field, so a tech has no ambient tenant, and
+  `DOOR-1` is exactly the code every customer independently invents. Context
+  (the tech's scheduled visits) *sorts* matches and never filters them; a
+  collision shows a picker rather than a confident wrong answer. Things and
+  locations carry separate `(customer, code)` indexes, so one customer may
+  legitimately hold both under one code — both are searched.
+- **Manual entry is half the design, not a fallback.** Every label prints its
+  code in human-readable text because the symbol will eventually be scratched,
+  greasy, or in a closet too dark to focus in.
+
+Labels are sized to real stock in **millimetres**, not pixels, with a per-size
+`@page` box written from script (`@page` cannot be interpolated from a template
+or a scoped style block): **2″ × 1″** and **4″ × 2″**, the two sizes that exist in
+both plain and UHF RFID stock. Both reserve a centred **RFID inlay keep-out** —
+the artwork straddles it, QR one side and text the other — so one layout prints
+correctly on either. The *RFID stock* toggle only reveals that reserved band for
+checking against an inlay datasheet; it never changes the layout. Quiet zone is
+the spec's 4 modules, giving 0.69 mm per module at 2″ × 1″ and 1.38 mm at
+4″ × 2″, both comfortably above the ~0.5 mm a phone camera needs.
+
+A record with no `code` gets no label button: the payload *is* the code.
 
 `RosterFilters.vue` is the search + customer + type row shared by the Locations
 and Things rosters, and it settles a question worth not re-opening: type filters

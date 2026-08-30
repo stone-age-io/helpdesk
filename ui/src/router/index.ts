@@ -23,6 +23,9 @@ const router = createRouter({
         { path: 'today', name: 'field-today', component: () => import('@/views/staff/FieldTodayView.vue') },
         { path: 'schedule', name: 'field-schedule', component: () => import('@/views/staff/FieldScheduleView.vue') },
         { path: 'my-time', name: 'field-time', component: () => import('@/views/staff/FieldTimeLogView.vue') },
+        // Label scanning. Any staff, not just field: an agent on the phone
+        // resolving a code a customer read out needs the same lookup.
+        { path: 'scan', name: 'scan', component: () => import('@/views/staff/ScanView.vue') },
         { path: 'tickets', name: 'tickets', component: () => import('@/views/staff/TicketQueueView.vue') },
         { path: 'tickets/new', name: 'ticket-new', component: () => import('@/views/staff/TicketFormView.vue') },
         { path: 'tickets/:id', name: 'ticket-detail', component: () => import('@/views/staff/TicketDetailView.vue') },

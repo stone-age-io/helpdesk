@@ -13,6 +13,7 @@ import SearchSelect from '@/components/SearchSelect.vue'
 import LocationPicker from '@/components/LocationPicker.vue'
 import MetadataEditor from '@/components/MetadataEditor.vue'
 import TicketBadges from '@/components/TicketBadges.vue'
+import QrLabelModal from '@/components/QrLabelModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ const id = computed(() => route.params.id as string | undefined)
 const isEdit = computed(() => !!id.value)
 // View/edit toggle: create opens unlocked, an existing record opens locked.
 const editing = ref(false)
+const labelOpen = ref(false)
 
 const loading = ref(true)
 const saving = ref(false)
@@ -294,9 +296,22 @@ watch(() => route.params.id, load)
             {{ isEdit ? 'Save' : 'Create' }}
           </button>
         </template>
-        <button v-else class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+        <template v-else>
+          <!-- No code, no label: the QR payload IS the code (ADR 0002). -->
+          <button v-if="isEdit && form.code" class="btn btn-ghost btn-sm" @click="labelOpen = true">Label</button>
+          <button class="btn btn-primary btn-sm" @click="startEdit">Edit</button>
+        </template>
       </div>
     </div>
+
+    <QrLabelModal
+      v-if="labelOpen"
+      :code="form.code"
+      :name="form.name"
+      kind="location"
+      :customer-name="customer?.name"
+      @close="labelOpen = false"
+    />
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 

@@ -21,12 +21,13 @@ const saving = ref(false)
 // never see Edit, so the view stays permanently read-only for them.
 const editing = ref(false)
 
-const form = ref({ name: '', active: true, platform_org_id: '', notes: '', show_time_to_requester: false })
+const form = ref({ name: '', code: '', active: true, platform_org_id: '', notes: '', show_time_to_requester: false })
 const webhookToken = ref('')
 
 function applyRecord(c: Customer) {
   form.value = {
     name: c.name,
+    code: c.code || '',
     active: c.active,
     platform_org_id: c.platform_org_id || '',
     notes: c.notes || '',
@@ -141,11 +142,20 @@ onMounted(load)
           </div>
           <div class="form-control">
             <label class="label py-1">
+              <span class="label-text">Organization Code</span>
+            </label>
+            <input v-model="form.code" type="text" class="input input-bordered input-sm font-mono" placeholder="e.g. acme — from the platform" :disabled="!editing || saving" />
+            <label class="label py-1">
+              <span class="label-text-alt text-base-content/60">NATS events on helpdesk.{code}.&gt; create tickets for this customer. Copy it from the platform organization; it never changes.</span>
+            </label>
+          </div>
+          <div class="form-control">
+            <label class="label py-1">
               <span class="label-text">Platform Org ID</span>
             </label>
             <input v-model="form.platform_org_id" type="text" class="input input-bordered input-sm font-mono" placeholder="15-char platform organization id" :disabled="!editing || saving" />
             <label class="label py-1">
-              <span class="label-text-alt text-base-content/60">NATS events on helpdesk.{org}.> create tickets for this customer</span>
+              <span class="label-text-alt text-base-content/60">Legacy subject token, and the marker that this customer is a platform organization. Leave blank for customers the platform never onboarded.</span>
             </label>
           </div>
           <div class="form-control">
