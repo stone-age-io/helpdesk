@@ -238,6 +238,26 @@ its own sibling app: the project side needing its own portal/tenancy/ingestion �
 not merely re-parenting a visit. `docs/service-delivery-plan.md` has the full
 rationale.
 
+The project detail view is **read mode as prose, not the form greyed out**, and
+that is where it parts company with `LocationDetailView`, which it otherwise
+mirrors. A location record is mostly a form and is opened to be edited; a
+project is the status page for a rollout and is read many times for every time
+it is changed, so a disabled `<input>` holding the title and a fixed four-row
+`<textarea>` holding the scope — the same height empty or full — were furniture
+in the way of the answer. Editing swaps each card to its controls; nothing else
+changes shape. The visits the page had always fetched to build the crew set are
+now *rendered* too: a lead could see who was on the rollout but not when anyone
+was going.
+
+Both record lists there are **bounded and expand in place** rather than linking
+out, unlike the "View all →" idiom the thing and location detail views use — a
+link has nowhere to point, because the staff queue carries no project filter and
+this is the only page holding a project's tickets. The rollups that must cover
+*every* ticket (summed estimates) and every time entry get their own
+`fields`-trimmed queries rather than folding the visible page: a rollout's
+ledger is the largest thing on the page and none of the rest of a time entry is
+read here.
+
 **Preventive maintenance** (`internal/maintenance`, migration `1829000000`):
 recurrence, and the last CMMS pillar this app was missing. A
 **maintenance_plan** says "this gets serviced every N days"; its only output is
@@ -309,6 +329,27 @@ SchemaBuilder is deliberately not ported while `MetadataEditor` /
 `JsonSchemaForm` are. `retired` rather than the platform's `active` so the bool's
 zero value means "in service" (the `non_billable` idiom); a seeder maps
 `retired = !active`.
+
+**Vocabulary: it is "location" and "thing" everywhere, UI copy included.** Not
+"site" and "device" — both shells and the portal drifted into using all four
+interchangeably, to the point that one ticket form labelled the same field
+"Thing" while its placeholder said "Pick a device…" and its create button said
+"New thing". A per-audience split (schema nouns for staff, plain English for the
+portal) is the obvious alternative and is **unenforceable here**: the desk and
+field shells share their views, so `TicketFormView` and the rosters would have
+to fork to carry two vocabularies. One word each, and the deciding argument is
+that **a thing is not always a device** — the catalog is deliberately a superset
+of the platform's, covering a door, a gate, a circuit, a vehicle. Narrowing the
+noun to "device" would quietly discourage exactly the tickets that most need
+filing. "Location" carries no such loss.
+
+Two things this does **not** mean. "On-site" is a different word — it means
+physically present at the customer's premises (`on-site visit`, `time on site`)
+and is unrelated to the `locations` record. And `visits.location` is not a
+location at all: it is free-text dispatch directions, distinct from the ticket's
+`location` relation that the visit reaches through its ticket. It is labelled
+**"Directions"** in the UI, which is what `VisitWorkView` had always called it
+while the schedule form was still labelling it "location".
 
 **Demo seeding** (`internal/demoseed`): `./helpdesk seed-demo --confirm [--tickets N]`
 fills a showcase instance — 8 customers, type taxonomies with real
@@ -616,8 +657,23 @@ after). Dark mode hides this class of bug completely, because there both colours
 are light and the wrong one still reads. Dim by opacity so the colour is
 inherited and follows the row's state.
 
+The **`.badge-soft` geometry lives in `@layer components`; its colours
+deliberately do not** (`src/style.css`). A bare rule written after
+`@tailwind utilities` beats a utility of equal specificity on source order, so
+`class="badge-soft hidden sm:inline-flex"` did *nothing*: the badge kept its own
+`display: inline-flex` and stayed visible at every width. That is the worst
+shape a CSS bug can take — a responsive layout gives you no sign, and the two
+callers that wrote it (both "Things here" cards) simply truncated their names on
+a phone for as long as it stood. The `text-xs` / `text-[10px]` a few other
+callers set were inert the same way. Moving only the geometry into the
+components layer lets utilities win, which is what anyone writing one expects;
+the colours stay outside it because they carry the meaning of the chip and
+should not fall to a stray `text-*`.
+
 `useQuerySync` (`composables/useQuerySync.ts`) mirrors filter state into the URL
-on all three filtered staff boards — queue, Reports, Dispatch. All three already
+on every filtered board in the app — the three staff ones (queue, Reports,
+Dispatch) and, since the portal grew its own catalog surfaces, the four portal
+ones (tickets, visits, projects, things). The staff boards already
 *read* their filters from the query (that is how a dashboard tile or a
 "View all →" arrives pre-filtered); only the write-back was missing, so a
 filtered board could not be linked, survive a reload, or come back when you
@@ -631,31 +687,85 @@ route and writes back into the refs. That direction reads as the natural
 completion of this and is a trap, because the guard stopping ref → query → ref
 has to distinguish "the user navigated" from "we just wrote this"; the views
 remount on every arrival that matters, and the mount-time read covers those.
+
+`PortalTicketsView` is the one view that also watches the route inbound, and it
+predates the composable: vue-router reuses the component for
+`?location=A → ?location=B`, so a deep link arriving from the *same* page would
+otherwise be ignored. It does not loop, because useQuerySync's write lands in
+the query first, so every value read back is the one already held and Vue only
+fires a watcher on change. Two rules keep it that way and both were violated
+when it was written. Re-seed **every** key the sync writes — `status` and
+`awaiting` used to be watched and never assigned, so arriving from the
+dashboard's "Needs reply" tile and then clicking the sidebar's Tickets left the
+toggle on while the URL said otherwise. And re-seed with the **same defaults**
+the mount-time read uses: `status=active` is omitted from the URL, so a bare
+`q('status')` re-seeds the empty string and filters on `status = ''`, which
+matches nothing.
+
 Two deliberate exceptions to the omit-defaults rule: Reports always writes
 `from`/`to`, because "the trailing 30 days" means something different the day
 after you send the link, and Dispatch writes the calendar's `focus` date,
 because `view=week` alone lands the recipient on *their* current week.
 
-The **portal** reads the site/device axes as well as writing them. Intake offers
-a picker per axis (customer-scoped by the collection rules, so no client filter
-is needed or trustworthy), with devices at the chosen site sorted to the top but
-**never hidden** — `things.location` is optional and a requester may know the box
-without knowing which site it's filed under. Both `_note` fields survive as the
-"not in the catalog" escape hatch, and when a customer has neither catalog
-populated the pickers don't render at all: the form degrades to exactly the two
-free-text inputs it was before. `/portal/tickets` gains matching `location` /
-`thing` filters seeded from the query string, so the ticket detail's site and
-device link into a filtered history (deliberately including *retired* devices —
-you can't file against decommissioned gear, but reading its history is the point
-of keeping the row). `/portal/reports` is the customer-facing Service Summary: tickets, visits and
-site/device/category rollups over a range, all from collections the requester
-can already read, plus a billable-hours column that appears only when their
-customer opted in. It never names a technician, same as the portal visit and
-project views. `/portal/sites` exists for the one question the ticket list
-can't answer — who is coming to this site, and when; everything else on it is a
-launcher into those filters, which is why there's no per-site detail view. It
-never shows a technician, matching the roster-hiding in the portal visit and
-project views.
+The **portal** reads the location/thing axes as well as writing them. Intake
+offers a picker per axis (customer-scoped by the collection rules, so no client
+filter is needed or trustworthy), with things at the chosen location sorted to
+the top but **never hidden** — `things.location` is optional and a requester may
+know the box without knowing which location it's filed under. Both `_note`
+fields survive as the "not in the catalog" escape hatch, and when a customer has
+neither catalog populated the pickers don't render at all: the form degrades to
+exactly the two free-text inputs it was before. `/portal/tickets` gains matching
+`location` / `thing` filters seeded from the query string, so the ticket
+detail's location and thing link into a filtered history (deliberately including
+*retired* things — you can't file against decommissioned gear, but reading its
+history is the point of keeping the row). `/portal/reports` is the
+customer-facing Service Summary: tickets, visits and location/thing/category
+rollups over a range, all from collections the requester can already read, plus
+a billable-hours column that appears only when their customer opted in. It never
+names a technician, same as the portal visit and project views.
+
+The requester gets **both catalog axes as first-class surfaces** —
+`/portal/locations`, `/portal/things`, and a read-only detail view for each.
+Nothing on the backend moved: `locations`, `things`, `location_types` and
+`thing_types` have all carried the `portalRead` rule since `1824000000`, so this
+is UI over rules that already existed. `/portal/sites` was the old path for the
+first of them and moved with the vocabulary; nothing outside the SPA linked to
+it (notification mail deep-links `/t/{id}` only). Four things are worth not
+re-deriving:
+
+- **The location detail overturns an earlier "no detail view" call, on a reason
+  that did not exist when it was made.** The argument was that a detail page
+  would be the filtered ticket list with a heading, and it was true — until
+  `things` became a relation. *What is installed here* is a question only this
+  page can answer, and on site it is the one asked first. Same reason the staff
+  `LocationDetailView` grew its "Things here" card.
+- **Things needed a list at all.** The portal could already *filter* by thing
+  from the intake form and the ticket list, but there was nowhere to browse the
+  catalog, so "which of our gear keeps failing" — the question the relation
+  replaced free text to answer — had no customer-facing surface.
+- **`notes` and `metadata` are withheld from both detail views.** On a location,
+  `notes` is the access notes our technicians write for each other (gate codes,
+  which door, who to avoid) — our operational text about their building, not
+  their record of it. On a thing it is our service text, and `metadata` is a
+  mirror of upstream config a requester cannot act on. Address, contact, code,
+  type and parent are facts about their own property and do show. Visits, as
+  everywhere else in the portal, never name a technician.
+- **Locations stays a card grid while Things is a `ResponsiveList`**, which is a
+  decision rather than drift: a table row cannot hold the "coming up" block, and
+  that block is the entire reason the Locations page exists. Things has no
+  per-row block and reads better dense.
+
+Portal filters ride the URL through the same `useQuerySync` as the staff boards
+(tickets, visits, projects, things) — see that section for the three rules. Two
+traps it surfaces are worth stating once, because both fail silently. A boolean
+ref must be mirrored as a **computed `'1' | ''`**, never as the ref: `String(true)`
+is `'true'`, which a `=== '1'` read rejects, so the flag writes a param that
+cannot survive a reload — and `String(false)` is `'false'`, which the
+omit-defaults rule reads as a set value and pins onto every otherwise-clean
+link. And an "all" option needs an **explicit sentinel** (`status=all`), not the
+empty string it reads as in the markup: empty is exactly what an omitted filter
+looks like, so a `View all N tickets →` link off a location or a thing would
+land on the active-only default it was written to escape.
 
 ## Conventions
 

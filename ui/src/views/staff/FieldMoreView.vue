@@ -19,7 +19,7 @@ const context = useVisitContext()
 const groups = [
   {
     title: 'Look up',
-    hint: 'Find the site or device in front of you.',
+    hint: 'Find the location or thing in front of you.',
     items: [
       {
         label: 'Scan',
@@ -27,8 +27,8 @@ const groups = [
         path: '/staff/scan',
         blurb: 'Read a label, or type the code printed on it.',
       },
-      { label: 'Sites', icon: '📍', path: '/staff/locations', blurb: 'Addresses, access notes, contacts.' },
-      { label: 'Devices', icon: '🧰', path: '/staff/things', blurb: 'Equipment and its ticket history.' },
+      { label: 'Locations', icon: '📍', path: '/staff/locations', blurb: 'Addresses, access notes, contacts.' },
+      { label: 'Things', icon: '🧰', path: '/staff/things', blurb: 'Equipment and its ticket history.' },
     ],
   },
   {
@@ -36,7 +36,7 @@ const groups = [
     hint: '',
     items: [
       { label: 'Projects', icon: '📁', path: '/staff/projects', blurb: 'Rollouts you are on the crew for.' },
-      // Here because the tech standing at the device is often who learns it
+      // Here because the tech standing at the thing is often who learns it
       // needs servicing — the same argument that made plans staff-editable
       // rather than admin-only.
       { label: 'Maintenance', icon: '🔧', path: '/staff/maintenance', blurb: 'Recurring service schedules.' },
@@ -84,7 +84,7 @@ onMounted(context.load)
       never be told about a control that would empty their list.
     -->
     <p v-if="context.has.value" class="text-xs text-base-content/50">
-      Sites and Devices can narrow to the {{ context.customerIds.value.size }}
+      Locations and Things can narrow to the {{ context.customerIds.value.size }}
       {{ context.customerIds.value.size === 1 ? 'customer' : 'customers' }} you are scheduled at.
     </p>
   </div>

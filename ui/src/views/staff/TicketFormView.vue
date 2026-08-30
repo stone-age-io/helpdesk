@@ -126,8 +126,8 @@ async function createLocation(label: string) {
   }
 }
 
-// Seeds the new thing's site from the ticket's — a thing filed from a ticket is
-// almost always at that ticket's site, and an unplaced thing is a hole in the
+// Seeds the new thing's location from the ticket's — a thing filed from a ticket is
+// almost always at that ticket's location, and an unplaced thing is a hole in the
 // reporting axis the collection exists to provide.
 async function createThing(label: string) {
   if (!form.value.customer || !label.trim()) return
@@ -153,9 +153,9 @@ const requesterOptions = computed(() =>
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
 )
-// Sorted so things at the selected site come first; nothing is filtered out,
-// since a thing's location is optional and the device is often known before the
-// site. See TicketDetailView.thingOptions for the full reasoning.
+// Sorted so things at the selected location come first; nothing is filtered out,
+// since a thing's location is optional and the thing is often known before the
+// location. See TicketDetailView.thingOptions for the full reasoning.
 const thingOptions = computed(() => {
   const site = form.value.location
   const ranked = site
@@ -195,7 +195,7 @@ onMounted(loadOptions)
   <div class="max-w-6xl mx-auto space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/staff/tickets')">Tickets</a></li>
+        <li><router-link to="/staff/tickets">Tickets</router-link></li>
         <li>New</li>
       </ul>
     </div>
@@ -277,16 +277,16 @@ onMounted(loadOptions)
               <SearchSelect v-model="form.project" :options="projectOptions" size="sm" empty-label="None" placeholder="Attach to a project…" :disabled="loading || !form.customer" />
             </div>
             <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Device note</span></label>
-              <input v-model="form.thing_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Device text / from intake" :disabled="loading" />
+              <label class="label py-1"><span class="label-text text-xs">Thing note</span></label>
+              <input v-model="form.thing_note" type="text" maxlength="200" class="input input-bordered input-sm" placeholder="Thing text / from intake" :disabled="loading" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-              <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Pick a site…" create-label="New location" :disabled="loading || !form.customer" @create="createLocation" />
+              <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Pick a location…" create-label="New location" :disabled="loading || !form.customer" @create="createLocation" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Thing</span></label>
-              <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Pick a device…" create-label="New thing" :disabled="loading || !form.customer" @create="createThing" />
+              <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Pick a thing…" create-label="New thing" :disabled="loading || !form.customer" @create="createThing" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Location note</span></label>

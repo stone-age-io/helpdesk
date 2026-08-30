@@ -8,7 +8,7 @@
 // narrow columns (`sm:w-52` on the Reports and roster filter rows), and a
 // `w-full` popup inherits that 13rem — then daisyUI's `menu` lays each row out
 // as a flex ROW, so label and sublabel truncate while splitting it. That cuts
-// exactly the half that disambiguates: two of a customer's sites both render as
+// exactly the half that disambiguates: two of a customer's locations both render as
 // "Brightpath…". So the list sizes to its content (`w-max`, floored at the
 // input, capped below the viewport) and each row stacks label over sublabel,
 // giving both the full row width. `title` on every row is the last resort for
@@ -131,7 +131,7 @@ function doCreate() {
 
 // The list is 15rem tall and used to always open downward, which put it off the
 // bottom of the window for the lower pickers on a tall form (the ticket form's
-// device picker starts below the fold outright). Measured once at open time —
+// thing picker starts below the fold outright). Measured once at open time —
 // the list only flips up when there is genuinely more room above.
 const LIST_HEIGHT = 240
 const dropUp = ref(false)

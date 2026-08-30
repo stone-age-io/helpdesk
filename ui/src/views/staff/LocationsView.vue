@@ -18,7 +18,7 @@ import { useVisitContext } from '@/composables/useVisitContext'
 
 const router = useRouter()
 
-// A field tech opening this on a phone wants the two sites they are scheduled
+// A field tech opening this on a phone wants the two locations they are scheduled
 // at, not forty across eight customers. The toggle only renders when they have
 // scheduled visits, so an agent or dispatcher with none never meets a control
 // that would empty their roster — see the composable for that rule.
@@ -101,7 +101,7 @@ onMounted(() => {
       <router-link to="/staff/locations/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Location</router-link>
     </div>
     <p class="text-sm text-base-content/60">
-      A customer's physical sites. The <span class="font-mono">code</span> is the
+      A customer's physical locations. The <span class="font-mono">code</span> is the
       platform Location join key machine intakes resolve against; the address and
       access notes travel to the technician on a visit.
     </p>
@@ -118,7 +118,7 @@ onMounted(() => {
     >
       <label v-if="context.has.value" class="label cursor-pointer gap-2 justify-start">
         <input v-model="mineOnly" type="checkbox" class="toggle toggle-sm" />
-        <span class="label-text text-sm">My scheduled sites</span>
+        <span class="label-text text-sm">My scheduled locations</span>
       </label>
     </RosterFilters>
 

@@ -122,7 +122,7 @@ onMounted(load)
   <div v-else-if="requester" class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/staff/requesters')">Requesters</a></li>
+        <li><router-link to="/staff/requesters">Requesters</router-link></li>
         <li>{{ requester.email }}</li>
       </ul>
     </div>

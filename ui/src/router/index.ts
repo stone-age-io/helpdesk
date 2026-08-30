@@ -79,7 +79,15 @@ const router = createRouter({
         { path: 'tickets/new', name: 'portal-ticket-new', component: () => import('@/views/portal/NewTicketView.vue') },
         { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('@/views/portal/PortalTicketDetailView.vue') },
         { path: 'visits', name: 'portal-visits', component: () => import('@/views/portal/PortalVisitsView.vue') },
-        { path: 'sites', name: 'portal-sites', component: () => import('@/views/portal/PortalSitesView.vue') },
+        // The requester's two catalog axes, mirroring /staff/locations and
+        // /staff/things minus every field that is ours rather than theirs (see
+        // each view's header). `/portal/sites` was the old path for the first
+        // of these; it moved with the vocabulary, and nothing outside the SPA
+        // ever linked to it — notification mail deep-links /t/{id} only.
+        { path: 'locations', name: 'portal-locations', component: () => import('@/views/portal/PortalLocationsView.vue') },
+        { path: 'locations/:id', name: 'portal-location-detail', component: () => import('@/views/portal/PortalLocationDetailView.vue') },
+        { path: 'things', name: 'portal-things', component: () => import('@/views/portal/PortalThingsView.vue') },
+        { path: 'things/:id', name: 'portal-thing-detail', component: () => import('@/views/portal/PortalThingDetailView.vue') },
         { path: 'reports', name: 'portal-reports', component: () => import('@/views/portal/PortalReportsView.vue') },
         { path: 'projects', name: 'portal-projects', component: () => import('@/views/portal/PortalProjectsView.vue') },
         { path: 'projects/:id', name: 'portal-project-detail', component: () => import('@/views/portal/PortalProjectDetailView.vue') },

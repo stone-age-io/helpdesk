@@ -14,9 +14,9 @@ const toast = useToastStore()
 
 const title = ref('')
 const body = ref('')
-// Priority, site and device are what the portal create rule leaves open to
+// Priority, location and thing are what the portal create rule leaves open to
 // requesters; the triage fields (category / type / project / estimate) stay
-// staff-only. Site and device were staff-only too until migration 1825000000 —
+// staff-only. Location and thing were staff-only too until migration 1825000000 —
 // they are not judgements about the work, they are facts about where it is and
 // what it is on, and at intake the requester is the only one who knows them.
 const priority = ref<TicketPriority>('normal')
@@ -48,9 +48,9 @@ const locationOptions = computed<SelectOption[]>(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.address || '' })),
 )
 
-// Devices at the chosen site sort to the top, but nothing is hidden: a thing's
-// `location` is optional, and a requester who knows the device but not which
-// site it is filed under would otherwise hit an empty list. Same call the staff
+// Things at the chosen location sort to the top, but nothing is hidden: a thing's
+// `location` is optional, and a requester who knows the thing but not which
+// location it is filed under would otherwise hit an empty list. Same call the staff
 // form makes, for the same reason.
 const thingOptions = computed<SelectOption[]>(() => {
   const siteName = (id?: string) => locations.value.find((l) => l.id === id)?.name || ''
@@ -69,14 +69,14 @@ const thingOptions = computed<SelectOption[]>(() => {
 // form stays exactly the two free-text fields it has always been.
 const hasLocations = computed(() => locations.value.length > 0)
 const hasThings = computed(() => things.value.length > 0)
-// The device note is the "not in the list" escape hatch, so it only earns space
+// The thing note is the "not in the list" escape hatch, so it only earns space
 // while nothing is picked. The location note is different — "Room 214" is worth
-// saying even once the site is chosen — so that one always shows.
+// saying even once the location is chosen — so that one always shows.
 const showThingNote = computed(() => !thingId.value)
 
 watch(thingId, (id) => {
   if (id) thingNote.value = ''
-  // Picking a device that belongs to a site fills the site in, when the
+  // Picking a thing that belongs to a location fills the location in, when the
   // requester hasn't already chosen one. Saves the obvious second step.
   const t = things.value.find((x) => x.id === id)
   if (t?.location && !locationId.value) locationId.value = t.location
@@ -184,13 +184,13 @@ async function submit() {
         </div>
 
         <div v-if="hasLocations" class="form-control">
-          <label class="label"><span class="label-text">Which site? <span class="text-base-content/40">(optional)</span></span></label>
+          <label class="label"><span class="label-text">Which location? <span class="text-base-content/40">(optional)</span></span></label>
           <SearchSelect
             v-model="locationId"
             :options="locationOptions"
             :disabled="loading"
             empty-label="Not listed / not sure"
-            placeholder="Search your sites…"
+            placeholder="Search your locations…"
           />
         </div>
 
@@ -211,15 +211,15 @@ async function submit() {
             :placeholder="
               hasLocations
                 ? 'Room, floor, or door — narrows it down for the technician'
-                : 'Site, building, or room — helps us send someone to the right place'
+                : 'Building, room, or area — helps us send someone to the right place'
             "
           />
         </div>
 
         <div v-if="hasThings" class="form-control">
           <label class="label">
-            <span class="label-text">Which device? <span class="text-base-content/40">(optional)</span></span>
-            <span v-if="locationId" class="label-text-alt text-base-content/50">Devices at that site first</span>
+            <span class="label-text">Which thing? <span class="text-base-content/40">(optional)</span></span>
+            <span v-if="locationId" class="label-text-alt text-base-content/50">Things at that location first</span>
           </label>
           <SearchSelect
             v-model="thingId"

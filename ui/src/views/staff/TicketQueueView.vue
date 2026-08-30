@@ -304,7 +304,7 @@ async function loadFilterOptions() {
 
 // Things are loaded only once a customer is picked. Unlike locations (tens of
 // rows, loaded globally), the mirror can run to thousands, and an unscoped
-// cross-customer device picker isn't a useful control anyway — the same gate the
+// cross-customer thing picker isn't a useful control anyway — the same gate the
 // ticket form applies to its own pickers.
 async function loadThings(customerId: string) {
   if (!customerId) {

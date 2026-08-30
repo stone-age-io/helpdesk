@@ -42,8 +42,8 @@ const emit = defineEmits<{
 // read-only in the identity tier when present — primary for a callback.
 const requesterPhone = computed(() => (props.ticket.expand?.requester as any)?.phone || '')
 
-// Maps deep link for the ticket's site: coordinates preferred, the location's
-// free-text address as fallback. Empty (link hidden) when the site has neither.
+// Maps deep link for the ticket's location: coordinates preferred, the location's
+// free-text address as fallback. Empty (link hidden) when the location has neither.
 const navigateUrl = computed(() => {
   const loc = props.ticket.expand?.location as any
   if (!loc) return ''
@@ -83,7 +83,7 @@ const navigateUrl = computed(() => {
     />
   </div>
   <!-- Location and Thing — the two structured axes — are editable in place here
-       (always visible). Field work needs the site reachable, and "which device?"
+       (always visible). Field work needs the location reachable, and "which thing?"
        is the first question on a hardware ticket; each carries its own read
        affordance (Navigate, view →). Their free-text fallbacks sit together down
        in Classification, since they're intake residue and scratch hints rather
@@ -99,7 +99,7 @@ const navigateUrl = computed(() => {
       :options="locationOptions"
       size="sm"
       empty-label="None"
-      placeholder="Pick a site…"
+      placeholder="Pick a location…"
       create-label="New location"
       @update:model-value="emit('patch', { location: $event })"
       @create="emit('create-location', $event)"
@@ -119,7 +119,7 @@ const navigateUrl = computed(() => {
       :options="thingOptions"
       size="sm"
       empty-label="None"
-      placeholder="Pick a device…"
+      placeholder="Pick a thing…"
       create-label="New thing"
       @update:model-value="emit('patch', { thing: $event })"
       @create="emit('create-thing', $event)"
@@ -243,7 +243,7 @@ const navigateUrl = computed(() => {
       type="text"
       maxlength="200"
       class="input input-bordered input-sm"
-      placeholder="Device text / from intake"
+      placeholder="Thing text / from intake"
       @change="emit('patch', { thing_note: ($event.target as HTMLInputElement).value })"
     />
   </div>

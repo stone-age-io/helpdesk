@@ -3,7 +3,7 @@
 // edit (/staff/locations/:id). Any staff can create/edit (migration
 // 1813000000); delete stays admin. The LocationPicker sets lat/lng, which also
 // power a maps "Navigate" deep link — coordinates preferred, the free-text
-// address as fallback so a site with neither still degrades gracefully.
+// address as fallback so a location with neither still degrades gracefully.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
@@ -33,7 +33,7 @@ const customer = ref<Customer | null>(null)
 const customers = ref<Customer[]>([])
 const tickets = ref<Ticket[]>([])
 // The gear installed here. ThingDetailView has answered "every ticket for this
-// device" since the relation existed; this is the other direction, and it is the
+// thing" since the relation existed; this is the other direction, and it is the
 // one a tech standing on site asks first — scan the door, see what is on it.
 const things = ref<Thing[]>([])
 const types = ref<RecordType[]>([])
@@ -64,7 +64,7 @@ const typeOptions = computed(() =>
   types.value.map((t) => ({ id: t.id, label: t.name, sublabel: t.code || undefined })),
 )
 
-// The parent picker offers same-customer sites, minus this record and anything
+// The parent picker offers same-customer locations, minus this record and anything
 // beneath it. Excluding only self (which is all the platform console does) still
 // admits A→B→A; walking down from here and dropping the whole subtree is the
 // same few lines and actually closes it. PocketBase has no server-side cycle
@@ -94,7 +94,7 @@ const parentOptions = computed(() => {
     .map((l) => ({ id: l.id, label: l.name, sublabel: l.code || undefined }))
 })
 
-// Read-only breadcrumb of the containing sites, nearest last. Capped and
+// Read-only breadcrumb of the containing locations, nearest last. Capped and
 // visited-guarded for the same reason as above — a cycle must degrade to a short
 // path, never to a hung tab.
 const ancestorPath = computed(() => {
@@ -110,7 +110,7 @@ const ancestorPath = computed(() => {
     names.unshift(node.name)
     cursor = node.parent
   }
-  return names.length ? `${names.join(' → ')} → ${form.value.name || 'this site'}` : ''
+  return names.length ? `${names.join(' → ')} → ${form.value.name || 'this location'}` : ''
 })
 
 // The schema driving the metadata form comes from the selected type; read from
@@ -286,7 +286,7 @@ watch(() => route.params.id, load)
   <div v-else class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/staff/locations')">Locations</a></li>
+        <li><router-link to="/staff/locations">Locations</router-link></li>
         <li>{{ isEdit ? form.name || 'Location' : 'New location' }}</li>
       </ul>
     </div>
@@ -439,9 +439,9 @@ watch(() => route.params.id, load)
         <div v-if="isEdit" class="card bg-base-100 shadow-sm">
           <div class="card-body">
             <div class="flex items-center justify-between gap-2">
-              <h2 class="card-title text-base">Devices here</h2>
+              <h2 class="card-title text-base">Things here</h2>
               <!-- The list is complete (getFullList), so this is a count and not
-                   a "see more" link — a site holds a handful of devices, not a
+                   a "see more" link — a location holds a handful of things, not a
                    roster's worth. -->
               <span v-if="things.length" class="text-xs text-base-content/50">{{ things.length }}</span>
             </div>
@@ -460,7 +460,7 @@ watch(() => route.params.id, load)
                 <span v-if="t.retired" class="badge badge-sm badge-soft">Retired</span>
               </router-link>
               <p v-if="things.length === 0" class="py-3 text-sm text-base-content/50">
-                No devices are filed at this site yet.
+                No things are filed at this location yet.
               </p>
             </div>
           </div>

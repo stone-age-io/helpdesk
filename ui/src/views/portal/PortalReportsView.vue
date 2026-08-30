@@ -18,7 +18,7 @@
 // billable minutes per ticket id under exactly the policy the per-ticket
 // time-total route already enforces, and answers `enabled: false` when the
 // customer has not opted into show_time_to_requester, which is what hides the
-// whole section. Rolling those minutes up by site or device happens here,
+// whole section. Rolling those minutes up by location or thing happens here,
 // client-side, against tickets this page already loaded — which is why the
 // route stays a flat map and grows no grouping logic of its own.
 import { computed, onMounted, ref, watch } from 'vue'
@@ -36,7 +36,7 @@ const loading = ref(true)
 const error = ref('')
 
 // A quarter, not a month: a customer reads this for a trend, and a single month
-// of a quiet site is often two tickets and no visits.
+// of a quiet location is often two tickets and no visits.
 function isoDate(offsetDays: number): string {
   const d = new Date()
   d.setDate(d.getDate() + offsetDays)
@@ -111,12 +111,12 @@ const totalMinutes = computed(() =>
 )
 
 // --- axes ---
-// Site and device roll up identically: tickets/planned/open from what was filed
+// Location and thing roll up identically: tickets/planned/open from what was filed
 // in range, visits from work completed in range, hours from the per-ticket
-// minutes. The "—" bucket is work that named no site / no device.
+// minutes. The "—" bucket is work that named no location / no thing.
 //
 // Each row carries the relation `id` as well as the label so the table can link
-// into /portal/tickets with that filter applied — the same deep link the Sites
+// into /portal/tickets with that filter applied — the same deep link the Locations
 // page and the ticket detail use.
 interface AxisRow {
   id: string
@@ -142,12 +142,12 @@ function byTicketAxis(idOf: (t: any) => string, labelOf: (t: any) => string): Ax
     r.minutes += minutesByTicket.value[t.id] || 0
   }
   // A completed visit whose ticket falls outside the range still counts toward
-  // its site — the work happened there, in range.
+  // its location — the work happened there, in range.
   for (const v of doneVisits.value) {
     const t = v.expand?.ticket
     row(idOf(t), labelOf(t)).visits += 1
   }
-  // "—" (no site / no device named) sinks to the bottom however big it is —
+  // "—" (no location / no thing named) sinks to the bottom however big it is —
   // it is not an answer to "where is our work going".
   return [...map.values()].sort((a, b) => {
     if ((a.label === '—') !== (b.label === '—')) return a.label === '—' ? 1 : -1
@@ -163,7 +163,7 @@ const byDevice = computed(() =>
 )
 
 // Only worth a table when something in it is actually named — a customer with
-// no site catalog should not see a "By site" table holding one "No site" row.
+// no location catalog should not see a "By location" table holding one "No location" row.
 const showSites = computed(() => bySite.value.some((r) => r.label !== '—'))
 const showDevices = computed(() => byDevice.value.some((r) => r.label !== '—'))
 
@@ -235,8 +235,8 @@ function exportCsv() {
     }
     lines.push('')
   }
-  if (showSites.value) axis('By site', bySite.value, 'site')
-  if (showDevices.value) axis('By device', byDevice.value, 'device')
+  if (showSites.value) axis('By location', bySite.value, 'location')
+  if (showDevices.value) axis('By thing', byDevice.value, 'thing')
 
   lines.push('By category', 'category,tickets,still_open')
   for (const r of byCategory.value) lines.push([r.label, r.count, r.open].map(csvEscape).join(','))
@@ -300,17 +300,17 @@ onMounted(load)
       </div>
 
       <!-- items-start, not the default stretch: a grid row sizes to its tallest
-           cell, so a short device table beside a long site one would otherwise
+           cell, so a short thing table beside a long location one would otherwise
            be padded out with dead space to match. -->
       <div v-if="showSites || showDevices" class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <div v-if="showSites" class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">By site</h2>
+            <h2 class="font-semibold text-sm">By location</h2>
             <div class="overflow-x-auto">
               <table class="table table-sm">
                 <thead>
                   <tr>
-                    <th>Site</th>
+                    <th>Location</th>
                     <th class="text-right">Tickets</th>
                     <th class="text-right">Open</th>
                     <th class="text-right">Visits</th>
@@ -321,7 +321,7 @@ onMounted(load)
                   <tr v-for="r in bySite" :key="r.label">
                     <td>
                       <router-link v-if="r.id" :to="`/portal/tickets?location=${r.id}`" class="link link-hover">{{ r.label }}</router-link>
-                      <span v-else class="text-base-content/50">No site</span>
+                      <span v-else class="text-base-content/50">No location</span>
                     </td>
                     <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
                     <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>
@@ -336,12 +336,12 @@ onMounted(load)
 
         <div v-if="showDevices" class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 space-y-2">
-            <h2 class="font-semibold text-sm">By device</h2>
+            <h2 class="font-semibold text-sm">By thing</h2>
             <div class="overflow-x-auto">
               <table class="table table-sm">
                 <thead>
                   <tr>
-                    <th>Device</th>
+                    <th>Thing</th>
                     <th class="text-right">Tickets</th>
                     <th class="text-right">Open</th>
                     <th class="text-right">Visits</th>
@@ -352,7 +352,7 @@ onMounted(load)
                   <tr v-for="r in byDevice" :key="r.label">
                     <td>
                       <router-link v-if="r.id" :to="`/portal/tickets?thing=${r.id}`" class="link link-hover">{{ r.label }}</router-link>
-                      <span v-else class="text-base-content/50">No device</span>
+                      <span v-else class="text-base-content/50">No thing</span>
                     </td>
                     <td class="text-right font-mono tabular-nums">{{ r.tickets || '—' }}</td>
                     <td class="text-right font-mono tabular-nums">{{ r.open || '—' }}</td>

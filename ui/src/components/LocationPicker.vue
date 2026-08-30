@@ -19,7 +19,7 @@ const lat = defineModel<number>('lat', { required: true })
 const lng = defineModel<number>('lng', { required: true })
 // The address doubles as the geocoder input: type + Enter to search, pick a
 // result to set the coordinates AND canonicalize this same text. Left as-is
-// (free text) when the user doesn't search — so unresolvable sites still work.
+// (free text) when the user doesn't search — so unresolvable locations still work.
 const address = defineModel<string>('address', { required: true })
 
 // Read-only mode (parent's view/edit toggle): the map still pans/zooms so it

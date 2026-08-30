@@ -6,7 +6,7 @@
 //
 // Any staff member creates and edits (delete stays admin, gated in the detail
 // view), the same split migration 1813000000 gave locations: the person who
-// learns a site needs quarterly service is usually the tech standing in it.
+// learns a location needs quarterly service is usually the tech standing in it.
 //
 // Not in the Directory section of the sidebar — that one is lookups. A plan is
 // work, so it sits beside Projects.
@@ -54,7 +54,7 @@ const filtered = computed(() => {
   })
 })
 
-// What the plan services: the device if it names one, else the site. Both are
+// What the plan services: the thing if it names one, else the location. Both are
 // optional — a plan can be a plain recurring visit to a customer.
 function targetLabel(p: MaintenancePlan): string {
   return p.expand?.thing?.name || p.expand?.location?.name || '—'
@@ -115,7 +115,7 @@ onMounted(() => {
       <input
         v-model="search"
         type="text"
-        placeholder="Filter by plan, customer, device, site…"
+        placeholder="Filter by plan, customer, thing, location…"
         class="input input-bordered input-sm w-full sm:flex-1 sm:min-w-52"
       />
       <div class="w-full sm:w-52">

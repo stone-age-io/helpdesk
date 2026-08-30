@@ -76,8 +76,8 @@ const requesterOptions = computed(() =>
 const locationOptions = computed(() =>
   locations.value.map((l) => ({ id: l.id, label: l.name, sublabel: l.code || l.address || undefined })),
 )
-// Things at the ticket's site sort first, but nothing is filtered out: a thing's
-// location is optional, agents often know the device before the site, and a
+// Things at the ticket's location sort first, but nothing is filtered out: a thing's
+// location is optional, agents often know the thing before the location, and a
 // picker that silently hides the row you're looking for is worse than a long
 // one. SearchSelect renders in the order given, so sorting is the whole fix.
 const thingOptions = computed(() => {
@@ -293,8 +293,8 @@ async function createLocation(label: string) {
   }
 }
 
-// Inline-create a thing from the picker, seeding its site from the ticket — a
-// thing filed from a ticket is almost always at that ticket's site, and an
+// Inline-create a thing from the picker, seeding its location from the ticket — a
+// thing filed from a ticket is almost always at that ticket's location, and an
 // unplaced thing is a hole in the reporting axis this collection exists for.
 // Creates a stub in a curated mirror on purpose, same as createLocation; it may
 // still need a `code` filled in later to join the platform.
@@ -440,7 +440,7 @@ onUnmounted(() => {
   <div v-else-if="ticket" class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/staff/tickets')">Tickets</a></li>
+        <li><router-link to="/staff/tickets">Tickets</router-link></li>
         <li>#{{ ticket.number }}</li>
       </ul>
     </div>
@@ -561,7 +561,7 @@ onUnmounted(() => {
             >
               <span class="w-6 text-center text-sm shrink-0" aria-hidden="true">{{ visitGlyph(item.visit.status) }}</span>
               <span class="flex-1">
-                <span class="font-semibold text-base-content">Site visit {{ item.visit.status }}</span>
+                <span class="font-semibold text-base-content">On-site visit {{ item.visit.status }}</span>
                 <template v-if="fmtDate(visitTimelineAt(item.visit))"> · {{ fmtDate(visitTimelineAt(item.visit)) }}</template>
                 <template v-if="visitTechName(item.visit)"> · {{ visitTechName(item.visit) }}</template>
                 <span v-if="item.visit.location" class="text-base-content/50"> · 📍 {{ item.visit.location }}</span>

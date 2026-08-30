@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One visit row, shared by the field Today list and the weekly Schedule agenda
 // so the two can't drift (they had). Shows time · duration, ticket #/title,
-// customer · site, status, and an optional live-timer marker; emits `select`
+// customer · location, status, and an optional live-timer marker; emits `select`
 // with the visit id on tap. Needs the visit loaded with
 // expand=ticket,ticket.customer,ticket.location.
 import type { Visit, VisitStatus } from '@/types'

@@ -112,7 +112,7 @@ carries the inbound email `Message-ID`), `attachments` (≤6 files),
 `location` (→ locations, optional — the structured place, and the reporting
 axis), `location_note` (free text — dispatch hints, or the unmatched-code
 fallback from machine intake). All added/changed `1812000000`.
-`thing` (→ things, optional — the structured device, the second reporting axis)
+`thing` (→ things, optional — the structured thing, the second reporting axis)
 and `thing_note` (free text — a scratch description, or the unmatched-code
 fallback), which replaced the free-text `asset` in `1824000000`.
 `estimated_minutes` (int ≥ 1, optional — staff effort estimate, added
@@ -172,16 +172,16 @@ Rules:
 
   Both halves are load-bearing. PocketBase validates that a relation id
   *exists*, not that it is yours, so without the hop a requester could attach
-  another customer's site to their ticket — and the ticket detail expands and
+  another customer's location to their ticket — and the ticket detail expands and
   renders it straight back. And the `= ''` term must be there (and must come
   first): `:isset` means "the key was submitted", so an untouched picker sending
   `location: ""` fails an `:isset = false` guard, which would reject every ticket
-  filed without a site. `= ''` covers the absent case too, which is why the
+  filed without a location. `= ''` covers the absent case too, which is why the
   clause has two terms and not three. `1825000000_portal_site_device_test.go`
   pins all of it behaviourally, over real HTTP.
 
   The `_note` fallbacks stay **unguarded**: they're harmless free text, and
-  they're how a requester names a site or device that isn't in the catalog —
+  they're how a requester names a location or thing that isn't in the catalog —
   which is most of them.
 - **update** — `StaffRule`. Requesters never edit ticket fields; they act
   through comments.
@@ -204,11 +204,11 @@ Both of the ticket's "what is this about" fields have since followed the same
 path from free text to relation: `location` in `1812000000`, once projects made
 physical places recur, and `asset` in `1824000000`, which replaced it with
 `thing` (→ `things`) plus a `thing_note` fallback. The earlier "**not** a CMDB —
-no device catalog" objection recorded here applied to an *authored* catalog
+no thing catalog" objection recorded here applied to an *authored* catalog
 someone would have to keep true by hand. `things` isn't one: it is a curated
 **mirror** of the platform's `things`, joined by `(customer, code)`, whose source
 of truth lives upstream. What it buys is the pair of questions free text could
-never answer — every ticket for this device, and which devices burn the most
+never answer — every ticket for this thing, and which things burn the most
 hours.
 
 Rules: read `StaffRule || RequesterRule` (staff use it for the picker;
@@ -311,7 +311,7 @@ self, update/delete own-or-admin. Requesters never see it.
 
 `ticket` (cascade), `assignee` (→ staff, optional), `scheduled_at`
 (optional), `status` (`requested` | `scheduled` | `completed` | `canceled`),
-`location` (free text — dispatch directions; the structured site comes from
+`location` (free text — dispatch directions; the structured location comes from
 the ticket's `location` relation), `completed_at`, `notes`, `duration_minutes`
 (int, optional — added `1809000000`).
 
@@ -345,24 +345,24 @@ preferred, `address` as fallback). `1824000000` added `type` (→ location_types
 with the platform's `locations` so an export seeds without translation.
 
 `parent` exists because the seeder writes it, not because the UI needs it —
-dispatch is site-level, and a ticket naming a `thing` already carries the
+dispatch is location-level, and a ticket naming a `thing` already carries the
 precision a room-level hierarchy would provide. PocketBase has no cycle detection
 for self-relations, so the parent picker excludes the record *and its whole
 subtree*, and any code that walks the chain carries a visited set and a depth cap.
-A dangling `parent` (deleted site) renders blank, like `tickets.category`.
+A dangling `parent` (deleted location) renders blank, like `tickets.category`.
 
 A location earns a relation where a one-off ticket visit's free-text location
-did not: a project revisits the same site over weeks, so the place recurs. It
+did not: a project revisits the same location over weeks, so the place recurs. It
 is still deliberately **not** a CMDB — a place with an address and access
 notes, not an asset catalog.
 
 Rules: read `StaffRule || (RequesterRule && customer = @request.auth.customer)`
-(a requester sees their own company's sites); **create** and **update**
-`StaffRule` (any agent manages sites day-to-day from the Directory — update
+(a requester sees their own company's locations); **create** and **update**
+`StaffRule` (any agent manages locations day-to-day from the Directory — update
 opened in `1813000000`); **delete** `AdminRule` (the one destructive op against
 a location referenced by tickets/projects/visits).
 
-### `things` — the device catalog (added `1824000000`)
+### `things` — the thing catalog (added `1824000000`)
 
 `customer` (required), `code` (the platform Thing join key, optional — unique per
 customer when set), `name` (required), `type` (→ thing_types), `location`
@@ -385,7 +385,7 @@ resolved **globally and then disambiguated**, never within a customer context:
 `staff` carry no `customer` field, so there is no ambient tenant, and `DOOR-1`
 is exactly the code every customer independently invents. The separate
 `(customer, code)` indexes on the two collections mean one customer may
-legitimately hold both a site and a device under one code; the scanner searches
+legitimately hold both a location and a thing under one code; the scanner searches
 both and shows a picker rather than a confident wrong answer.
 
 Deliberately a **superset** of the platform's catalog: `code` is nullable because
@@ -431,7 +431,7 @@ readable; create/update/delete `AdminRule`, matching `ticket_categories`.
 `customer` (required), `title` (required) and `body` — the ticket this plan will
 open — plus the triage it stamps on every one: `category`, `assignee`,
 `priority`, `estimated_minutes`, and the `thing` / `location` / `project` it is
-about (all optional; no cascade delete, so retiring a device never deletes the
+about (all optional; no cascade delete, so retiring a thing never deletes the
 schedule that services it). The schedule itself is `interval_days` (required,
 ≥ 1), `anchor`, `lead_time_days`, `next_due` and `paused`.
 
@@ -471,7 +471,7 @@ occurrence through `tickets.dedupe_key` (see below), and deliberately does
 the administrative auto-close.
 
 Rules: list/view/create/update `StaffRule`, delete `AdminRule` — the split
-`1813000000` gave locations, because the person who learns a site needs
+`1813000000` gave locations, because the person who learns a location needs
 quarterly service is usually the tech standing in it. Read is staff-only: the
 generated tickets already give requesters everything that matters, and a plan
 carries `assignee`, the MSP roster the portal visit and project views hide.

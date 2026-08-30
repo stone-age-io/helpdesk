@@ -54,7 +54,7 @@ function submit() {
     <input v-model="scheduledAt" type="datetime-local" class="input input-bordered input-sm w-full min-w-0" :disabled="saving" />
     <input v-model.number="duration" type="number" min="15" step="15" placeholder="duration (min, optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
     <SearchSelect v-model="assignee" :options="staffOptions" size="sm" placeholder="Assign technician…" :disabled="saving" />
-    <input v-model="location" type="text" placeholder="location" class="input input-bordered input-sm w-full" :disabled="saving" />
+    <input v-model="location" type="text" placeholder="directions on site (optional)" class="input input-bordered input-sm w-full" :disabled="saving" />
     <textarea v-model="notes" rows="2" placeholder="notes" class="textarea textarea-bordered textarea-sm w-full" :disabled="saving"></textarea>
     <div class="flex gap-1 justify-end pt-1">
       <button class="btn btn-ghost btn-sm" :disabled="saving" @click="emit('cancel')">Cancel</button>

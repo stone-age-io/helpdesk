@@ -63,7 +63,7 @@ const groups: VarGroup[] = [
       { token: '.Visit.ScheduledAt', desc: 'Visit time — wrap in formatTime' },
       { token: '.Visit.OldScheduledAt', desc: 'Previous time', only: 'rescheduled' },
       { token: '.Visit.AssigneeName', desc: 'Dispatched technician' },
-      { token: '.Visit.Location', desc: 'On-site location / directions' },
+      { token: '.Visit.Location', desc: 'Directions to the work on site' },
       { token: '.Visit.Notes', desc: 'Dispatch notes' },
     ],
   },

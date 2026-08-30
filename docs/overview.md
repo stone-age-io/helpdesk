@@ -46,7 +46,7 @@ log hours; they cannot reach into the platform. The only platform credential the
 app carries is a NATS user scoped to `helpdesk.>` — enough to receive machine
 tickets and publish its own events, and nothing else.
 
-**It joins the platform by `code`, it does not sync.** Sites and devices are a
+**It joins the platform by `code`, it does not sync.** Locations and things are a
 local catalogue that lines up with the platform's by a shared `code`, curated
 here and bulk-loaded from an operator-run export. There is no live feed and
 there cannot be one: the platform publishes no event stream for them, and the
@@ -54,7 +54,7 @@ alternatives all require credentials this app must never hold. The catalogue is
 also deliberately a **superset** — an MSP services gear the platform never
 onboarded, so `code` is optional.
 
-**Provenance arrives on the subject, not in the payload.** A device publishes on
+**Provenance arrives on the subject, not in the payload.** A thing publishes on
 `helpdesk.>` inside its own organization's NATS account. The platform's
 managed-org export rewrites that subject to carry the organization's **code**,
 and the rewrite is signed by the operator's import — so the helpdesk reads the
@@ -64,7 +64,7 @@ That's what makes a self-reported ticket trustworthy.
 That token used to be the platform's internal organization id, which meant the
 ecosystem had two different names for a tenant depending on which direction you
 were looking (ADR 0002 in `platform-docs`). It is now `customers.code` in both
-directions — the same handle sites and devices already joined on — so a consumer
+directions — the same handle locations and things already joined on — so a consumer
 can line helpdesk events up with platform data without a mapping table only this
 database could produce.
 
@@ -152,13 +152,13 @@ Every ticket can name:
 | Axis | Answers |
 |---|---|
 | **customer** | whose work is this |
-| **location** (site) | where is it |
-| **thing** (device) | what is it on |
+| **location** | where is it |
+| **thing** | what is it on |
 | **category** | what is it about |
 | **project** | what larger effort is it part of |
 
 Location and thing are real records, not free text — that's what makes
-"everything that ever happened to this door reader" and "which devices burn the
+"everything that ever happened to this door reader" and "which things burn the
 most hours" answerable at all. Both keep a free-text fallback for gear that
 isn't in the catalogue yet.
 
@@ -169,14 +169,14 @@ for what only humans read.**
 
 ### A code is the same name everywhere
 
-Sites and devices carry an optional `code` (`DOOR-1`, `AP-HS-GYM`). It is the
+Locations and things carry an optional `code` (`DOOR-1`, `AP-HS-GYM`). It is the
 one name the whole ecosystem agrees on: a machine intake resolves it, the
 platform knows the same record by it, and — printed as a QR label from the
 record's detail view — it is what a tech scans in the hallway to land on that
 record's history.
 
 The label payload is the **bare code**: no web address, no customer, no
-"thing-or-site" marker. That is a security property, not a shortcut. A sticker
+"thing-or-location" marker. That is a security property, not a shortcut. A sticker
 on a wall is something a stranger can replace, and a payload containing a URL
 would let a forged sticker send a person to arbitrary content. A bare in-system
 identifier means the worst a forged label achieves is opening the wrong record
@@ -203,7 +203,7 @@ A record with no code gets no label button. The payload *is* the code.
 | `nats` / `webhook` | a machine reports itself |
 | `maintenance` | a schedule comes due and opens it (see below) |
 
-The machine paths are the signature feature: a device on the Stone-Age.io
+The machine paths are the signature feature: a thing on the Stone-Age.io
 platform can open its own ticket, and the customer it belongs to is derived from
 the **message subject**, which is operator-signed and therefore unforgeable.
 
@@ -220,9 +220,17 @@ Customers see **only their own company's** tickets, and never internal notes or
 technician names. That last one is deliberate: the MSP's roster is not the
 customer's business.
 
-They can: file a ticket (naming the site and device if they know them), follow
+They can: file a ticket (naming the location and thing if they know them), follow
 the conversation, see what's scheduled, and read a service summary. Hours appear
 only if you've opted that customer in.
+
+They also get both catalog axes as browsable surfaces — **Locations** and
+**Things**, each with a read-only detail view. A location shows what's installed
+there, who's coming out, and its recent tickets; a thing answers "is this one a
+repeat offender" with open/total counts and its own history. Both withhold what
+is ours rather than theirs: the access notes our technicians write for each
+other, our service notes on a thing, and — as everywhere in the portal — the
+name of whoever is coming.
 
 ### Agents — the staff desk (`/staff`)
 
@@ -232,8 +240,8 @@ The working day:
    unassigned piles, how much of the backlog is going stale, and inflow over
    the last eight weeks. Every number is a link into the queue that produced
    it, so it's a set of doors rather than a scoreboard.
-2. **Queue** — filter by status, priority, assignee, customer, category, site,
-   device, and backlog age. Save the filters you use daily as views. Filters
+2. **Queue** — filter by status, priority, assignee, customer, category, location,
+   thing, and backlog age. Save the filters you use daily as views. Filters
    live in the URL on the queue, Reports and Dispatch, so a filtered board is a
    link you can send someone — and opening a ticket and pressing Back returns
    you to the filters you had, not a reset list.
@@ -260,11 +268,11 @@ entry in one action.
 
 The phone bar is `Today · Schedule · Tickets · Time · More`. Five thumb targets
 is the most a phone takes and there are eight destinations, so the fifth slot is
-a door rather than a place: **More** holds Scan, Sites and Devices under "Look
+a door rather than a place: **More** holds Scan, Locations and Things under "Look
 up", and Projects under "Work" (the one destination read *between* jobs rather
 than during one). On a desktop the sidebar lists all of it flat.
 
-Sites and Devices offer a **My scheduled sites** toggle that narrows the roster
+Locations and Things offer a **My scheduled locations** toggle that narrows the roster
 to the customers this tech has scheduled visits at. It only appears if they have
 any — a dispatcher or admin never meets a control that would filter their roster
 to nothing.
@@ -306,8 +314,8 @@ walk back.
 go build ./cmd/helpdesk && ./helpdesk seed-demo --confirm --tickets 60
 ```
 
-That fills a throwaway instance with eight customers, a staff roster, sites and
-devices with real type schemas, and a backdated history of tickets, comments,
+That fills a throwaway instance with eight customers, a staff roster, locations and
+things with real type schemas, and a backdated history of tickets, comments,
 visits and logged hours. It's idempotent — re-run it as often as you like.
 
 ```bash
@@ -328,10 +336,10 @@ A good first lap, as Maya:
 1. **Dashboard** — the landing screen. Click *Over 7 days* under Backlog age
    and land in the queue filtered to exactly those tickets; the count and the
    queue agree because both cut the backlog at the same boundary.
-2. **Reports** → *Thing type* — which classes of device cost the most hours.
+2. **Reports** → *Thing type* — which classes of thing cost the most hours.
 3. **Reports** → *Customer*, then flip to *Staff* — the totals above stay put;
    they're the denominator each table is read against.
-4. Open a ticket with a site and a device, and follow its links out into the
+4. Open a ticket with a location and a thing, and follow its links out into the
    filtered history for each.
 5. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
 6. **Maintenance** — five seeded plans. Two are due, so quit the server and run
@@ -348,7 +356,7 @@ A good first lap, as Maya:
    straight to the record. Try `DOOR-1`-style codes shared across customers and
    you'll get the picker instead.
 8. Sign in as Sam and the shell changes shape: today's visits, and **More** →
-   Sites / Devices with the *My scheduled sites* toggle narrowing to just his
+   Locations / Things with the *My scheduled locations* toggle narrowing to just his
    customers.
 9. Sign in as Regina and compare: same tickets, no internal notes, no
    technician names, and a service summary with billable hours because
@@ -362,7 +370,7 @@ A good first lap, as Maya:
 Worth knowing so you don't go looking: no SLA timers or escalation (a ticket's
 `due_at` is a date somebody agreed to, with no clock behind it), no knowledge
 base, no canned responses, no CSAT, no ticket merge or split, no calendar sync,
-no money anywhere, and no live sync of sites and devices from the platform —
+no money anywhere, and no live sync of locations and things from the platform —
 that last one closed rather than merely unbuilt, for the reasons in
 [Where it sits in Stone-Age.io](#where-it-sits-in-stone-ageio).
 

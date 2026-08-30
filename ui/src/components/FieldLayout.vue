@@ -64,14 +64,14 @@ const fieldSections: NavSection[] = [
     title: 'Directory',
     items: [
       { label: 'Scan', icon: '📷', path: '/staff/scan' },
-      { label: 'Sites', icon: '📍', path: '/staff/locations' },
-      { label: 'Devices', icon: '🧰', path: '/staff/things' },
+      { label: 'Locations', icon: '📍', path: '/staff/locations' },
+      { label: 'Things', icon: '🧰', path: '/staff/things' },
     ],
   },
 ]
 
 // Destinations that live behind More rather than on the bar. They keep the More
-// tab lit, so a tech deep in Devices can still see where they are — an
+// tab lit, so a tech deep in Things can still see where they are — an
 // unlit bar reads as "nowhere", which is exactly the wrong answer three taps
 // into a hub.
 const behindMore = ['/staff/scan', '/staff/locations', '/staff/things', '/staff/projects']

@@ -16,7 +16,7 @@ import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
 //
 // LAYOUT: the filters and the totals row are PINNED, and the rollups are tabbed
 // one at a time beneath them. The totals are not a report — they are the
-// denominator every report is read against ("14h on this device" means nothing
+// denominator every report is read against ("14h on this thing" means nothing
 // without "180h logged overall"), so putting them behind a tab of their own
 // would hide the number you are comparing to. The rollups genuinely are
 // alternatives: you arrive with one question, and stacking all seven made a
@@ -64,16 +64,16 @@ const locationFilter = ref(q('location'))
 const thingFilter = ref(q('thing'))
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
-// Location picker narrows to the selected customer's sites when one is chosen.
+// Location picker narrows to the selected customer's locations when one is chosen.
 const locationOptions = computed(() => {
   const list = customerFilter.value
     ? locations.value.filter((l) => l.customer === customerFilter.value)
     : locations.value
   return list.map((l) => ({ id: l.id, label: l.name, sublabel: l.expand?.customer?.name || undefined }))
 })
-// Thing picker narrows the same way, and by site too when one is chosen — a
-// device's location is optional, so unsited gear stays offered rather than
-// vanishing behind a site scope it never claimed.
+// Thing picker narrows the same way, and by location too when one is chosen — a
+// thing's location is optional, so unsited gear stays offered rather than
+// vanishing behind a location scope it never claimed.
 const thingOptions = computed(() => {
   let list = things.value
   if (customerFilter.value) list = list.filter((t) => t.customer === customerFilter.value)
@@ -218,8 +218,8 @@ function byTicketAxis(keyOf: (t: any) => string, sortBy: 'tickets' | 'minutes'):
     if (t.type === 'planned') r.planned += 1
   }
   // The "—" bucket sinks to the bottom regardless of size. It is usually the
-  // biggest row — most reactive tickets name no device — but "work we didn't
-  // attribute" is not an answer to "which devices cost us the most", and
+  // biggest row — most reactive tickets name no thing — but "work we didn't
+  // attribute" is not an answer to "which things cost us the most", and
   // letting it head the table buries the row you came for.
   return [...map.values()].sort((a, b) => {
     if ((a.label === '—') !== (b.label === '—')) return a.label === '—' ? 1 : -1
@@ -229,11 +229,11 @@ function byTicketAxis(keyOf: (t: any) => string, sortBy: 'tickets' | 'minutes'):
   })
 }
 
-// Where the work happens. Volume-first: a site's ticket count is the headline.
+// Where the work happens. Volume-first: a location's ticket count is the headline.
 const byLocation = computed(() => byTicketAxis((t) => t?.expand?.location?.name || '', 'tickets'))
 // What the work is ON — the question free-text `asset` could never answer, and
 // the stated reason things were promoted to a relation. Hours-first: "which
-// devices burn the most time" is the point, not which are mentioned most.
+// things burn the most time" is the point, not which are mentioned most.
 const byThing = computed(() => byTicketAxis((t) => t?.expand?.thing?.name || '', 'minutes'))
 // The same question one level up the taxonomy: door controllers cost us N hours
 // across every customer. This is what customer-scoped types are FOR — the name
@@ -505,7 +505,7 @@ function exportAll() {
 
 // Detail exports: the underlying time and visit rows, not the rollups.
 function exportTime() {
-  const lines = [['work_date', 'staff', 'customer', 'ticket', 'site', 'thing', 'minutes', 'billable', 'on_site', 'note'].join(',')]
+  const lines = [['work_date', 'staff', 'customer', 'ticket', 'location', 'thing', 'minutes', 'billable', 'on_site', 'note'].join(',')]
   for (const e of entries.value) {
     lines.push(
       [
@@ -527,7 +527,7 @@ function exportTime() {
   download(`time-detail-${suffix()}.csv`, lines)
 }
 function exportVisits() {
-  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'site', 'thing', 'directions'].join(',')]
+  const lines = [['completed_at', 'technician', 'customer', 'ticket', 'location', 'thing', 'directions'].join(',')]
   for (const v of doneVisits.value) {
     lines.push(
       [
@@ -566,7 +566,7 @@ watch([from, to, customerFilter, locationFilter, thingFilter], (cur, prev) => {
       return
     }
   }
-  // A thing with no location is filed under no site, so a site scope never
+  // A thing with no location is filed under no location, so a location scope never
   // orphans it — matching thingOptions.
   if (l !== pl && l && thing?.location && thing.location !== l) {
     thingFilter.value = ''
@@ -669,7 +669,7 @@ onMounted(() => {
             <button class="btn btn-ghost btn-xs" @click="exportOne(view)">CSV</button>
           </div>
           <p v-if="view === 'thingtype'" class="text-xs text-base-content/50">
-            Grouped by type <em>name</em>, so a class of device aggregates across every
+            Grouped by type <em>name</em>, so a class of thing aggregates across every
             customer that owns one.
           </p>
           <ReportTable

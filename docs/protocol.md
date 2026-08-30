@@ -232,7 +232,7 @@ unlinked).
 code stays as free text in its note field (same behavior, and same customer
 scoping, as the NATS intake).
 
-The free-text device field is spelled **`thing`**, matching the NATS contract —
+The free-text thing field is spelled **`thing`**, matching the NATS contract —
 it was `asset` before the `things` collection existed.
 
 ## HTTP inbound (email provider)

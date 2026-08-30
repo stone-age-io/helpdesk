@@ -27,7 +27,7 @@ docs win:
   `1828000000`, ADR 0002 in `platform-docs`) — the same token now names the
   tenant in *both* directions. `platform_org_id` survives, but only to record
   that a customer is a platform organization. See [protocol.md](protocol.md).
-- Sites and devices grew **printable QR labels and an in-app scanner**, whose
+- Locations and things grew **printable QR labels and an in-app scanner**, whose
   payload is the bare `code`; the field shell reaches both plus the scanner
   behind its **More** tab.
 - **Preventive maintenance** shipped (`maintenance_plans` + a nightly cron), and

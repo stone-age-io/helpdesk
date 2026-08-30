@@ -119,7 +119,7 @@ const dayGroups = computed(() => {
 const ticketLabel = (v: Visit) =>
   `#${v.expand?.ticket?.number ?? '?'} — ${v.expand?.ticket?.title ?? ''}`
 const customerName = (v: Visit) => v.expand?.ticket?.expand?.customer?.name || '—'
-// The ticket's structured site (name); its address rides along in the drawer.
+// The ticket's structured location (name); its address rides along in the drawer.
 const siteName = (v: Visit) => v.expand?.ticket?.expand?.location?.name || ''
 
 const requestedColumns: Column<Visit>[] = [
@@ -402,7 +402,7 @@ onUnmounted(() => {
             <SearchSelect v-model="customer" :options="customerOptions" size="sm" empty-label="All customers" placeholder="Customer…" />
           </div>
           <div class="w-full sm:w-52">
-            <SearchSelect v-model="location" :options="locationOptions" size="sm" empty-label="All sites" placeholder="Site…" />
+            <SearchSelect v-model="location" :options="locationOptions" size="sm" empty-label="All locations" placeholder="Location…" />
           </div>
           <div class="w-full sm:w-52">
             <SearchSelect v-model="project" :options="projectOptions" size="sm" empty-label="All projects" placeholder="Project…" />

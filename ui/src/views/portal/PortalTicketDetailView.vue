@@ -48,7 +48,7 @@ async function loadTicket() {
   // 1808000000) plus thing and location for their names (things / locations read
   // rules, 1824000000 and 1812000000). A requester describes the problem as "the
   // reader at the north door", so echoing the structured names back confirms the
-  // ticket is about the right box at the right site.
+  // ticket is about the right box at the right location.
   ticket.value = await pb.collection('tickets').getOne<Ticket>(id, { expand: 'category,thing,location' })
 }
 
@@ -116,13 +116,13 @@ async function load() {
 // ticket is final: no reply box, a follow-up is a new ticket (the server rule
 // blocks the comment either way).
 // Structured name first, free-text note as the fallback — the note is what
-// carries a site or device that isn't in the catalog, which is most of them.
+// carries a location or thing that isn't in the catalog, which is most of them.
 // Only the structured half links into a filtered history; a note is just text
 // and there is nothing to filter on.
-const siteLabel = computed(
+const locationLabel = computed(
   () => ticket.value?.expand?.location?.name || ticket.value?.location_note || '',
 )
-const deviceLabel = computed(
+const thingLabel = computed(
   () => ticket.value?.expand?.thing?.name || ticket.value?.thing_note || '',
 )
 
@@ -195,7 +195,7 @@ function authorRecord(c: TicketComment): Record<string, any> | null {
 }
 
 // One chronological story, requester-safe: comments (as cards) interleaved with
-// status milestones and site-visit milestones (as slim inline rows). The
+// status milestones and location-visit milestones (as slim inline rows). The
 // progress stepper stays as the at-a-glance summary; this is the detail. What
 // feeds it is exactly what the rules already allow a requester to read — status
 // events only (never priority/assignee/category/…), non-canceled visits with no
@@ -242,8 +242,8 @@ function visitLine(v: Visit): string {
   }
   if (v.status === 'scheduled') {
     return v.scheduled_at
-      ? `Site visit scheduled — ${format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm')}`
-      : 'Site visit scheduled'
+      ? `On-site visit scheduled — ${format(new Date(v.scheduled_at), 'EEE, MMM d HH:mm')}`
+      : 'On-site visit scheduled'
   }
   return 'On-site visit requested — scheduling in progress'
 }
@@ -275,7 +275,7 @@ onUnmounted(() => {
   <div v-else-if="ticket" class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/portal/tickets')">Tickets</a></li>
+        <li><router-link to="/portal/tickets">Tickets</router-link></li>
         <li>#{{ ticket.number }}</li>
       </ul>
     </div>
@@ -314,27 +314,27 @@ onUnmounted(() => {
                 />
                 <span v-else class="text-base-content/40">—</span>
               </div>
-              <div v-if="siteLabel" class="flex items-center justify-between gap-2">
-                <span class="text-base-content/60">Site</span>
+              <div v-if="locationLabel" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Location</span>
                 <router-link
                   v-if="ticket.location"
-                  :to="`/portal/tickets?location=${ticket.location}`"
+                  :to="`/portal/locations/${ticket.location}`"
                   class="link link-hover text-right"
                 >
-                  {{ siteLabel }}
+                  {{ locationLabel }}
                 </router-link>
-                <span v-else class="text-right">{{ siteLabel }}</span>
+                <span v-else class="text-right">{{ locationLabel }}</span>
               </div>
-              <div v-if="deviceLabel" class="flex items-center justify-between gap-2">
-                <span class="text-base-content/60">Device</span>
+              <div v-if="thingLabel" class="flex items-center justify-between gap-2">
+                <span class="text-base-content/60">Thing</span>
                 <router-link
                   v-if="ticket.thing"
-                  :to="`/portal/tickets?thing=${ticket.thing}`"
+                  :to="`/portal/things/${ticket.thing}`"
                   class="link link-hover text-right"
                 >
-                  {{ deviceLabel }}
+                  {{ thingLabel }}
                 </router-link>
-                <span v-else class="text-right">{{ deviceLabel }}</span>
+                <span v-else class="text-right">{{ thingLabel }}</span>
               </div>
               <div class="flex items-center justify-between gap-2">
                 <span class="text-base-content/60">Opened</span>
@@ -472,27 +472,27 @@ onUnmounted(() => {
               />
               <span v-else class="text-base-content/40">—</span>
             </div>
-            <div v-if="siteLabel" class="flex items-center justify-between gap-2">
-              <span class="text-base-content/60">Site</span>
+            <div v-if="locationLabel" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Location</span>
               <router-link
                 v-if="ticket.location"
-                :to="`/portal/tickets?location=${ticket.location}`"
+                :to="`/portal/locations/${ticket.location}`"
                 class="link link-hover text-right"
               >
-                {{ siteLabel }}
+                {{ locationLabel }}
               </router-link>
-              <span v-else class="text-right">{{ siteLabel }}</span>
+              <span v-else class="text-right">{{ locationLabel }}</span>
             </div>
-            <div v-if="deviceLabel" class="flex items-center justify-between gap-2">
-              <span class="text-base-content/60">Device</span>
+            <div v-if="thingLabel" class="flex items-center justify-between gap-2">
+              <span class="text-base-content/60">Thing</span>
               <router-link
                 v-if="ticket.thing"
-                :to="`/portal/tickets?thing=${ticket.thing}`"
+                :to="`/portal/things/${ticket.thing}`"
                 class="link link-hover text-right"
               >
-                {{ deviceLabel }}
+                {{ thingLabel }}
               </router-link>
-              <span v-else class="text-right">{{ deviceLabel }}</span>
+              <span v-else class="text-right">{{ thingLabel }}</span>
             </div>
             <div class="flex items-center justify-between gap-2">
               <span class="text-base-content/60">Opened</span>
@@ -514,7 +514,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Progress stepper (desktop; mobile shows it in the collapsible above).
-             Site visits are no longer a separate card — they're woven into the
+             On-site visits are no longer a separate card — they're woven into the
              thread as milestones. -->
         <div class="card bg-base-100 shadow-sm hidden xl:block">
           <div class="card-body py-4 px-4">

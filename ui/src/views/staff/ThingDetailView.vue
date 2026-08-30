@@ -4,7 +4,7 @@
 // customer pinned after creation, admin-only delete.
 //
 // The "Tickets for this thing" card is the point of the whole collection —
-// promoting the device from free text to a relation exists so this question has
+// promoting the thing from free text to a relation exists so this question has
 // an answer. The metadata card is typed when the selected type carries a
 // metadata_schema and free-form otherwise.
 import { computed, onMounted, ref, watch } from 'vue'
@@ -132,7 +132,7 @@ async function loadTickets() {
     })
     tickets.value = page.items
     ticketTotal.value = page.totalItems
-    // Second count only — "is this device a repeat offender, and is it broken
+    // Second count only — "is this thing a repeat offender, and is it broken
     // right now" is the question the card exists to answer.
     openTotal.value = (
       await pb.collection('tickets').getList<Ticket>(1, 1, {
@@ -204,7 +204,7 @@ async function remove() {
   if (!isEdit.value) return
   if (
     !confirm(
-      `Delete “${form.value.name}”? Tickets referencing it lose the link — their device note keeps ` +
+      `Delete “${form.value.name}”? Tickets referencing it lose the link — their thing note keeps ` +
         `whatever text was there. Retiring instead keeps the history intact.`,
     )
   )
@@ -231,7 +231,7 @@ watch(() => route.params.id, load)
   <div v-else class="space-y-4">
     <div class="breadcrumbs text-sm">
       <ul>
-        <li><a @click="router.push('/staff/things')">Things</a></li>
+        <li><router-link to="/staff/things">Things</router-link></li>
         <li>{{ isEdit ? form.name || 'Thing' : 'New thing' }}</li>
       </ul>
     </div>

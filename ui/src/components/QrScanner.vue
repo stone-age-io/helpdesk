@@ -13,7 +13,7 @@
 // Manual entry is not a fallback bolted on: it is half the design. Every label
 // prints its code in human-readable text precisely because the symbol will
 // eventually be scratched, greasy, or in a closet too dark to focus in, and a
-// tech standing at the device needs a way through that does not involve walking
+// tech standing at the thing needs a way through that does not involve walking
 // back to a laptop.
 import { onBeforeUnmount, ref } from 'vue'
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'

@@ -15,7 +15,7 @@ const showPassword = ref(false)
 const showProfile = ref(false)
 
 // One running timer follows the agent across the whole staff app; load it once
-// here so the bar reflects a timer started on any device / a prior session.
+// here so the bar reflects a timer started on any thing / a prior session.
 const timer = useTimerStore()
 // Stock label, replaced wholesale by an operator overlay's app name. Bound in
 // the mobile top bar and handed to AppSidebar, so both wordmarks agree.

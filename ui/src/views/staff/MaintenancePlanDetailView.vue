@@ -296,12 +296,12 @@ watch(() => route.params.id, load)
             <textarea v-model="form.body" rows="4" class="textarea textarea-bordered textarea-sm" placeholder="What the technician should do on site." :disabled="!editing || saving"></textarea>
           </div>
           <div class="form-control">
-            <label class="label py-1"><span class="label-text text-xs">Device</span></label>
-            <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Device…" :disabled="!editing || saving || !form.customer" />
+            <label class="label py-1"><span class="label-text text-xs">Thing</span></label>
+            <SearchSelect v-model="form.thing" :options="thingOptions" size="sm" empty-label="None" placeholder="Thing…" :disabled="!editing || saving || !form.customer" />
           </div>
           <div class="form-control">
-            <label class="label py-1"><span class="label-text text-xs">Site</span></label>
-            <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Site…" :disabled="!editing || saving || !form.customer" />
+            <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+            <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Location…" :disabled="!editing || saving || !form.customer" />
           </div>
         </div>
       </div>

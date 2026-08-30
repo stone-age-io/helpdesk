@@ -8,7 +8,7 @@
 //   Maximum error correction is affordable. A short code at EC level H (30%
 //   recovery) is a version-1 or version-2 symbol; the URL form of the same
 //   identifier needs version 6, roughly four times the modules on an
-//   identically sized sticker. A label lives on a device in a plant room and
+//   identically sized sticker. A label lives on a thing in a plant room and
 //   gets scratched, painted and wiped, so that headroom goes to recovery.
 //
 //   The human-readable line is not decoration. It is the fallback for the label
@@ -18,11 +18,11 @@
 //
 //   The customer's name is deliberately NOT printed. A sticker in a public
 //   hallway is readable by anyone walking past, and a tenant name beside a
-//   device naming convention is free reconnaissance. It is shown on screen,
-//   where the operator already knows whose device they are looking at.
+//   thing naming convention is free reconnaissance. It is shown on screen,
+//   where the operator already knows whose thing they are looking at.
 //
 // The operator's brand IS printed, and it is the one piece of context that
-// earns its space: whoever finds a broken device needs to know who services it.
+// earns its space: whoever finds a broken thing needs to know who services it.
 //
 // ── Sizing ───────────────────────────────────────────────────────────────────
 //
@@ -241,10 +241,10 @@ function print() {
                    :style="{ fontSize: `${size.namePt}pt`, marginTop: '0.3mm' }">{{ name }}</div>
               <!--
                 Things dominate an inventory, so only the rarer kind is marked —
-                an unmarked label reads as a device, which is the common case.
+                an unmarked label reads as a thing, which is the common case.
               -->
               <div v-if="kind === 'location'" class="uppercase tracking-wide leading-none"
-                   :style="{ fontSize: `${size.brandPt}pt`, marginTop: '0.4mm' }">Site</div>
+                   :style="{ fontSize: `${size.brandPt}pt`, marginTop: '0.4mm' }">Location</div>
             </div>
 
             <!-- Guide only: reserved on both stocks, drawn on request, never printed. -->

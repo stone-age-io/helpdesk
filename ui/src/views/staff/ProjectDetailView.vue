@@ -1,12 +1,21 @@
 <script setup lang="ts">
 // Project detail / create / edit. Handles both create (/staff/projects/new) and
 // edit (/staff/projects/:id) in one view — consistent with LocationDetailView.
-// The header fields toggle between a locked "view" and an unlocked "edit" mode
-// (any staff may edit); the linked tickets and the DERIVED rollups — crew
-// (lead ∪ ticket/visit assignees) and total logged time — are read-only and
-// only meaningful once the project exists. Nothing here is a second source of
-// truth: crew and time are computed live from the project's tickets, never
-// stored.
+// The linked tickets, the visits, and the DERIVED rollups — crew (lead ∪
+// ticket/visit assignees) and total logged time — are read-only and only
+// meaningful once the project exists. Nothing here is a second source of truth:
+// crew and time are computed live from the project's tickets, never stored.
+//
+// Unlike LocationDetailView, view mode is NOT the form greyed out. A location
+// record is mostly a form and is opened to be edited; a project is the status
+// page for a rollout and is read many times for every time it is changed, so a
+// disabled <input> holding the title and a fixed four-row textarea holding the
+// scope — the same height empty or full — were furniture in the way of the
+// answer. Editing swaps each card to its controls; nothing else changes shape.
+//
+// Both record lists are bounded and expand in place rather than linking out.
+// A "View all →" has nowhere to point: the staff queue carries no project
+// filter, and this is the only page that holds a project's tickets.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
@@ -24,8 +33,11 @@ const auth = useAuthStore()
 const id = computed(() => route.params.id as string | undefined)
 const isCreate = computed(() => !id.value)
 
+const PAGE = 15
+
 const project = ref<Project | null>(null)
 const tickets = ref<Ticket[]>([])
+const ticketTotal = ref(0)
 const visits = ref<Visit[]>([])
 const entries = ref<TimeEntry[]>([])
 const staff = ref<Staff[]>([])
@@ -36,6 +48,8 @@ const saving = ref(false)
 const error = ref('')
 // View/edit toggle. Create starts unlocked (nothing to view); edit starts locked.
 const editing = ref(false)
+const allTickets = ref(false)
+const allVisits = ref(false)
 
 // Editable copy of the header fields.
 const form = ref({
@@ -72,18 +86,31 @@ function fmt(m: number): string {
   const min = m % 60
   return h ? `${h}h${min ? ' ' + min + 'm' : ''}` : `${min}m`
 }
+function fmtDate(s?: string): string {
+  return s ? format(new Date(s), 'MMM d, yyyy') : ''
+}
+function fmtDateTime(s?: string): string {
+  return s ? format(new Date(s), 'EEE, MMM d · HH:mm') : ''
+}
 
 const totalMinutes = computed(() => entries.value.reduce((sum, e) => sum + (e.minutes || 0), 0))
 const totalTime = computed(() => fmt(totalMinutes.value))
+const billableMinutes = computed(() =>
+  entries.value.reduce((sum, e) => sum + (e.non_billable ? 0 : e.minutes || 0), 0),
+)
 
 // Estimated-vs-actual rollup: summed ticket estimates against logged time.
-// Derived like crew/total time — nothing stored on the project.
-const totalEstimated = computed(() => tickets.value.reduce((sum, t) => sum + (t.estimated_minutes || 0), 0))
+// Derived like crew/total time — nothing stored on the project. It sums EVERY
+// ticket on the project, not the page of them currently rendered, so it has
+// its own trimmed query rather than folding the visible list.
+const totalEstimated = ref(0)
 const estimatedTime = computed(() => fmt(totalEstimated.value))
 const estPct = computed(() =>
   totalEstimated.value ? Math.round((totalMinutes.value / totalEstimated.value) * 100) : 0,
 )
 const overEstimate = computed(() => totalEstimated.value > 0 && totalMinutes.value > totalEstimated.value)
+
+const leadName = computed(() => (project.value?.lead ? staffName.value.get(project.value.lead) || '—' : ''))
 
 function applyRecord(p: Project) {
   form.value = {
@@ -104,6 +131,27 @@ async function loadLocations(customerId: string) {
     : []
 }
 
+async function loadTickets() {
+  const res = await pb.collection('tickets').getList<Ticket>(1, allTickets.value ? 500 : PAGE, {
+    filter: `project = '${id.value}'`,
+    sort: '-created',
+    expand: 'assignee',
+  })
+  tickets.value = res.items
+  ticketTotal.value = res.totalItems
+}
+
+async function loadVisits() {
+  // Relation-hop filter: visits whose ticket belongs to this project. Fetched
+  // whole because crew needs every assignee, but trimmed to the columns the
+  // card and the crew set actually read.
+  visits.value = await pb.collection('visits').getFullList<Visit>({
+    filter: `ticket.project = '${id.value}'`,
+    sort: 'scheduled_at',
+    fields: 'id,ticket,assignee,status,scheduled_at,location',
+  })
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -116,14 +164,23 @@ async function load() {
       project.value = await pb.collection('projects').getOne<Project>(id.value!, { expand: 'customer,location,lead' })
       applyRecord(project.value)
       editing.value = false
-      tickets.value = await pb.collection('tickets').getFullList<Ticket>({
-        filter: `project = '${id.value}'`,
-        sort: '-created',
-        expand: 'assignee',
-      })
-      // Relation-hop filters: visits/time whose ticket belongs to this project.
-      visits.value = await pb.collection('visits').getFullList<Visit>({ filter: `ticket.project = '${id.value}'` })
-      entries.value = await pb.collection('time_entries').getFullList<TimeEntry>({ filter: `ticket.project = '${id.value}'` })
+      await Promise.all([
+        loadTickets(),
+        loadVisits(),
+        // Minutes only. Summing needs every row, but a rollout's ledger is the
+        // largest thing on this page and none of the rest of a time entry —
+        // note, work_date, visit, staff — is read here.
+        pb
+          .collection('time_entries')
+          .getFullList<TimeEntry>({ filter: `ticket.project = '${id.value}'`, fields: 'id,minutes,non_billable' })
+          .then((rows) => (entries.value = rows)),
+        // Estimates likewise sum across ALL tickets, not the visible page, so
+        // they come from their own trimmed query rather than the paged list.
+        pb
+          .collection('tickets')
+          .getFullList<Ticket>({ filter: `project = '${id.value}'`, fields: 'id,estimated_minutes' })
+          .then((rows) => (totalEstimated.value = rows.reduce((s, t) => s + (t.estimated_minutes || 0), 0))),
+      ])
     }
   } catch (err: any) {
     error.value = err?.message || 'Failed to load project'
@@ -176,9 +233,22 @@ function cancelEdit() {
   editing.value = false
 }
 
+function expandTickets() {
+  allTickets.value = true
+  loadTickets()
+}
+
+const visibleVisits = computed(() => (allVisits.value ? visits.value : visits.value.slice(0, PAGE)))
+
 const statusClass: Record<string, string> = {
   pending: 'badge-soft-neutral',
   active: 'badge-soft-info',
+  completed: 'badge-soft-success',
+  canceled: 'badge-soft-neutral opacity-60',
+}
+const visitBadge: Record<string, string> = {
+  requested: 'badge-soft-neutral',
+  scheduled: 'badge-soft-info',
   completed: 'badge-soft-success',
   canceled: 'badge-soft-neutral opacity-60',
 }
@@ -198,7 +268,7 @@ watch(() => form.value.customer, (c) => loadLocations(c))
     <div class="flex items-center justify-between gap-2 flex-wrap">
       <div class="breadcrumbs text-sm">
         <ul>
-          <li><a @click="router.push('/staff/projects')">Projects</a></li>
+          <li><router-link to="/staff/projects">Projects</router-link></li>
           <li>{{ isCreate ? 'New project' : project ? `#${project.number}` : '…' }}</li>
         </ul>
       </div>
@@ -220,30 +290,44 @@ watch(() => form.value.customer, (c) => loadLocations(c))
 
     <template v-else>
       <div class="flex flex-col xl:flex-row gap-4 items-start">
-        <!-- Main: editable header + linked tickets -->
+        <!-- Main: header + linked tickets + visits -->
         <div class="flex-1 w-full min-w-0 space-y-4">
           <div class="card bg-base-100 shadow-sm">
-            <div class="card-body space-y-3">
-              <div v-if="!isCreate && project" class="flex items-center gap-2 flex-wrap">
-                <span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span>
-                <span class="text-base-content/60 text-sm">
+            <div class="card-body gap-3">
+              <!-- Read: the rollout as a page. -->
+              <template v-if="!editing && project">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span>
+                  <h1 class="text-xl font-bold">{{ project.title }}</h1>
+                </div>
+                <div class="text-sm text-base-content/60">
                   {{ project.expand?.customer?.name }}
-                  <template v-if="project.expand?.location"> · 📍 {{ project.expand.location.name }}</template>
-                </span>
-              </div>
+                  <template v-if="project.expand?.location">
+                    ·
+                    <router-link :to="`/staff/locations/${project.location}`" class="link link-hover">
+                      📍 {{ project.expand.location.name }}
+                    </router-link>
+                  </template>
+                </div>
+                <p v-if="project.description" class="text-sm whitespace-pre-wrap">{{ project.description }}</p>
+                <p v-else class="text-sm text-base-content/40 italic">No scope described.</p>
+              </template>
 
-              <div v-if="isCreate" class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Customer *</span></label>
-                <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
-              </div>
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Title</span></label>
-                <input v-model="form.title" type="text" maxlength="300" placeholder="e.g. HQ Security Rollout" class="input input-bordered" :disabled="!editing || saving" />
-              </div>
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Description / scope</span></label>
-                <textarea v-model="form.description" rows="4" class="textarea textarea-bordered" :disabled="!editing || saving"></textarea>
-              </div>
+              <!-- Write. -->
+              <template v-else>
+                <div v-if="isCreate" class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Customer *</span></label>
+                  <SearchSelect v-model="form.customer" :options="customerOptions" size="sm" placeholder="Customer…" :disabled="saving" />
+                </div>
+                <div class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Title</span></label>
+                  <input v-model="form.title" type="text" maxlength="300" placeholder="e.g. HQ Security Rollout" class="input input-bordered" :disabled="saving" />
+                </div>
+                <div class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Description / scope</span></label>
+                  <textarea v-model="form.description" rows="4" class="textarea textarea-bordered" :disabled="saving"></textarea>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -251,7 +335,7 @@ watch(() => form.value.customer, (c) => loadLocations(c))
           <div v-if="!isCreate" class="card bg-base-100 shadow-sm">
             <div class="card-body">
               <div class="flex items-center justify-between">
-                <h2 class="font-semibold">Tickets <span class="text-base-content/50 font-normal">({{ tickets.length }})</span></h2>
+                <h2 class="font-semibold">Tickets <span class="text-base-content/50 font-normal">({{ ticketTotal }})</span></h2>
                 <router-link v-if="!auth.isField" to="/staff/tickets/new" class="btn btn-ghost btn-xs">＋ New ticket</router-link>
               </div>
               <div class="divide-y divide-base-200">
@@ -268,10 +352,42 @@ watch(() => form.value.customer, (c) => loadLocations(c))
                   <span class="text-xs text-base-content/60 hidden sm:block">{{ t.expand?.assignee?.name || 'Unassigned' }}</span>
                   <TicketBadges :status="t.status" :priority="t.priority" />
                 </router-link>
-                <p v-if="tickets.length === 0" class="py-3 text-sm text-base-content/50">
+                <p v-if="ticketTotal === 0" class="py-3 text-sm text-base-content/50">
                   No tickets yet. Create tickets and set their Project to this one.
                 </p>
               </div>
+              <button v-if="ticketTotal > tickets.length" class="btn btn-ghost btn-xs self-start" @click="expandTickets">
+                Show all {{ ticketTotal }} →
+              </button>
+            </div>
+          </div>
+
+          <!-- Visits. These were already fetched to build the crew set and then
+               thrown away, so a rollout's lead could see who was on it but not
+               when anyone was going. -->
+          <div v-if="!isCreate && visits.length" class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+              <h2 class="font-semibold">Visits <span class="text-base-content/50 font-normal">({{ visits.length }})</span></h2>
+              <div class="divide-y divide-base-200">
+                <router-link
+                  v-for="v in visibleVisits"
+                  :key="v.id"
+                  :to="`/staff/tickets/${v.ticket}`"
+                  class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+                >
+                  <span class="badge-soft" :class="visitBadge[v.status]">{{ v.status }}</span>
+                  <span class="flex-1 text-sm">
+                    <span v-if="v.scheduled_at">{{ fmtDateTime(v.scheduled_at) }}</span>
+                    <span v-else class="text-base-content/50">Not yet scheduled</span>
+                  </span>
+                  <span class="text-xs text-base-content/60 hidden sm:block">
+                    {{ v.assignee ? staffName.get(v.assignee) || 'Unknown' : 'Unassigned' }}
+                  </span>
+                </router-link>
+              </div>
+              <button v-if="visits.length > visibleVisits.length" class="btn btn-ghost btn-xs self-start" @click="allVisits = true">
+                Show all {{ visits.length }} →
+              </button>
             </div>
           </div>
         </div>
@@ -280,30 +396,66 @@ watch(() => form.value.customer, (c) => loadLocations(c))
         <div class="w-full xl:w-80 space-y-4">
           <div class="card bg-base-100 shadow-sm">
             <div class="card-body py-4 px-4 space-y-3">
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Status</span></label>
-                <select v-model="form.status" class="select select-bordered select-sm" :disabled="!editing || saving">
-                  <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Lead</span></label>
-                <SearchSelect v-model="form.lead" :options="staffOptions" size="sm" empty-label="None" placeholder="Project lead…" :disabled="!editing || saving" />
-              </div>
-              <div class="form-control">
-                <label class="label py-1"><span class="label-text text-xs">Location</span></label>
-                <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Site…" :disabled="!editing || saving" />
-              </div>
-              <div class="flex gap-2">
-                <div class="form-control flex-1">
-                  <label class="label py-1"><span class="label-text text-xs">Start</span></label>
-                  <input v-model="form.start_date" type="date" class="input input-bordered input-sm" :disabled="!editing || saving" />
+              <!-- Read: a fact list, not four disabled controls. -->
+              <dl v-if="!editing && project" class="text-sm space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-base-content/60 text-xs">Status</dt>
+                  <dd><span class="badge-soft" :class="statusClass[project.status]">{{ project.status }}</span></dd>
                 </div>
-                <div class="form-control flex-1">
-                  <label class="label py-1"><span class="label-text text-xs">Target</span></label>
-                  <input v-model="form.target_date" type="date" class="input input-bordered input-sm" :disabled="!editing || saving" />
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-base-content/60 text-xs">Lead</dt>
+                  <dd :class="leadName ? '' : 'text-base-content/40'">{{ leadName || 'Unassigned' }}</dd>
                 </div>
-              </div>
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-base-content/60 text-xs">Location</dt>
+                  <dd class="text-right">
+                    <router-link
+                      v-if="project.expand?.location"
+                      :to="`/staff/locations/${project.location}`"
+                      class="link link-hover"
+                    >{{ project.expand.location.name }}</router-link>
+                    <span v-else class="text-base-content/40">None</span>
+                  </dd>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <dt class="text-base-content/60 text-xs">Window</dt>
+                  <dd :class="project.start_date || project.target_date ? '' : 'text-base-content/40'">
+                    <template v-if="project.start_date || project.target_date">
+                      <span v-if="project.start_date">{{ fmtDate(project.start_date) }} → </span>
+                      {{ fmtDate(project.target_date) || 'open' }}
+                    </template>
+                    <template v-else>Not set</template>
+                  </dd>
+                </div>
+              </dl>
+
+              <!-- Write. -->
+              <template v-else>
+                <div class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Status</span></label>
+                  <select v-model="form.status" class="select select-bordered select-sm" :disabled="saving">
+                    <option v-for="s in PROJECT_STATUSES" :key="s" :value="s">{{ s }}</option>
+                  </select>
+                </div>
+                <div class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Lead</span></label>
+                  <SearchSelect v-model="form.lead" :options="staffOptions" size="sm" empty-label="None" placeholder="Project lead…" :disabled="saving" />
+                </div>
+                <div class="form-control">
+                  <label class="label py-1"><span class="label-text text-xs">Location</span></label>
+                  <SearchSelect v-model="form.location" :options="locationOptions" size="sm" empty-label="None" placeholder="Location…" :disabled="saving" />
+                </div>
+                <div class="flex gap-2">
+                  <div class="form-control flex-1">
+                    <label class="label py-1"><span class="label-text text-xs">Start</span></label>
+                    <input v-model="form.start_date" type="date" class="input input-bordered input-sm" :disabled="saving" />
+                  </div>
+                  <div class="form-control flex-1">
+                    <label class="label py-1"><span class="label-text text-xs">Target</span></label>
+                    <input v-model="form.target_date" type="date" class="input input-bordered input-sm" :disabled="saving" />
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -335,6 +487,9 @@ watch(() => form.value.customer, (c) => loadLocations(c))
                   </div>
                 </template>
                 <div v-else class="text-[11px] text-base-content/40">No estimate set on these tickets.</div>
+                <div v-if="totalMinutes && billableMinutes !== totalMinutes" class="text-[11px] text-base-content/50 mt-1">
+                  {{ fmt(billableMinutes) }} billable · {{ fmt(totalMinutes - billableMinutes) }} written off
+                </div>
               </div>
               <p class="text-[11px] text-base-content/40 leading-snug">
                 Crew, estimate, and time are derived from this project's tickets and

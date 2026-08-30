@@ -47,7 +47,7 @@ const windowLabel = computed(() => {
   const end = new Date(start.getTime() + v.duration_minutes * 60000)
   return `${base}–${format(end, 'HH:mm')}`
 })
-// The structured site (ticket.location relation, migration 1812/1813) carries
+// The structured location (ticket.location relation, migration 1812/1813) carries
 // address, access notes, contact, and coordinates. Prefer it; fall back to the
 // visit's free-text dispatch directions.
 const site = computed(() => visit.value?.expand?.ticket?.expand?.location as Location | undefined)

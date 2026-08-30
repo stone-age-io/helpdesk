@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Things roster: the devices and equipment tickets are filed against. A subset
+// Things roster: the things and equipment tickets are filed against. A subset
 // mirror of the platform's `things` — `code` is the join key machine intakes
 // resolve against (docs/protocol.md) — and deliberately a SUPERSET of it, since
 // MSP work covers printers, door strikes and customer switches that were never
@@ -118,10 +118,10 @@ onMounted(() => {
       <router-link to="/staff/things/new" class="btn btn-primary btn-sm w-full sm:w-auto">New Thing</router-link>
     </div>
     <p class="text-sm text-base-content/60">
-      The devices and equipment tickets are filed against. A curated mirror of the
+      The things and equipment tickets are filed against. A curated mirror of the
       platform's things, joined by <span class="font-mono">customer + code</span> — plus
       the gear the platform never onboarded, which simply has no code. Naming a thing on
-      a ticket is what makes "everything that ever happened to this device" answerable.
+      a ticket is what makes "everything that ever happened to this thing" answerable.
     </p>
 
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
@@ -141,7 +141,7 @@ onMounted(() => {
       </select>
       <label v-if="context.has.value" class="label cursor-pointer gap-2 justify-start">
         <input v-model="mineOnly" type="checkbox" class="toggle toggle-sm" />
-        <span class="label-text text-sm">My scheduled sites</span>
+        <span class="label-text text-sm">My scheduled locations</span>
       </label>
     </RosterFilters>
 

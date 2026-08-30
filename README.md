@@ -20,7 +20,7 @@ turns them into tickets. Humans use the portal, staff app, or the
 authenticated webhook.
 
 Token 2 is the **organization code** — the ecosystem's one globally unique
-identifier, and the same handle sites, devices and outbound events all name a
+identifier, and the same handle locations, things and outbound events all name a
 tenant by (ADR 0002 in `platform-docs`).
 
 **New here?** [docs/overview.md](docs/overview.md) is the map — the handful of
@@ -35,28 +35,28 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   login page; the router shows the right shell.
 - **Staff workspace**: a dashboard landing (queue counts, backlog aging, weekly
   inflow); a ticket queue with search, status/priority/assignee/customer/
-  category/site/device filters, saved views, bulk assign/status, and CSV export;
+  category/location/thing filters, saved views, bulk assign/status, and CSV export;
   a Dispatch board and a mobile-first field-work view; a directory of customers,
   locations, things and projects; a reports view (time & visits by
-  tech/customer/site/device/device-type, billable vs. written-off, ticket
-  volume by category and source, scopeable to one customer, site or device);
+  tech/customer/location/thing/thing-type, billable vs. written-off, ticket
+  volume by category and source, scopeable to one customer, location or thing);
   and admin for requesters, staff, categories, record types, and notification
   templates.
 - **Field shell**: the same `/staff/*` routes in phone-shaped chrome —
   `Today · Schedule · Tickets · Time · More`, where **More** holds the scanner,
-  Sites and Devices. Sites and Devices offer a *My scheduled sites* narrowing
+  Locations and Things. Locations and Things offer a *My scheduled locations* narrowing
   that only appears for staff who actually have scheduled visits, so it can
   never leave a dispatcher staring at an empty roster.
 - **Requester portal**: a company dashboard, a searchable list of their own
   tickets, threaded ticket detail with attachments, a new-ticket form that can
-  name the site and device, filters and a Sites page over those two axes, a
+  name the location and thing, filters and Locations / Things pages over those two axes, a
   Service Summary report (tickets, visits and — where the customer has opted in
-  — billable hours, by site, device and category), plus read-only visit and
+  — billable hours, by location, thing and category), plus read-only visit and
   project views. The MSP roster is never shown.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee, an
-  admin-managed category, a structured site (`location`) and device (`thing`)
+  admin-managed category, a structured location (`location`) and thing (`thing`)
   each with a free-text fallback, an optional effort estimate, comment threads
-  with staff-only internal notes, time entries, site visits.
+  with staff-only internal notes, time entries, on-site visits.
 - **Two-stage lifecycle**: `resolved` is a grace window a requester reply
   auto-reopens; `closed` is final (a reply there opens a new ticket). A daily
   cron promotes tickets left resolved past `auto_close_resolved_days`. A
@@ -83,8 +83,8 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   and deliberately not live-synced: the platform publishes no event stream for
   things, and the only alternatives are a control-plane credential (forbidden
   here) or an edge KV mirror.
-- **QR labels and scanning**: print an operator-branded label for any site or
-  device that has a code, sized in millimetres to real stock (2″ × 1″ and
+- **QR labels and scanning**: print an operator-branded label for any location or
+  thing that has a code, sized in millimetres to real stock (2″ × 1″ and
   4″ × 2″, both reserving the centred RFID inlay keep-out so one layout prints
   on plain or RFID media). Scan it back at `/staff/scan`. The payload is the
   **bare code** — no host, no customer, no kind token — so a forged sticker

@@ -47,8 +47,8 @@ function isNull(row: Record<string, any>): boolean {
 // Scaled against the largest ATTRIBUTED value, so the real leader fills the row
 // and the tail keeps its shape. Excluding the unattributed bucket matters more
 // than it sounds: on the thing rollup it is routinely the biggest row by far
-// (most reactive tickets name no device), and scaling to it squashed every
-// actual device into the left quarter of the track — the ranking you came to
+// (most reactive tickets name no thing), and scaling to it squashed every
+// actual thing into the left quarter of the track — the ranking you came to
 // read became the part of the chart you could not see. The null row still draws
 // a bar, clamped at full width, which reads correctly as "off this scale".
 const barMax = computed(() => {

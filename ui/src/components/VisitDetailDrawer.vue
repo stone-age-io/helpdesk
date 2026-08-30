@@ -244,7 +244,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               <span>{{ visit.expand?.assignee?.name || '—' }}</span>
             </div>
             <div v-if="visit.location" class="flex items-start gap-2">
-              <span class="text-base-content/60 w-24 shrink-0">Location</span>
+              <span class="text-base-content/60 w-24 shrink-0">Directions</span>
               <span class="flex-1">📍 {{ visit.location }}</span>
             </div>
             <div v-if="visit.notes" class="flex items-start gap-2">

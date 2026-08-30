@@ -41,7 +41,7 @@ interface Match {
 }
 
 const router = useRouter()
-// Shared with the Sites and Devices rosters, where the same set is offered as an
+// Shared with the Locations and Things rosters, where the same set is offered as an
 // optional narrowing. Here it is sort-only — see the header.
 const context = useVisitContext()
 
@@ -80,7 +80,7 @@ async function resolve(code: string) {
         name: t.name,
         customerId: t.customer,
         customerName: (t.expand?.customer as Customer | undefined)?.name || '—',
-        // A retired device still resolves: you cannot file against it, but
+        // A retired thing still resolves: you cannot file against it, but
         // reading its history is the reason the row is kept.
         detail: [(t.expand?.location as Location | undefined)?.name, t.retired ? 'Retired' : '']
           .filter(Boolean)
@@ -139,7 +139,7 @@ onMounted(context.load)
     <div>
       <h1 class="text-2xl font-bold">Scan</h1>
       <p class="text-sm text-base-content/60 mt-1">
-        Point at the label on a device or site to open its record.
+        Point at the label on a thing or location to open its record.
       </p>
     </div>
 
@@ -160,7 +160,7 @@ onMounted(context.load)
           </p>
           <p class="text-sm text-base-content/60">
             The code may belong to gear that is not in the catalog yet, or the label may be
-            mis-typed. Add it from Things or Sites and the label will resolve.
+            mis-typed. Add it from Things or Locations and the label will resolve.
           </p>
           <button class="btn btn-ghost btn-sm mt-1" @click="reset">Scan again</button>
         </div>
@@ -168,8 +168,8 @@ onMounted(context.load)
 
       <!--
         More than one match. Not an error state: two customers legitimately using
-        DOOR-1 is the expected case, and so is one customer holding a site and a
-        device under the same code.
+        DOOR-1 is the expected case, and so is one customer holding a location and a
+        thing under the same code.
       -->
       <template v-else>
         <div class="text-sm text-base-content/60">
@@ -183,7 +183,7 @@ onMounted(context.load)
         >
           <div class="card-body p-3 gap-1">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="badge badge-sm badge-soft">{{ m.kind === 'thing' ? 'Device' : 'Site' }}</span>
+              <span class="badge badge-sm badge-soft">{{ m.kind === 'thing' ? 'Thing' : 'Location' }}</span>
               <span class="font-medium truncate">{{ m.name }}</span>
               <span v-if="m.inContext" class="badge badge-sm badge-primary badge-soft">Your visit</span>
             </div>
