@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Location, Thing, Ticket, TimeEntry, Visit } from '@/types'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ReportTable, { type ReportColumn } from '@/components/ReportTable.vue'
+import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
 
 // Aggregate the data the app already captures — logged time, completed
 // visits, and ticket volume — over a date range, optionally scoped to one
@@ -51,11 +51,17 @@ function isoDate(offsetDays: number): string {
   d.setDate(d.getDate() + offsetDays)
   return d.toISOString().slice(0, 10)
 }
-const from = ref(isoDate(-30))
-const to = ref(isoDate(0))
-const customerFilter = ref('')
-const locationFilter = ref('')
-const thingFilter = ref('')
+// The scope reads from the URL too, so a report can be sent to someone as the
+// exact figures you were looking at. `from`/`to` are always written, never
+// omitted as defaults: "the trailing 30 days" means something different the day
+// after you send it, and a link to a month-end total that quietly slides
+// forward is worse than no link.
+const q = useQueryValue()
+const from = ref(q('from', isoDate(-30)))
+const to = ref(q('to', isoDate(0)))
+const customerFilter = ref(q('customer'))
+const locationFilter = ref(q('location'))
+const thingFilter = ref(q('thing'))
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 // Location picker narrows to the selected customer's sites when one is chosen.
@@ -380,15 +386,15 @@ const reports = computed<Report[]>(() => [
 // Which tab is open rides the URL (?view=thing), so a report is linkable, is
 // what you land back on after a reload, and survives the back button. An
 // unrecognised value falls back rather than rendering nothing.
-const route = useRoute()
-const router = useRouter()
 const DEFAULT_VIEW = 'customer' // month-end billing is the errand people arrive with
-const view = ref(
-  reports.value.some((r) => r.key === route.query.view) ? String(route.query.view) : DEFAULT_VIEW,
+const view = ref(reports.value.some((r) => r.key === q('view')) ? q('view') : DEFAULT_VIEW)
+
+// The open tab and the scope it is read under travel together — a tab alone
+// was linkable but pointed at whatever range the recipient's page defaulted to.
+useQuerySync(
+  { view, from, to, customer: customerFilter, location: locationFilter, thing: thingFilter },
+  { view: DEFAULT_VIEW },
 )
-watch(view, (v) => {
-  router.replace({ query: { ...route.query, view: v === DEFAULT_VIEW ? undefined : v } })
-})
 const activeReport = computed(() => reports.value.find((r) => r.key === view.value))
 
 // Column specs. The measure carrying `bar` is the one each rollup is sorted by

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import type { Customer, Location, Project, Staff, Visit, VisitStatus } from '@/types'
 import TicketBadges from '@/components/TicketBadges.vue'
@@ -9,10 +8,8 @@ import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import VisitDetailDrawer from '@/components/VisitDetailDrawer.vue'
 import VisitWeekCalendar from '@/components/VisitWeekCalendar.vue'
 import VisitMonthCalendar from '@/components/VisitMonthCalendar.vue'
+import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
 import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, formatDistanceToNow, startOfMonth, startOfWeek } from 'date-fns'
-
-const route = useRoute()
-const router = useRouter()
 
 const requested = ref<Visit[]>([])
 const visits = ref<Visit[]>([])
@@ -33,7 +30,7 @@ const error = ref('')
 
 // Filters (initial values may come from the URL query). Requested visits
 // live in their own bucket above, so the status filter never includes them.
-const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
+const q = useQueryValue()
 const technician = ref(q('technician'))
 const customer = ref(q('customer'))
 const location = ref(q('location'))
@@ -46,7 +43,7 @@ const to = ref(q('to'))
 // filters with a week/month navigator driven by focusDate.
 type ViewMode = 'list' | 'week' | 'month'
 const view = ref<ViewMode>(['week', 'month'].includes(q('view')) ? (q('view') as ViewMode) : 'list')
-const focusDate = ref<Date>(new Date())
+const focusDate = ref<Date>(q('focus') ? new Date(`${q('focus')}T00:00:00`) : new Date())
 
 const staffOptions = computed(() => staff.value.map((s) => ({ id: s.id, label: s.name, sublabel: s.email })))
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
@@ -299,8 +296,21 @@ const openVisitId = ref<string | null>(null)
 
 watch([technician, customer, location, project, status, from, to, view, focusDate], () => loadVisits())
 
-// Keep the mode in the URL so a reload or shared link lands on the same view.
-watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } }))
+// The week or month you are looking at is part of the view, not a filter, but a
+// `view=week` link that lands the recipient on *their* current week is only
+// half a link — so it rides along, as a plain date, and only while a calendar
+// mode is open (in list mode the getter returns '' and the key drops out).
+const focusParam = computed({
+  get: () => (view.value === 'list' ? '' : format(focusDate.value, 'yyyy-MM-dd')),
+  set: (v: string) => {
+    if (v) focusDate.value = new Date(`${v}T00:00:00`)
+  },
+})
+
+useQuerySync(
+  { view, focus: focusParam, technician, customer, location, project, status, from, to },
+  { view: 'list', status: 'scheduled' },
+)
 
 // Live updates: visit changes anywhere (ticket card, this view, another
 // agent) refresh both lists after a short collapse window.

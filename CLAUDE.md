@@ -518,8 +518,9 @@ thing and thing type (hours-first, since "which devices burn the most time" is
 why things stopped being free text). The unattributed "—" bucket always sorts
 last however big it is; it is usually the largest row and it is not an answer.
 
-The page **pins the filters and totals and tabs the rollups** (`?view=` in the
-URL, so a report is linkable and survives a reload). The totals aren't a report,
+The page **pins the filters and totals and tabs the rollups** (the open tab and
+the whole scope ride the URL via `useQuerySync`, so a report links to the exact
+figures you were reading and survives a reload). The totals aren't a report,
 they're the denominator every report is read against, so they never go behind a
 tab; the rollups genuinely are alternatives, and stacking all seven made a long
 page of which six tables were noise. A shared "group by" dropdown is the wrong
@@ -561,6 +562,26 @@ load-bearing (grid ignores `flex-direction`, so `flex-col` alone is inert). It
 is also a hand-rolled ARIA combobox: the highlight is announced through
 `aria-activedescendant` rather than by moving focus, because focus has to stay
 in the input for typing to work.
+
+`useQuerySync` (`composables/useQuerySync.ts`) mirrors filter state into the URL
+on all three filtered staff boards — queue, Reports, Dispatch. All three already
+*read* their filters from the query (that is how a dashboard tile or a
+"View all →" arrives pre-filtered); only the write-back was missing, so a
+filtered board could not be linked, survive a reload, or come back when you
+opened a ticket out of it and pressed Back. Three rules are load-bearing:
+**replace, never push** (a filter adjusts the view you are on; pushing buries
+the page you came from under one entry per keystroke, so Back walks you through
+your own edits instead of returning you); **defaults are omitted**, so what is
+absent from the query is what the page would have chosen anyway and two
+identical views produce one link; and **outbound only** — nothing watches the
+route and writes back into the refs. That direction reads as the natural
+completion of this and is a trap, because the guard stopping ref → query → ref
+has to distinguish "the user navigated" from "we just wrote this"; the views
+remount on every arrival that matters, and the mount-time read covers those.
+Two deliberate exceptions to the omit-defaults rule: Reports always writes
+`from`/`to`, because "the trailing 30 days" means something different the day
+after you send the link, and Dispatch writes the calendar's `focus` date,
+because `view=week` alone lands the recipient on *their* current week.
 
 The **portal** reads the site/device axes as well as writing them. Intake offers
 a picker per axis (customer-scoped by the collection rules, so no client filter

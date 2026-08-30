@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
 import type { Customer, Location, Staff, Thing, Ticket, TicketCategory, TicketStatus, TicketPriority, TicketType } from '@/types'
@@ -10,9 +10,9 @@ import CategoryBadge from '@/components/CategoryBadge.vue'
 import SearchSelect from '@/components/SearchSelect.vue'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import Pager from '@/components/Pager.vue'
+import { useQuerySync, useQueryValue } from '@/composables/useQuerySync'
 import { formatDistanceToNow } from 'date-fns'
 
-const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -31,7 +31,7 @@ const perPage = 30
 
 // Filters. Status defaults to "active" (everything not resolved/closed).
 // Initial values may come from the URL query (dashboard tiles link here).
-const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
+const q = useQueryValue()
 const status = ref<'active' | TicketStatus | ''>((q('status') as any) || 'active')
 const priority = ref<TicketPriority | ''>((q('priority') as any) || '')
 const customer = ref(q('customer'))
@@ -107,8 +107,17 @@ const columns: Column<Ticket>[] = [
 
 // Sort state → PocketBase sort string. Clicking a column sets it; clicking
 // the active column flips direction.
-const sortKey = ref('created')
-const sortDir = ref<'asc' | 'desc'>('desc')
+const sortKey = ref(q('sort', 'created'))
+const sortDir = ref<'asc' | 'desc'>(q('dir') === 'asc' ? 'asc' : 'desc')
+
+// Sort travels with the filters: a queue shared as "oldest urgent first" that
+// arrives newest-first is a different queue. `assignee` is included even though
+// its default is dynamic (field techs land on their own work) — the watcher only
+// fires on change, so nobody's own id gets written into the URL just by arriving.
+useQuerySync(
+  { status, priority, customer, category, location, thing, type, age, assignee, search, sort: sortKey, dir: sortDir },
+  { status: 'active', sort: 'created', dir: 'desc' },
+)
 const buildSort = () => `${sortDir.value === 'desc' ? '-' : ''}${sortKey.value}`
 function onSort(key: string) {
   if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'

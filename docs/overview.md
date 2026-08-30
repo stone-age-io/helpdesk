@@ -212,7 +212,10 @@ The working day:
    the last eight weeks. Every number is a link into the queue that produced
    it, so it's a set of doors rather than a scoreboard.
 2. **Queue** — filter by status, priority, assignee, customer, category, site,
-   device, and backlog age. Save the filters you use daily as views.
+   device, and backlog age. Save the filters you use daily as views. Filters
+   live in the URL on the queue, Reports and Dispatch, so a filtered board is a
+   link you can send someone — and opening a ticket and pressing Back returns
+   you to the filters you had, not a reset list.
 3. **Triage** — set category, type, project, and an effort estimate. If a change
    shouldn't email anyone, the UI can send it quietly.
 4. **Work it** — comment publicly (tick *Request a reply* when you genuinely
