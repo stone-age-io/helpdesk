@@ -231,7 +231,7 @@ function onKeydown(e: KeyboardEvent) {
     >
       <li v-if="hasEmptyRow" role="presentation">
         <a
-          class="text-base-content/60 italic"
+          class="italic opacity-70"
           data-idx="-1"
           role="option"
           :id="optionId(-1)"
@@ -254,7 +254,14 @@ function onKeydown(e: KeyboardEvent) {
           @mousemove="highlighted = i"
         >
           <span class="w-full truncate">{{ o.label }}</span>
-          <span v-if="o.sublabel" class="w-full truncate text-xs text-base-content/50">{{ o.sublabel }}</span>
+          <!-- Dimmed with opacity, NOT with a `text-base-content/50` colour.
+               daisyUI's `.active` row paints itself neutral and sets the text to
+               neutral-content; a hardcoded base-content overrides that and, in
+               the light theme where both neutral and base-content are dark, the
+               sublabel vanishes into the highlight. Dark mode hid the bug —
+               there both colours are light. Inheriting keeps it legible in every
+               theme and in both states. -->
+          <span v-if="o.sublabel" class="w-full truncate text-xs opacity-60">{{ o.sublabel }}</span>
         </a>
       </li>
       <li v-if="filtered.length === 0 && !canCreate" class="p-2 text-sm text-base-content/50">No matches.</li>

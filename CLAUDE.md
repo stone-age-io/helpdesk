@@ -563,6 +563,16 @@ is also a hand-rolled ARIA combobox: the highlight is announced through
 `aria-activedescendant` rather than by moving focus, because focus has to stay
 in the input for typing to work.
 
+Its sub-text is dimmed with **`opacity-60`, never `text-base-content/50`**, and
+that generalises to anything inside a daisyUI `.active` row (menus here, but
+tabs and steps behave the same). `.active` repaints the row `--n` and sets its
+text to `--nc`; a hardcoded base-content overrides that inherited colour, and in
+the **light** theme — where neutral and base-content are both dark — the sub-text
+disappears into the highlight entirely (measured 1.03:1, i.e. invisible; 5.95:1
+after). Dark mode hides this class of bug completely, because there both colours
+are light and the wrong one still reads. Dim by opacity so the colour is
+inherited and follows the row's state.
+
 `useQuerySync` (`composables/useQuerySync.ts`) mirrors filter state into the URL
 on all three filtered staff boards — queue, Reports, Dispatch. All three already
 *read* their filters from the query (that is how a dashboard tile or a
