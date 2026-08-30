@@ -143,13 +143,18 @@ onMounted(load)
         class="input input-bordered input-sm w-full sm:w-72"
       />
 
-      <!-- items-start, not the default stretch: a grid row sizes to its tallest
-           cell, so a location with no visits and no address was padded out with
-           dead space to match the one beside it. The cards are also built to a
-           fixed set of slots — address, next visit, footer — each of which
-           renders whether or not it has content, so two cards in a row differ in
-           height only by how long their text is. -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+      <!-- STRETCH, and the footer pushed down with mt-auto — deliberately not
+           `items-start`. A grid row sizes to its tallest cell either way; the
+           only question is what happens to the difference. `items-start` parks
+           it below the short card, which is what made this page read as ragged:
+           the counts row of one card sat level with the middle of its
+           neighbour, and the next row began a card-height below the shorter of
+           the two. Stretching and pushing the footer down spends that
+           difference inside the card instead, so every card in a row ends on
+           the same line and the row gaps are even. The slots above the footer —
+           address, next visit — always render whether or not they have content,
+           so the leftover is usually a few pixels rather than a hole. -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div v-for="l in filtered" :key="l.id" class="card bg-base-100 shadow-sm">
           <div class="card-body p-4 gap-3">
             <router-link :to="`/portal/locations/${l.id}`" class="-m-1 p-1 rounded hover:bg-base-200/50">
@@ -194,7 +199,9 @@ onMounted(load)
               <div v-else class="text-sm text-base-content/50">No visits scheduled.</div>
             </div>
 
-            <div class="flex items-center gap-2 flex-wrap text-sm">
+            <!-- mt-auto: the footers line up across a row however tall the card
+                 above them got. See the grid comment. -->
+            <div class="mt-auto flex items-center gap-2 flex-wrap text-sm">
               <router-link :to="`/portal/tickets?location=${l.id}`" class="btn btn-xs btn-ghost">
                 {{ openCount[l.id] || 0 }} open ticket{{ (openCount[l.id] || 0) === 1 ? '' : 's' }} →
               </router-link>

@@ -346,84 +346,116 @@ watch(() => route.params.id, load)
     <div v-if="error" class="alert alert-error py-2 text-sm">{{ error }}</div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-      <!-- Details -->
-      <div class="card bg-base-100 shadow-sm">
-        <div class="card-body space-y-3">
-          <h2 class="card-title text-base">Details</h2>
-          <div class="form-control">
-            <label class="label py-1"><span class="label-text">Customer *</span></label>
-            <SearchSelect
-              v-if="!isEdit"
-              v-model="form.customer"
-              :options="customerOptions"
-              size="sm"
-              placeholder="Customer…"
+      <!-- Left column: the record's own fields. Metadata sits under Details
+           rather than in a full-width row of its own — it is type-defined data
+           about the record, next of kin to the Type field a few lines above it,
+           and a schema with three properties stretched across the page was a
+           short card wearing a long one's clothes. Whichever column ends first
+           simply ends; that is ordinary in a two-column grid, and nothing like
+           the four-cards-against-one this page used to run. -->
+      <div class="space-y-4">
+        <!-- Details -->
+        <div class="card bg-base-100 shadow-sm">
+          <div class="card-body space-y-3">
+            <h2 class="card-title text-base">Details</h2>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text">Customer *</span></label>
+              <SearchSelect
+                v-if="!isEdit"
+                v-model="form.customer"
+                :options="customerOptions"
+                size="sm"
+                placeholder="Customer…"
+                :disabled="!editing || saving"
+                @update:model-value="onCustomerChange"
+              />
+              <input v-else type="text" class="input input-bordered input-sm" :value="customer?.name || '—'" disabled />
+            </div>
+            <div class="flex gap-2">
+              <div class="form-control flex-1">
+                <label class="label py-1"><span class="label-text">Name *</span></label>
+                <input v-model="form.name" type="text" placeholder="HQ – Bldg C" class="input input-bordered input-sm" :disabled="!editing || saving" />
+              </div>
+              <div class="form-control w-32">
+                <label class="label py-1"><span class="label-text">Code</span></label>
+                <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="!editing || saving" />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <div class="form-control flex-1 min-w-0">
+                <label class="label py-1">
+                  <span class="label-text">Type</span>
+                  <router-link v-if="editing" to="/staff/location-types" class="label-text-alt link link-hover">manage →</router-link>
+                </label>
+                <SearchSelect
+                  v-model="form.type"
+                  :options="typeOptions"
+                  size="sm"
+                  empty-label="None"
+                  placeholder="Pick a type…"
+                  :disabled="!editing || saving || !form.customer"
+                />
+              </div>
+              <div class="form-control flex-1 min-w-0">
+                <label class="label py-1"><span class="label-text">Parent</span></label>
+                <SearchSelect
+                  v-model="form.parent"
+                  :options="parentOptions"
+                  size="sm"
+                  empty-label="None"
+                  placeholder="Contained by…"
+                  :disabled="!editing || saving || !form.customer"
+                />
+              </div>
+            </div>
+            <p v-if="ancestorPath" class="text-xs text-base-content/50 -mt-1">{{ ancestorPath }}</p>
+            <div class="flex gap-2">
+              <div class="form-control flex-1">
+                <label class="label py-1"><span class="label-text">Contact</span></label>
+                <input v-model="form.contact" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
+              </div>
+              <div class="form-control flex-1">
+                <label class="label py-1"><span class="label-text">Phone</span></label>
+                <input v-model="form.contact_phone" type="tel" class="input input-bordered input-sm" :disabled="!editing || saving" />
+              </div>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text">Access notes</span></label>
+              <textarea v-model="form.notes" rows="2" placeholder="Gate code, parking, dock hours…" class="textarea textarea-bordered textarea-sm" :disabled="!editing || saving"></textarea>
+            </div>
+            <div v-if="isEdit && auth.isAdmin && editing" class="pt-1">
+              <button class="btn btn-ghost btn-sm text-error" @click="remove">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metadata. Hidden entirely in read mode when there is nothing in it:
+             a locked record used to spend a whole card saying "No metadata
+             recorded" — true, and not worth the room on a page whose job is to
+             answer what is installed here. Editing always shows it, because that
+             is when you would be adding the first field. -->
+        <div v-if="editing || !metadataEmpty" class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title text-base">Metadata</h2>
+            <p class="text-xs text-base-content/60 mb-2">
+              <template v-if="activeSchema">Fields defined by this location's type.</template>
+              <template v-else>
+                Free-form fields. Give the type a metadata schema to get typed inputs instead.
+              </template>
+            </p>
+            <MetadataEditor
+              ref="metadataEditor"
+              v-model="form.metadata"
+              :schema="activeSchema"
               :disabled="!editing || saving"
-              @update:model-value="onCustomerChange"
             />
-            <input v-else type="text" class="input input-bordered input-sm" :value="customer?.name || '—'" disabled />
-          </div>
-          <div class="flex gap-2">
-            <div class="form-control flex-1">
-              <label class="label py-1"><span class="label-text">Name *</span></label>
-              <input v-model="form.name" type="text" placeholder="HQ – Bldg C" class="input input-bordered input-sm" :disabled="!editing || saving" />
-            </div>
-            <div class="form-control w-32">
-              <label class="label py-1"><span class="label-text">Code</span></label>
-              <input v-model="form.code" type="text" placeholder="BLDG-C" class="input input-bordered input-sm font-mono" :disabled="!editing || saving" />
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <div class="form-control flex-1 min-w-0">
-              <label class="label py-1">
-                <span class="label-text">Type</span>
-                <router-link v-if="editing" to="/staff/location-types" class="label-text-alt link link-hover">manage →</router-link>
-              </label>
-              <SearchSelect
-                v-model="form.type"
-                :options="typeOptions"
-                size="sm"
-                empty-label="None"
-                placeholder="Pick a type…"
-                :disabled="!editing || saving || !form.customer"
-              />
-            </div>
-            <div class="form-control flex-1 min-w-0">
-              <label class="label py-1"><span class="label-text">Parent</span></label>
-              <SearchSelect
-                v-model="form.parent"
-                :options="parentOptions"
-                size="sm"
-                empty-label="None"
-                placeholder="Contained by…"
-                :disabled="!editing || saving || !form.customer"
-              />
-            </div>
-          </div>
-          <p v-if="ancestorPath" class="text-xs text-base-content/50 -mt-1">{{ ancestorPath }}</p>
-          <div class="flex gap-2">
-            <div class="form-control flex-1">
-              <label class="label py-1"><span class="label-text">Contact</span></label>
-              <input v-model="form.contact" type="text" class="input input-bordered input-sm" :disabled="!editing || saving" />
-            </div>
-            <div class="form-control flex-1">
-              <label class="label py-1"><span class="label-text">Phone</span></label>
-              <input v-model="form.contact_phone" type="tel" class="input input-bordered input-sm" :disabled="!editing || saving" />
-            </div>
-          </div>
-          <div class="form-control">
-            <label class="label py-1"><span class="label-text">Access notes</span></label>
-            <textarea v-model="form.notes" rows="2" placeholder="Gate code, parking, dock hours…" class="textarea textarea-bordered textarea-sm" :disabled="!editing || saving"></textarea>
-          </div>
-          <div v-if="isEdit && auth.isAdmin && editing" class="pt-1">
-            <button class="btn btn-ghost btn-sm text-error" @click="remove">Delete</button>
           </div>
         </div>
       </div>
 
-      <!-- Map + coordinates. Half the width, beside Details, because those two
-           are the record: identity and contact on the left, where it physically
-           is on the right, and they run to about the same height. -->
+      <!-- Map + coordinates. Half the width, beside the record's own fields:
+           identity, contact and type-defined data on the left, where the place
+           physically is on the right. -->
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body space-y-2">
           <h2 class="card-title text-base">Location &amp; map</h2>
@@ -433,34 +465,6 @@ watch(() => route.params.id, load)
             <input v-model.number="form.lng" type="number" step="any" placeholder="Longitude" class="input input-bordered input-sm font-mono flex-1" :disabled="!editing || saving" />
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Metadata. Full width and on its own row: it is part of the record like
-         the two cards above, but its height is set by whatever the type's
-         schema declares, so pinning it into either column made that column the
-         taller one for a reason nothing on the page explains.
-
-         Hidden entirely in read mode when there is nothing in it. A locked
-         record used to spend a whole card saying "No metadata recorded" — true,
-         and not worth the room on a page whose job is to answer what is
-         installed here. Editing always shows it, because that is when you would
-         be adding the first field. -->
-    <div v-if="editing || !metadataEmpty" class="card bg-base-100 shadow-sm">
-      <div class="card-body">
-        <h2 class="card-title text-base">Metadata</h2>
-        <p class="text-xs text-base-content/60 mb-2">
-          <template v-if="activeSchema">Fields defined by this location's type.</template>
-          <template v-else>
-            Free-form fields. Give the type a metadata schema to get typed inputs instead.
-          </template>
-        </p>
-        <MetadataEditor
-          ref="metadataEditor"
-          v-model="form.metadata"
-          :schema="activeSchema"
-          :disabled="!editing || saving"
-        />
       </div>
     </div>
 

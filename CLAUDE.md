@@ -582,16 +582,19 @@ other direction, and it is the one asked first on site — scan the door, see
 what is on it. Retired gear is listed (badged), same reasoning as the scanner:
 you cannot file against it, but "what *used* to be here" is a real question.
 
-Its page is organised as **the record, then what is here**: Details beside the
-map (two cards of about equal height), Metadata full width on its own row, then
-Things here beside Recent tickets here. Everything from the map down used to be
-stacked inside the right-hand column of a two-column grid, so one column carried
-four cards against the other's one — the record's fields ran out after a screen
-and the rest of the page was a single tall stack with a column of dead space
-next to it. Metadata takes the full-width row because its height is whatever the
-type's `metadata_schema` declares, which is exactly the thing that makes
-whichever column holds it the taller one; in read mode it is hidden entirely
-when empty, rather than spending a card on "No metadata recorded".
+Its page is organised as **the record, then what is here**: the record's own
+fields on the left (Details, then Metadata under it) beside the map, then Things
+here beside Recent tickets here. Everything from the map down used to be stacked
+inside the right-hand column of a two-column grid, so one column carried four
+cards against the other's one — the record's fields ran out after a screen and
+the rest of the page was a single tall stack with a column of dead space next to
+it. Metadata sits under Details rather than in a full-width row of its own,
+which was the first attempt: it is type-defined data about the record, next of
+kin to the Type field a few lines above it, and a schema with three properties
+stretched across the page is a short card wearing a long one's clothes. In read
+mode it is hidden entirely when empty rather than spending a card on "No
+metadata recorded". Whichever column ends first simply ends — ordinary in a
+two-column grid, and nothing like four-cards-against-one.
 
 `RosterFilters.vue` is the search + customer + type row shared by the Locations
 and Things rosters, and it settles a question worth not re-opening: type filters
@@ -789,13 +792,35 @@ re-deriving:
   from the intake form and the ticket list, but there was nowhere to browse the
   catalog, so "which of our gear keeps failing" — the question the relation
   replaced free text to answer — had no customer-facing surface.
-- **`notes` and `metadata` are withheld from both detail views.** On a location,
-  `notes` is the access notes our technicians write for each other (gate codes,
-  which door, who to avoid) — our operational text about their building, not
-  their record of it. On a thing it is our service text, and `metadata` is a
-  mirror of upstream config a requester cannot act on. Address, contact, code,
-  type and parent are facts about their own property and do show. Visits, as
-  everywhere else in the portal, never name a technician.
+- **`notes` is withheld from both detail views; `metadata` is shown in full.**
+  On a location, `notes` is the access notes our technicians write for each
+  other (gate codes, which door, who to avoid) — our operational text about
+  their building, not their record of it; on a thing it is our service text.
+  `metadata` was withheld with it, on the reasoning that it mirrors upstream
+  config a requester cannot act on, and that was too broad: serial, firmware,
+  last-inspected, square footage and dock doors are exactly what a customer
+  reaches for during a warranty claim or an audit. `RecordFacts.vue` renders
+  every key — see **Where the line is** below. Address, contact, code, type and
+  parent are facts about their own property and do show. Visits, as everywhere
+  else in the portal, never name a technician.
+- **Where the line is: `notes` versus `metadata`, not schema versus free-form.**
+  An intermediate version of `RecordFacts` filtered to the keys the type's
+  `metadata_schema` declared, on the theory that a schema is authored while an
+  undeclared key is whatever somebody typed into the JSON tab — so the
+  undeclared half was where an internal note would land. The operator's call was
+  the simpler one, and it is the one to keep: nothing goes in a location's or a
+  thing's `metadata` that the customer should not read. It is their building and
+  their equipment, and the fields are facts about it. The text that genuinely is
+  ours already has its own field. **If something in `metadata` ever needs
+  hiding, move it to `notes` — do not add a filter here**, because a filter
+  makes the boundary invisible to whoever writes the value, while the choice of
+  field is visible at the moment of writing. The schema survives as
+  presentation only: declared keys lead, in schema order, wearing the
+  property's `title`; everything else follows alphabetically. `RecordFacts` is
+  still a separate component rather than `<MetadataEditor disabled>`, because
+  that one carries a JSON tab and the raw-document escape hatch is a staff
+  affordance. Nested values render as compact JSON rather than being skipped —
+  the point is that the document is not filtered.
 - **Locations stays a card grid while Things is a `ResponsiveList`**, which is a
   decision rather than drift: a location catalog is bounded by physical reality
   (five, a few dozen at the top end) where Things is a forty-row catalog that
@@ -803,13 +828,21 @@ re-deriving:
   count launchers — more slots than a row has at phone width. What the card no
   longer does is *grow with the schedule*: it shows the soonest visit and rolls
   the rest into Visits, which owns the full filterable history. Cards that grew
-  a row per booking, in a grid missing `items-start`, were what made that page
-  ragged — one location with two visits set the row height and its address-less
-  neighbour was padded out to match. Every slot on the card now renders whether
-  or not it has content, so two cards in a row differ only by how long their
-  text is. The address slot reserves its line with a space rather than a dash: a
+  a row per booking were what made that page ragged, and every slot now renders
+  whether or not it has content, so two cards differ only by how long their text
+  is. The address slot reserves its line with a space rather than a dash — a
   sub-location legitimately has no address of its own, and a "—" under the title
   reads as a stray mark rather than as an absence.
+- **That grid stretches and pushes its footer down with `mt-auto`; it is
+  deliberately not `items-start`.** A grid row sizes to its tallest cell either
+  way — the only question is what happens to the difference. `items-start` was
+  the first fix and it moved the problem rather than solving it: the leftover
+  height went *below* the short card, so its counts row sat level with the
+  middle of its neighbour and the next row began a card-height below the shorter
+  of the two. Stretching spends the difference inside the card instead, so every
+  card in a row ends on the same line and the row gaps are even. The rule
+  generalises: `items-start` is right for a card that is only content, and wrong
+  for one with a footer to align.
 
 Portal filters ride the URL through the same `useQuerySync` as the staff boards
 (tickets, visits, projects, things, Summary) — see that section for the three

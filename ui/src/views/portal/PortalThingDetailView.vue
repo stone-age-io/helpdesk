@@ -4,16 +4,24 @@
 // header counts are the point; the recent list is bounded and links out to the
 // full filtered history.
 //
-// Deliberately absent: `notes` and `metadata`. Notes on a thing are our service
-// text (what we tried, what it's wired to), and metadata is a curated mirror of
-// upstream config a requester has no way to act on. Name, code, type and
-// location are facts about their own gear and do show. Visits never name a
-// technician, matching every other portal view.
+// Deliberately absent: `notes` — on a thing that is our service text (what we
+// tried, what it is wired to), and it stays ours. Name, code, type and location
+// are facts about their own gear and do show.
+//
+// `metadata` was absent on the same list, described as a mirror of upstream
+// config a requester cannot act on. Half true, and the half that is wrong
+// mattered more: serial, firmware and last-inspected are precisely what a
+// customer reaches for during a warranty claim or an audit. RecordFacts shows
+// the whole document — see that component for why `notes`, not the schema, is
+// where the boundary sits.
+//
+// Visits never name a technician, matching every other portal view.
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { pb } from '@/pb'
 import type { Thing, Ticket, Visit, VisitStatus } from '@/types'
 import TicketListRow from '@/components/TicketListRow.vue'
+import RecordFacts from '@/components/RecordFacts.vue'
 import { format, startOfToday } from 'date-fns'
 
 const route = useRoute()
@@ -105,6 +113,11 @@ onMounted(load)
           <p v-if="thing.retired" class="text-xs text-base-content/50">
             This one is retired — its history stays here, but new tickets should name its replacement.
           </p>
+
+          <!-- Every metadata key. The schema, when the type has one, only sets
+               the order and the labels. Renders nothing — no heading, no rule —
+               when the record has no metadata. -->
+          <RecordFacts :metadata="thing.metadata" :schema="thing.expand?.type?.metadata_schema" />
 
           <div class="flex gap-2 flex-wrap pt-1">
             <router-link :to="`/portal/tickets?thing=${thing.id}&status=all`" class="btn btn-xs btn-ghost">

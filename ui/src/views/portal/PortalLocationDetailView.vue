@@ -13,11 +13,19 @@
 // the customer's own record of it. Address and site contact are theirs and do
 // show. Visits never name a technician, matching the portal visit, project and
 // locations views.
+//
+// `metadata` used to be on that withheld list too, on the reasoning that it is
+// a mirror of upstream config a requester cannot act on. That was too broad:
+// square footage, dock doors, after-hours access and last-inspected are facts
+// about the customer's own building, and RecordFacts shows all of them. The
+// line that matters is `notes` versus `metadata`, not which keys a schema
+// happens to declare — see that component.
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { pb } from '@/pb'
 import type { Location, Thing, Ticket, Visit, VisitStatus } from '@/types'
 import TicketListRow from '@/components/TicketListRow.vue'
+import RecordFacts from '@/components/RecordFacts.vue'
 import { format, startOfToday } from 'date-fns'
 
 const route = useRoute()
@@ -133,6 +141,11 @@ onMounted(load)
               </a>
             </div>
           </div>
+          <!-- Every metadata key. The schema, when the type has one, only sets
+               the order and the labels. Renders nothing — no heading, no rule —
+               when the record has no metadata. -->
+          <RecordFacts :metadata="location.metadata" :schema="location.expand?.type?.metadata_schema" />
+
           <div class="flex gap-2 flex-wrap pt-1">
             <router-link :to="`/portal/tickets?location=${location.id}`" class="btn btn-xs btn-ghost">
               {{ openTotal }} open · {{ ticketTotal }} total →
