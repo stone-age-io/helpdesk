@@ -14,8 +14,16 @@ import { pb } from '@/pb'
 import type { Customer, Location } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import RosterFilters from '@/components/RosterFilters.vue'
+import { useVisitContext } from '@/composables/useVisitContext'
 
 const router = useRouter()
+
+// A field tech opening this on a phone wants the two sites they are scheduled
+// at, not forty across eight customers. The toggle only renders when they have
+// scheduled visits, so an agent or dispatcher with none never meets a control
+// that would empty their roster — see the composable for that rule.
+const context = useVisitContext()
+const mineOnly = ref(false)
 
 const columns: Column<Location>[] = [
   { key: 'name', label: 'Name' },
@@ -41,6 +49,7 @@ const typeFilter = ref('')
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   return locations.value.filter((l) => {
+    if (mineOnly.value && !context.includes(l.customer)) return false
     if (customerFilter.value && l.customer !== customerFilter.value) return false
     if (typeFilter.value && l.expand?.type?.name !== typeFilter.value) return false
     if (!q) return true
@@ -81,6 +90,7 @@ function openDetail(loc: Location) {
 onMounted(() => {
   load()
   loadCustomers()
+  context.load()
 })
 </script>
 
@@ -105,7 +115,12 @@ onMounted(() => {
       :items="locations"
       :customers="customers"
       search-placeholder="Filter by name, customer, code, address…"
-    />
+    >
+      <label v-if="context.has.value" class="label cursor-pointer gap-2 justify-start">
+        <input v-model="mineOnly" type="checkbox" class="toggle toggle-sm" />
+        <span class="label-text text-sm">My scheduled sites</span>
+      </label>
+    </RosterFilters>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
 
@@ -118,7 +133,7 @@ onMounted(() => {
         </span>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No locations{{ search || customerFilter || typeFilter ? ' match.' : ' yet.' }}</span>
+        <span class="text-base-content/60">No locations{{ search || customerFilter || typeFilter || mineOnly ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

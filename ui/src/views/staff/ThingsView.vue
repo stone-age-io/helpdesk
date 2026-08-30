@@ -23,8 +23,16 @@ import { pb } from '@/pb'
 import type { Customer, Location, RecordType, Thing } from '@/types'
 import ResponsiveList, { type Column } from '@/components/ResponsiveList.vue'
 import RosterFilters from '@/components/RosterFilters.vue'
+import { useVisitContext } from '@/composables/useVisitContext'
 
 const router = useRouter()
+
+// Same self-hiding context toggle as the Locations roster: a tech on site wants
+// the gear belonging to the customers they are scheduled at, and everyone else
+// never meets the control. See the composable for why context may narrow a
+// roster but must never filter the scanner.
+const context = useVisitContext()
+const mineOnly = ref(false)
 
 const columns: Column<Thing>[] = [
   { key: 'name', label: 'Name' },
@@ -49,6 +57,7 @@ const statusFilter = ref<'in-service' | 'all' | 'retired'>('in-service')
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   return things.value.filter((t) => {
+    if (mineOnly.value && !context.includes(t.customer)) return false
     if (customerFilter.value && t.customer !== customerFilter.value) return false
     if (typeFilter.value && (t.expand?.type as RecordType | undefined)?.name !== typeFilter.value) return false
     if (statusFilter.value === 'in-service' && t.retired) return false
@@ -98,6 +107,7 @@ function openDetail(thing: Thing) {
 onMounted(() => {
   load()
   loadCustomers()
+  context.load()
 })
 </script>
 
@@ -129,6 +139,10 @@ onMounted(() => {
         <option value="all">All</option>
         <option value="retired">Retired</option>
       </select>
+      <label v-if="context.has.value" class="label cursor-pointer gap-2 justify-start">
+        <input v-model="mineOnly" type="checkbox" class="toggle toggle-sm" />
+        <span class="label-text text-sm">My scheduled sites</span>
+      </label>
     </RosterFilters>
 
     <div v-if="loading" class="flex justify-center p-12"><span class="loading loading-spinner loading-lg"></span></div>
@@ -141,7 +155,7 @@ onMounted(() => {
         <span v-else class="badge badge-sm badge-soft-success">In service</span>
       </template>
       <template #empty>
-        <span class="text-base-content/60">No things{{ search || customerFilter || typeFilter ? ' match.' : ' yet.' }}</span>
+        <span class="text-base-content/60">No things{{ search || customerFilter || typeFilter || mineOnly ? ' match.' : ' yet.' }}</span>
       </template>
     </ResponsiveList>
   </div>

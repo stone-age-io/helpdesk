@@ -32,20 +32,56 @@ const showProfile = ref(false)
 const branding = useBrandingStore()
 const brandText = computed(() => branding.shellName('Service Desk'))
 
+// Five thumb targets is the most a phone bottom bar takes, and the field app has
+// eight destinations. The four a tech touches during a shift keep their slots;
+// the fifth is a door to the rest (FieldMoreView).
+//
+// Projects lost its tab to make room. That is the honest trade: it is the one
+// destination here that is read between jobs rather than during one, and it is
+// one tap away behind More instead of zero.
 const tabs = [
   { label: 'Today', icon: '📋', path: '/staff/today' },
   { label: 'Schedule', icon: '📅', path: '/staff/schedule' },
   { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
-  { label: 'Projects', icon: '📁', path: '/staff/projects' },
   { label: 'Time', icon: '⏱️', path: '/staff/my-time' },
+  { label: 'More', icon: '⋯', path: '/staff/more' },
 ]
-// The desktop sidebar shows the same destinations.
-const fieldSections: NavSection[] = [{ items: tabs }]
+
+// Desktop has a sidebar, so nothing needs to hide behind More there — the hub's
+// contents are listed flat. Same sections as the desk shell's Directory, minus
+// the surfaces (Customers, Requesters) a tech has no on-site use for.
+const fieldSections: NavSection[] = [
+  {
+    items: [
+      { label: 'Today', icon: '📋', path: '/staff/today' },
+      { label: 'Schedule', icon: '📅', path: '/staff/schedule' },
+      { label: 'Tickets', icon: '🎫', path: '/staff/tickets' },
+      { label: 'Projects', icon: '📁', path: '/staff/projects' },
+      { label: 'Time', icon: '⏱️', path: '/staff/my-time' },
+    ],
+  },
+  {
+    title: 'Directory',
+    items: [
+      { label: 'Scan', icon: '📷', path: '/staff/scan' },
+      { label: 'Sites', icon: '📍', path: '/staff/locations' },
+      { label: 'Devices', icon: '🧰', path: '/staff/things' },
+    ],
+  },
+]
+
+// Destinations that live behind More rather than on the bar. They keep the More
+// tab lit, so a tech deep in Devices can still see where they are — an
+// unlit bar reads as "nowhere", which is exactly the wrong answer three taps
+// into a hub.
+const behindMore = ['/staff/scan', '/staff/locations', '/staff/things', '/staff/projects']
 
 // None of the tab paths prefix one another, so a prefix match keeps the tab lit
 // on its detail routes (e.g. /staff/tickets/30 → Tickets).
 function isActive(path: string): boolean {
-  return route.path === path || route.path.startsWith(path + '/')
+  const on = (p: string) => route.path === p || route.path.startsWith(p + '/')
+  if (path === '/staff/more') return on(path) || behindMore.some(on)
+  return on(path)
 }
 
 function closeDropdown() {

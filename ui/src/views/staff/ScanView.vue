@@ -25,9 +25,9 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { pb } from '@/pb'
-import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, Thing, Visit } from '@/types'
+import type { Customer, Location, Thing } from '@/types'
 import QrScanner from '@/components/QrScanner.vue'
+import { useVisitContext } from '@/composables/useVisitContext'
 
 interface Match {
   kind: 'thing' | 'location'
@@ -41,40 +41,21 @@ interface Match {
 }
 
 const router = useRouter()
-const auth = useAuthStore()
+// Shared with the Sites and Devices rosters, where the same set is offered as an
+// optional narrowing. Here it is sort-only — see the header.
+const context = useVisitContext()
 
 const scanned = ref('')
 const matches = ref<Match[]>([])
 const searching = ref(false)
 const searched = ref(false)
 const error = ref('')
-// Customer ids this tech is scheduled at. Sorting only — never a filter.
-const contextCustomers = ref<Set<string>>(new Set())
 
 // PocketBase filters are string-built here, so a code containing a quote would
 // break the expression. Codes are slugs by convention but nothing enforces that
 // on the scanned input, which can be anything a sticker holds.
 function quote(value: string): string {
   return value.replace(/'/g, "\\'")
-}
-
-async function loadContext() {
-  if (!auth.record?.id) return
-  try {
-    const visits = await pb.collection('visits').getFullList<Visit>({
-      filter: `assignee = '${auth.record.id}' && status = 'scheduled'`,
-      expand: 'ticket',
-      sort: 'scheduled_at',
-    })
-    const ids = new Set<string>()
-    for (const v of visits) {
-      const customer = (v.expand?.ticket as { customer?: string } | undefined)?.customer
-      if (customer) ids.add(customer)
-    }
-    contextCustomers.value = ids
-  } catch {
-    // No context just means no preferential sort. Resolution still works.
-  }
 }
 
 async function resolve(code: string) {
@@ -104,7 +85,7 @@ async function resolve(code: string) {
         detail: [(t.expand?.location as Location | undefined)?.name, t.retired ? 'Retired' : '']
           .filter(Boolean)
           .join(' · '),
-        inContext: contextCustomers.value.has(t.customer),
+        inContext: context.includes(t.customer),
       })),
       ...locations.map((l) => ({
         kind: 'location' as const,
@@ -114,7 +95,7 @@ async function resolve(code: string) {
         customerId: l.customer,
         customerName: (l.expand?.customer as Customer | undefined)?.name || '—',
         detail: l.address || '',
-        inContext: contextCustomers.value.has(l.customer),
+        inContext: context.includes(l.customer),
       })),
     ]
 
@@ -150,7 +131,7 @@ function reset() {
   error.value = ''
 }
 
-onMounted(loadContext)
+onMounted(context.load)
 </script>
 
 <template>

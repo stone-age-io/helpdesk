@@ -23,6 +23,9 @@ const router = createRouter({
         { path: 'today', name: 'field-today', component: () => import('@/views/staff/FieldTodayView.vue') },
         { path: 'schedule', name: 'field-schedule', component: () => import('@/views/staff/FieldScheduleView.vue') },
         { path: 'my-time', name: 'field-time', component: () => import('@/views/staff/FieldTimeLogView.vue') },
+        // The phone bottom bar's overflow door. Harmless on the desk shell,
+        // which links everything it holds directly and so never points here.
+        { path: 'more', name: 'field-more', component: () => import('@/views/staff/FieldMoreView.vue') },
         // Label scanning. Any staff, not just field: an agent on the phone
         // resolving a code a customer read out needs the same lookup.
         { path: 'scan', name: 'scan', component: () => import('@/views/staff/ScanView.vue') },

@@ -466,6 +466,37 @@ the spec's 4 modules, giving 0.69 mm per module at 2″ × 1″ and 1.38 mm at
 
 A record with no `code` gets no label button: the payload *is* the code.
 
+The **field shell** (`FieldLayout.vue`) reaches the site/device axes too, since a
+tech standing at a device is who the whole label loop was built for. A phone
+bottom bar holds five thumb targets and the field app has eight destinations, so
+the fifth is a door rather than a place: `Today · Schedule · Tickets · Time ·
+More`, with `FieldMoreView` grouping Scan / Sites / Devices under "Look up" and
+Projects under "Work". Projects gave up its tab — it is the one field
+destination read *between* jobs rather than during one. The desktop field
+sidebar lists all of it flat and never points at `/staff/more`; the routes
+themselves are the same `/staff/*` any staff member can reach, so nothing forked.
+Everything behind More keeps the More tab lit, because an unlit bar three taps
+into a hub reads as "nowhere".
+
+The rosters themselves are reused rather than duplicated, with one addition:
+`useVisitContext()` — the customers a staff member has *scheduled visits* with,
+extracted from `ScanView`, which already computed it inline. Two rules travel
+with it and are why it is one composable and not three queries. **It sorts or
+optionally narrows; it never silently filters** (the scanner must still resolve
+globally and disambiguate with a picker — ADR 0002 — since filtering to "the
+customer I was last looking at" would confidently show a different tenant's
+`DOOR-1`). And **an empty set means "no context", not "no matches"**: every
+caller hides its context affordance when the set is empty, so a dispatcher or an
+admin — who has no visits assigned — never meets a control that would filter
+their roster to nothing. Sites and Devices spend it as an opt-in *My scheduled
+sites* toggle; the scanner spends it as a sort key only.
+
+`LocationDetailView` carries a **Devices here** card. `ThingDetailView` has
+answered "every ticket for this device" since the relation existed; this is the
+other direction, and it is the one asked first on site — scan the door, see
+what is on it. Retired gear is listed (badged), same reasoning as the scanner:
+you cannot file against it, but "what *used* to be here" is a real question.
+
 `RosterFilters.vue` is the search + customer + type row shared by the Locations
 and Things rosters, and it settles a question worth not re-opening: type filters
 key on the type **name**, not its id. `thing_types`/`location_types` are

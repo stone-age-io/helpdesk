@@ -8,7 +8,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { pb } from '@/pb'
 import { useAuthStore } from '@/stores/auth'
-import type { Customer, Location, RecordType, Ticket } from '@/types'
+import type { Customer, Location, RecordType, Thing, Ticket } from '@/types'
 import SearchSelect from '@/components/SearchSelect.vue'
 import LocationPicker from '@/components/LocationPicker.vue'
 import MetadataEditor from '@/components/MetadataEditor.vue'
@@ -32,6 +32,10 @@ const record = ref<Location | null>(null)
 const customer = ref<Customer | null>(null)
 const customers = ref<Customer[]>([])
 const tickets = ref<Ticket[]>([])
+// The gear installed here. ThingDetailView has answered "every ticket for this
+// device" since the relation existed; this is the other direction, and it is the
+// one a tech standing on site asks first — scan the door, see what is on it.
+const things = ref<Thing[]>([])
 const types = ref<RecordType[]>([])
 // Same-customer locations, for the parent picker and the ancestor path.
 const siblings = ref<Location[]>([])
@@ -202,6 +206,14 @@ async function load() {
           sort: '-created',
         })
       ).items
+      // Retired gear included deliberately, same reasoning as the scanner: you
+      // cannot file against it, but "what used to be on this door" is a question
+      // a tech asks on site. The row carries its own badge.
+      things.value = await pb.collection('things').getFullList<Thing>({
+        filter: `location = '${id.value}'`,
+        sort: 'retired,name',
+        expand: 'type',
+      })
     } else {
       editing.value = true
     }
@@ -420,6 +432,37 @@ watch(() => route.params.id, load)
               :schema="activeSchema"
               :disabled="!editing || saving"
             />
+          </div>
+        </div>
+
+        <!-- Devices installed here -->
+        <div v-if="isEdit" class="card bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="card-title text-base">Devices here</h2>
+              <!-- The list is complete (getFullList), so this is a count and not
+                   a "see more" link — a site holds a handful of devices, not a
+                   roster's worth. -->
+              <span v-if="things.length" class="text-xs text-base-content/50">{{ things.length }}</span>
+            </div>
+            <div class="divide-y divide-base-200">
+              <router-link
+                v-for="t in things"
+                :key="t.id"
+                :to="`/staff/things/${t.id}`"
+                class="flex items-center gap-3 py-2 hover:bg-base-200/50 -mx-2 px-2 rounded"
+              >
+                <span class="font-mono text-xs text-base-content/50 w-20 truncate">{{ t.code || '—' }}</span>
+                <span class="flex-1 truncate">{{ t.name }}</span>
+                <span v-if="t.expand?.type?.name" class="badge badge-sm badge-soft hidden sm:inline-flex">
+                  {{ t.expand.type.name }}
+                </span>
+                <span v-if="t.retired" class="badge badge-sm badge-soft">Retired</span>
+              </router-link>
+              <p v-if="things.length === 0" class="py-3 text-sm text-base-content/50">
+                No devices are filed at this site yet.
+              </p>
+            </div>
           </div>
         </div>
 
