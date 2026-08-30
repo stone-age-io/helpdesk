@@ -42,7 +42,32 @@ const location = ref(q('location'))
 // Deep-linked from a thing's detail card (View all →).
 const thing = ref(q('thing'))
 const type = ref<TicketType | ''>((q('type') as any) || '')
+// Backlog age since created. Deep-linked from the dashboard's Backlog age card.
+const age = ref(q('age'))
 const search = ref(q('search'))
+
+// The boundaries mirror the dashboard's Backlog age tiles exactly, so a tile's
+// count and the queue it opens agree. Evaluated per query rather than once at
+// setup: a queue left open overnight would otherwise keep measuring "2 days"
+// from the moment the tab was loaded.
+const AGE_BUCKETS = [
+  { value: '0-2', label: '0–2 days' },
+  { value: '2-7', label: '2–7 days' },
+  { value: '7plus', label: 'Over 7 days' },
+]
+function ageClause(bucket: string): string {
+  const ago = (days: number) => new Date(Date.now() - days * 864e5).toISOString().replace('T', ' ')
+  switch (bucket) {
+    case '0-2':
+      return `created >= '${ago(2)}'`
+    case '2-7':
+      return `created < '${ago(2)}' && created >= '${ago(7)}'`
+    case '7plus':
+      return `created < '${ago(7)}'`
+    default:
+      return ''
+  }
+}
 
 const customerOptions = computed(() => customers.value.map((c) => ({ id: c.id, label: c.name })))
 const staffOptions = computed(() => [
@@ -192,6 +217,10 @@ function buildFilter(): string {
   if (location.value) parts.push(`location = '${location.value}'`)
   if (thing.value) parts.push(`thing = '${thing.value}'`)
   if (type.value) parts.push(`type = '${type.value}'`)
+  if (age.value) {
+    const clause = ageClause(age.value)
+    if (clause) parts.push(`(${clause})`)
+  }
   if (assignee.value === 'unassigned') parts.push(`assignee = ''`)
   else if (assignee.value) parts.push(`assignee = '${assignee.value}'`)
   if (search.value.trim()) {
@@ -269,7 +298,7 @@ watch(customer, (value) => {
   loadThings(value)
 })
 
-watch([status, priority, customer, category, location, thing, type, assignee, sortKey, sortDir], () => {
+watch([status, priority, customer, category, location, thing, type, age, assignee, sortKey, sortDir], () => {
   page.value = 1
   // Filter changes drop the selection — bulk-acting on rows that are no
   // longer visible would be a footgun. Paging keeps it (cross-page select).
@@ -289,6 +318,9 @@ interface SavedView {
   // applyView defaults every field with `|| ''` rather than assigning directly.
   thing?: string
   type: string
+  // Optional for the same reason as `thing` — views saved before the age
+  // filter existed have no such key.
+  age?: string
   assignee: string
   search: string
   sortKey: string
@@ -318,6 +350,7 @@ function saveCurrentView() {
     location: location.value,
     thing: thing.value,
     type: type.value,
+    age: age.value,
     assignee: assignee.value,
     search: search.value,
     sortKey: sortKey.value,
@@ -336,6 +369,7 @@ function applyView(v: SavedView) {
   location.value = v.location || ''
   thing.value = v.thing || ''
   type.value = (v.type as any) || ''
+  age.value = v.age || ''
   assignee.value = v.assignee
   search.value = v.search
   sortKey.value = v.sortKey
@@ -425,6 +459,10 @@ onUnmounted(() => {
       <select v-model="type" class="select select-bordered select-sm w-full sm:w-auto">
         <option value="">All types</option>
         <option v-for="t in TICKET_TYPES" :key="t" :value="t">{{ t }}</option>
+      </select>
+      <select v-model="age" class="select select-bordered select-sm w-full sm:w-auto">
+        <option value="">Any age</option>
+        <option v-for="a in AGE_BUCKETS" :key="a.value" :value="a.value">{{ a.label }}</option>
       </select>
       <div class="w-full sm:w-52">
         <SearchSelect v-model="assignee" :options="staffOptions" size="sm" empty-label="Anyone" placeholder="Assignee…" />
