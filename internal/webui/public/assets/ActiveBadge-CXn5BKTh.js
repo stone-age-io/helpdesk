@@ -1,0 +1,1 @@
+import{St as e,_ as t,bt as n,c as r,d as i,h as a,k as o}from"./pb-sP80B7B8.js";var s=t({__name:`ActiveBadge`,props:{active:{type:Boolean}},setup(t){return(s,c)=>(o(),i(`span`,{class:n([`badge-soft`,t.active?`badge-soft-success`:`badge-soft-neutral`])},[c[0]||=r(`span`,{class:`badge-dot`},null,-1),a(e(t.active?`active`:`inactive`),1)],2))}});export{s as t};

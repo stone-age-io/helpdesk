@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Service Desk</title>
+    <!-- The basemap origin, for the LocationPicker on the location detail form.
+         MapLibre does not ask for the style until that route mounts and a
+         megabyte of renderer has parsed, so the DNS + TCP + TLS handshake to
+         this host is worth starting during the HTML parse instead. crossorigin
+         is load-bearing, not decoration: the style, glyphs, sprite and tiles are
+         all CORS fetches, and a preconnect without it opens the socket in the
+         wrong credentials mode, so nothing reuses it and the handshake happens
+         twice. The cost on a visit that never opens a location is one idle
+         socket. -->
+    <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
     <!-- PWA: installable shell (manifest + no-op service worker registered in
          main.ts). Matches the sibling platform app's setup. -->
     <link rel="icon" href="/icon-192.png" />

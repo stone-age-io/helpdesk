@@ -1,0 +1,1 @@
+import{n as e}from"./format-CNfa7MMC.js";function t(t){return e(Date.now(),t)}export{t};
