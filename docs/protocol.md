@@ -38,7 +38,7 @@ leaves room for `comment` / `resolve` later without a subject migration.
   "title": "pump fault on line 3",          // required
   "body": "vibration sensor overcurrent",   // optional
   "priority": "high",                       // optional: low|normal|high|urgent (else normal)
-  "dedupe_key": "pump-7-overcurrent",       // optional: idempotency key, unique per ticket
+  "dedupe_key": "pump-7-overcurrent",       // optional: idempotency key, unique across ALL customers
   "thing": "pump-7",                        // optional: free-text, stored as thing_note
   "thing_code": "PUMP-7",                   // optional: resolves to a things row (this customer)
   "location": "line-3",                     // optional: free-text, stored as location_note
@@ -55,14 +55,18 @@ Behavior:
   replayed.
 - **`dedupe_key`**: if a ticket with the same key exists, the event is
   acked without creating a second ticket. Publishers should stamp a stable
-  key for retry loops and flapping sources.
+  key for retry loops and flapping sources. The key space is **global**
+  (`tickets.dedupe_key` is one partial unique index, not per customer), so a
+  key another customer — or the webhook, or an email `Message-ID` — already
+  used swallows this event too; namespace keys (e.g. prefix the device or org).
 - **`thing`** and **`location`** are free text, stored as `thing_note` and
   `location_note`. **`thing_code`** and **`location_code`** are the platform
   join keys: each resolves against this customer's `things` / `locations` rows
   (matched on `code`) and sets the corresponding relation — the queryable
-  reporting axes. An unresolved code is logged and kept as a breadcrumb in its
-  own note field (no row is auto-created), so the operator can add the missing
-  row and later events resolve.
+  reporting axes. An unresolved code is logged and, when the payload's matching
+  free-text field is empty, kept as a breadcrumb in the note field (supplied
+  `thing` / `location` text wins over the code). No row is auto-created, so the
+  operator can add the missing row and later events resolve.
 
   The two resolve independently: a resolved `thing` does **not** backfill the
   ticket's `location`, even though the thing record has one. One payload field
@@ -76,9 +80,12 @@ Behavior:
   or inactive key is ignored (the ticket is still created, unclassified) —
   the same graceful-degradation stance as an unmapped org.
 - The full hub-side subject is recorded on the ticket as `origin_subject`;
-  `source` is `nats`.
-- Malformed payloads and unsupported verbs are logged and acked (terminal —
-  redelivery cannot fix them).
+  `source` is `nats`. The ticket lands as `type = reactive`, status `open`.
+  The staff triage fields (`type`, `project`, `due_at`, `estimated_minutes`,
+  assignee) are not part of this contract; unknown payload fields are ignored.
+- Malformed payloads (including a missing/blank `title`) and unsupported verbs
+  are logged and acked (terminal — redelivery cannot fix them). A transient DB
+  failure is the only case that NAKs for redelivery.
 
 ### Stream / consumer (helpdesk-owned)
 
@@ -150,16 +157,24 @@ accepts both, and an outbound event can never be re-ingested as a ticket.
     "source": "nats", "url": "https://helpdesk.example.com/t/rec123",
     "assignee": { "name": "Sam Staff", "email": "sam@msp.example" }
   },
-  "change": { "field": "status", "from": "open", "to": "in_progress" },
-  "comment": null,
-  "visit": null
+  "change": { "field": "status", "from": "open", "to": "in_progress" }
 }
 ```
 
 - `customer.platform_org_id` is omitted when the customer isn't mapped.
-- `change` is present only for `ticket.status_changed`; `comment` only for
-  `ticket.commented`; `visit` only for the `visit.*` events (`visit.scheduled`,
-  `visit.rescheduled`, `visit.canceled`, `visit.completed`).
+  `customer.id` is the helpdesk record id; the tenant code is in the subject,
+  not the payload.
+- Optional blocks are **omitted**, never `null`: `change` is present only for
+  `ticket.status_changed`; `comment` (`author_name`, `body`, `by_staff`) only
+  for `ticket.commented`; `visit` only for the `visit.*` events
+  (`visit.scheduled`, `visit.rescheduled`, `visit.canceled`, `visit.completed`).
+  Likewise `ticket.type`, `ticket.url` (empty when the PocketBase application
+  URL isn't set) and `ticket.assignee` drop out when empty.
+- On `visit.*` events `ticket.assignee` is the visit's **technician**, not the
+  ticket's assignee (when the visit has one).
+- The full event set is the eight notification types: `ticket.created`,
+  `ticket.assigned`, `ticket.commented`, `ticket.status_changed`, and the four
+  `visit.*` above. Internal (staff-only) comments emit no `ticket.commented`.
 - The `visit` block carries `scheduled_at`, `assignee_name`, `location`, `notes`
   as available, plus `old_scheduled_at` (only on `visit.rescheduled`) and
   `completed_at` (only on `visit.completed`). Empty fields are omitted.
@@ -168,6 +183,13 @@ accepts both, and an outbound event can never be re-ingested as a ticket.
   signal that on-site work finished; the other visit events also email.
 - The consumer is MSP-internal, so staff identity (assignee) is included — the
   portal's roster-hiding does not apply here.
+- The per-recipient email rules (don't mail a comment's author) do not touch
+  this channel, but a **silenced save** does: a ticket update sent with
+  `X-Helpdesk-Quiet: 1`, and server-side changes marked with
+  `notifications.Suppress` (the requester-reply auto-reopen, the
+  `auto_close_resolved` cron, demo seeding), skip the whole event — no email
+  *and* no publish. A consumer tracking status should not assume it sees every
+  transition; `ticket_events` is the complete record.
 
 ### Stream (helpdesk-owned)
 
@@ -191,9 +213,9 @@ Content-Type: application/json
 `{token}` is the per-customer shared secret (`customers.webhook_token`).
 Admin staff reveal or rotate it from the customer detail view (server
 routes: `POST /api/helpdesk/customers/{id}/webhook-token`, add `?rotate=1`
-to regenerate). Possession of the token both authenticates the caller and
-selects the customer. This route is the future email-provider
-(Postmark/Mailgun) integration point.
+to regenerate; both return `{"token": "..."}`, non-admins get `403`). Possession
+of the token both authenticates the caller and selects the customer. Email
+providers do **not** use this route — they have their own, below.
 
 ### Payload
 
@@ -203,7 +225,7 @@ selects the customer. This route is the future email-provider
   "body": "3rd floor copy room",         // optional
   "priority": "urgent",                  // optional: low|normal|high|urgent (else normal)
   "requester_email": "rita@acme.com",    // optional: links an existing portal account
-  "dedupe_key": "alarm-1234",            // optional: idempotency key
+  "dedupe_key": "alarm-1234",            // optional: idempotency key (global key space)
   "category": "hardware",                // optional: a ticket_categories key (unknown ignored)
   "thing": "printer-3f",                 // optional: free-text (thing_note)
   "thing_code": "HQ-PRN-3",              // optional: resolves to a things row (this customer)
@@ -235,6 +257,11 @@ scoping, as the NATS intake).
 The free-text thing field is spelled **`thing`**, matching the NATS contract —
 it was `asset` before the `things` collection existed.
 
+As on NATS, the ticket lands as `type = reactive` and the staff triage fields
+are not accepted (unknown JSON fields are ignored). `dedupe_key` shares the one
+global key space with NATS and email (see above), and the duplicate lookup is
+not customer-scoped — namespace your keys.
+
 ## HTTP inbound (email provider)
 
 ```
@@ -244,9 +271,11 @@ Content-Type: application/json
 ```
 
 A distinct intake for **email**: an email-parsing provider (Postmark to start)
-receives forwarded mail, parses the MIME, and posts its own JSON here. The route
-exists only when `inbound.secret` is configured; the caller authenticates with
-that secret via Basic auth (optionally IP-pinned to `inbound.allowed_ips`).
+receives forwarded mail, parses the MIME, and posts its own JSON here. Each
+adapter registers its own literal path — today only `/inbound/email/postmark`
+exists. The route exists only when `inbound.secret` is configured; the caller
+authenticates with that secret as the Basic-auth **password** (the username is
+ignored), optionally IP-pinned to `inbound.allowed_ips` (IPs or CIDRs).
 Unlike the token webhook, the tenant is **not** in the URL — it is resolved from
 the sender. The full design (forwarding, threading, resolution ladder,
 provider-agnostic core) is in [`email-ingestion.md`](email-ingestion.md); the
@@ -254,16 +283,23 @@ wire contract:
 
 - The provider's payload is provider-specific (a thin adapter maps it to an
   internal `NormalizedInbound`). For Postmark the fields read are `MessageID`,
-  `FromFull`, `Subject`, `StrippedTextReply`/`TextBody`, and `Headers`. Ingestion
-  is text-only; attachments are ignored (a non-goal — see `email-ingestion.md`).
+  `FromFull` (falling back to `From`), `Subject`, `StrippedTextReply`/`TextBody`,
+  and `Headers` (`Message-ID` as a fallback id, `X-Spam-Status`,
+  `Authentication-Results`, `Auto-Submitted`, `Precedence`). Ingestion is
+  text-only; attachments are ignored (a non-goal — see `email-ingestion.md`).
+  DKIM is log-only: a `dkim=fail` verdict is logged, never enforced.
 - **Threading:** a `[#N]` token in the subject routes a reply onto ticket N as a
-  public comment (reopening it if `resolved`; a `closed` ticket instead spawns a
-  new one). No token ⇒ a new ticket, `source = email`.
-- **Tenant:** the sender resolves to a customer by exact `users.email`, else by
-  `customers.email_domain` (never a shared provider like gmail.com). Unresolvable
-  ⇒ the message is acked and dropped, not funneled to a catch-all.
+  public comment (reopening it if `resolved` and the sender is a registered user
+  of that ticket's customer; a `closed` ticket instead spawns a new one). No
+  token, or no ticket N ⇒ a new ticket, `source = email`.
+- **Tenant (new tickets):** the sender resolves to a customer by exact
+  `users.email`, else by an active customer's `customers.email_domain` (never a
+  shared provider like gmail.com). Unresolvable ⇒ the message is acked and
+  dropped, not funneled to a catch-all. A threaded reply skips this step — the
+  ticket picks the tenant.
 - **Idempotency:** the email `Message-ID` dedupes both paths (`tickets.dedupe_key`
-  and the hidden `ticket_comments.source_message_id`, each unique).
+  and the hidden `ticket_comments.source_message_id`, each unique). A message
+  with no Message-ID is not deduped.
 
 ### Responses
 
@@ -273,7 +309,10 @@ the provider stops retrying:
 - `200` `{"status": "created|commented|duplicate", "id": "...", "number": 17}` —
   ticket created, reply threaded, or a redelivery deduped.
 - `200` `{"status": "ignored", "reason": "..."}` — deliberately dropped
-  (unresolved tenant, spam, or an auto-reply/loop).
-- `401` — missing/invalid Basic-auth secret. `403` — caller IP not allowed.
-- `422` — undecodable JSON body.
+  (unresolved tenant, spam, or an auto-reply/loop). `reason` is one of
+  `unresolved customer`, `spam`, `empty from`, `system sender`,
+  `auto-submitted`, `bulk precedence`.
+- `403` — caller IP not allowed (checked first). `401` — missing/invalid
+  Basic-auth secret.
+- `400` — undecodable JSON body.
 - `500` — genuine server fault (the provider should retry).

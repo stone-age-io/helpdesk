@@ -227,24 +227,30 @@ only if you've opted that customer in.
 They also get both catalog axes as browsable surfaces — **Locations** and
 **Things**, each with a read-only detail view. A location shows what's installed
 there, who's coming out, and its recent tickets; a thing answers "is this one a
-repeat offender" with open/total counts and its own history. Both withhold what
-is ours rather than theirs: the access notes our technicians write for each
-other, our service notes on a thing, and — as everywhere in the portal — the
-name of whoever is coming.
+repeat offender" with open/total counts and its own history. Both show the
+record's type-defined `metadata` in full — serial, firmware, square footage are
+facts about their own property — and withhold what is ours rather than theirs:
+the access notes our technicians write for each other, our service notes on a
+thing, and — as everywhere in the portal — the name of whoever is coming.
+
+Their filters live in the URL too (tickets, visits, projects, things and the
+summary), so a filtered list or a quarter's summary is a link they can send.
 
 ### Agents — the staff desk (`/staff`)
 
 The working day:
 
-1. **Dashboard** — where `/staff` lands you: counts by status, the urgent and
-   unassigned piles, how much of the backlog is going stale, and inflow over
-   the last eight weeks. Every number is a link into the queue that produced
-   it, so it's a set of doors rather than a scoreboard.
-2. **Queue** — filter by status, priority, assignee, customer, category, location,
-   thing, and backlog age. Save the filters you use daily as views. Filters
-   live in the URL on the queue, Reports and Dispatch, so a filtered board is a
-   link you can send someone — and opening a ticket and pressing Back returns
-   you to the filters you had, not a reset list.
+1. **Dashboard** — where `/staff` lands you: counts by status and the urgent
+   and unassigned piles across the top, your own active tickets in the main
+   column, and a rail beside them with how much of the backlog is going stale,
+   what's due, and inflow over the last eight weeks. Every tile, age and due
+   count is a link into the queue that produced it, so it's a set of doors
+   rather than a scoreboard.
+2. **Queue** — filter by status, priority, assignee, customer, category,
+   location, thing, type, due date, and backlog age. Save the filters you use
+   daily as views. Filters live in the URL on the queue, Reports and Dispatch,
+   so a filtered board is a link you can send someone — and opening a ticket
+   and pressing Back returns you to the filters you had, not a reset list.
 3. **Triage** — set category, type, project, and an effort estimate. If a change
    shouldn't email anyone, the UI can send it quietly.
 4. **Work it** — comment publicly (tick *Request a reply* when you genuinely
@@ -267,10 +273,11 @@ Complete**. Completing stamps the visit and can close out the timer into a time
 entry in one action.
 
 The phone bar is `Today · Schedule · Tickets · Time · More`. Five thumb targets
-is the most a phone takes and there are eight destinations, so the fifth slot is
-a door rather than a place: **More** holds Scan, Locations and Things under "Look
-up", and Projects under "Work" (the one destination read *between* jobs rather
-than during one). On a desktop the sidebar lists all of it flat.
+is the most a phone takes and there are more destinations than that, so the
+fifth slot is a door rather than a place: **More** holds Scan, Locations and
+Things under "Look up", and Projects and Maintenance under "Work" (read
+*between* jobs rather than during one). On a desktop the sidebar lists all of
+it flat.
 
 Locations and Things offer a **My scheduled locations** toggle that narrows the roster
 to the customers this tech has scheduled visits at. It only appears if they have
@@ -342,21 +349,23 @@ A good first lap, as Maya:
 4. Open a ticket with a location and a thing, and follow its links out into the
    filtered history for each.
 5. **Dispatch** — the needs-scheduling bucket, and the day-grouped board.
-6. **Maintenance** — five seeded plans. Two are due, so quit the server and run
-   `./helpdesk maintenance-run`; it opens a `planned` ticket for each and steps
-   both plans forward. Run it again and nothing happens — an occurrence can only
-   generate once. Now look at *Clinic HVAC filter change*: it repeats from last
-   completion, so it reads "awaiting completion" and names the open ticket.
-   Resolve that ticket and the plan's next date lands 60 days out.
+6. **Maintenance** — five seeded plans, one paused. Two are due, so quit the
+   server and run `./helpdesk maintenance-run`; it opens a `planned` ticket for
+   each and steps both plans forward. Run it again and nothing happens — an
+   occurrence can only generate once. Now open *Clinic HVAC filter change*: it
+   repeats from last completion but isn't due for nine days, so **Edit** its
+   next due to today and run the command once more. The roster now reads
+   "awaiting completion" and the plan's page names the open ticket. Resolve
+   that ticket and the plan's next date lands 60 days out.
    Back on the **Dashboard**, the *Due* card counts what you just made, and each
    number opens the queue filtered to exactly those tickets.
 7. **Things** → open one with a code → **Label**. Switch between 2″ × 1″ and
    4″ × 2″ and tick *RFID stock* to reveal the inlay keep-out the artwork
    straddles. Then **Scan** → type that code in the manual field: one match goes
-   straight to the record. Try `DOOR-1`-style codes shared across customers and
-   you'll get the picker instead.
+   straight to the record. The demo codes are all distinct, so to see the
+   picker, give a thing at another customer that same code and scan again.
 8. Sign in as Sam and the shell changes shape: today's visits, and **More** →
-   Locations / Things with the *My scheduled locations* toggle narrowing to just his
+   Locations / Things with the *My scheduled locations* toggle narrowing to just Sam's
    customers.
 9. Sign in as Regina and compare: same tickets, no internal notes, no
    technician names, and a service summary with billable hours because

@@ -17,7 +17,10 @@ Everything here is **best-effort and never blocks a write**:
   never fails the ticket/comment/visit save.
 - Every attempt (success or failure), on either channel, is written to
   `notification_send_log` (visible in the SPA, `channel` = `email` | `nats`)
-  so you can answer "did that go out?".
+  so you can answer "did that go out?". Email writes one row per recipient;
+  `status` is `sent` | `failed` | `skipped` (an email whose recipients resolve
+  to nobody, or a NATS publish with no customer code, is a `skipped` row). A
+  NATS channel with no connection writes nothing — nothing was attempted.
 
 ## Channels
 
@@ -33,11 +36,15 @@ The same eight events drive both channels; each template gates them
   code is **skipped, not published under a fallback**, and the reason lands on
   the send-log row. No template text is involved — the envelope is a
   versioned, code-defined contract for machine consumers, so a template edit
-  can't produce malformed JSON. Off by default; opt in per event.
+  can't produce malformed JSON. Off by default (except `visit.completed`,
+  below); opt in per event.
 
-A failure on one channel never suppresses the other. The human-oriented
-suppression rules below apply to **email**; the NATS channel publishes the
-event regardless (an audit/metrics consumer generally wants every event).
+A failure on one channel never suppresses the other. Of the suppression rules
+below, **author-side blanking** is email-only — it narrows the recipient list,
+so the NATS channel still publishes the comment event. The **quiet header** and
+**`Suppress`** are not: they stop the hook before the event is dispatched at
+all, so a silenced save is silent on **both** channels (an auto-closed ticket
+publishes no `ticket.status_changed`, for instance).
 
 ## Events
 
@@ -47,7 +54,7 @@ condition; visit events fire on **transitions**, not raw saves.
 | Event                    | Fires when                                                        | Default recipients      |
 | ------------------------ | ----------------------------------------------------------------- | ----------------------- |
 | `ticket.created`         | a ticket is created                                               | requester + all staff   |
-| `ticket.assigned`        | `assignee` is newly set or changed                                | assignee                |
+| `ticket.assigned`        | `assignee` is newly set or changed on an **update** (a ticket created already assigned sends only `ticket.created`) | assignee |
 | `ticket.commented`       | a **public** comment is created (internal notes never send)       | requester + assignee\*  |
 | `ticket.status_changed`  | `status` changes                                                  | requester               |
 | `visit.scheduled`        | a visit becomes `scheduled` (created scheduled, or requested→scheduled) | requester + assignee |
@@ -110,16 +117,20 @@ Four independent mechanisms, all designed to prevent noise:
    mail 150 fictional people. It originally guarded only the ticket-update hook,
    which made it a trap — the name promises more than one event.
 4. **Day-keyed dedupe** — `SendIfFirst` writes `notification_dedupe` with a
-   unique index on (event, ref, UTC-day), so a flapping source can't email
-   the same person about the same thing twice in a day.
+   unique index on (event, ref, UTC-day) and dispatches (both channels) only
+   if its insert wins, so a flapping source can't announce the same thing twice
+   in a day. It is plumbing, not yet policy: **no built-in hook calls it today**
+   — every event goes through plain `Send`. A machine publisher's retries are
+   absorbed earlier, by `tickets.dedupe_key`, which stops the duplicate ticket
+   (and so its `ticket.created`) from existing at all.
 
 ### The deliberate non-suppression
 
 `internal/maintenance` opens tickets from a cron and pointedly does **not**
-call `Suppress` — the opposite call from auto-close, which sits two crons
-earlier in the same 03:xx window. Auto-close is administrative tidying nobody
-needs to hear about; a newly opened preventive ticket is real news for whoever
-has to do the work. It fires `ticket.created` like any other ticket, and because
+call `Suppress` — the opposite call from auto-close, which runs fifteen
+minutes earlier (03:30) in the same 03:xx window. Auto-close is administrative
+tidying nobody needs to hear about; a newly opened preventive ticket is real
+news for whoever has to do the work. It fires `ticket.created` like any other ticket, and because
 a maintenance plan has no requester, that event's requester recipient resolves
 to nothing exactly as it does for a machine ticket — so only staff are mailed.
 `internal/maintenance/notify_test.go` pins this, so adding a `Suppress` here
@@ -129,13 +140,20 @@ to nothing exactly as it does for a machine ticket — so only staff are mailed.
 
 Go `text/template`. Fields come from `TicketContext`
 (`internal/notifications/context.go`): `.Ticket.{Number,Title,Body,Status,
-Priority,Source,URL,OldStatus}`, `.Customer`, `.Requester.Name`,
+Priority,Source,Type,URL,OldStatus}`, `.Customer`, `.Requester.Name`,
 `.Assignee.Name`, `.Comment.{AuthorName,Body}`, `.Visit.{ScheduledAt,
-Location,Notes,AssigneeName,OldScheduledAt}`. A missing relation renders as a
+Location,Notes,AssigneeName,OldScheduledAt,CompletedAt}`. `OldStatus` is set
+only on `ticket.status_changed` and `OldScheduledAt` only on
+`visit.rescheduled`; `CompletedAt` is empty until the visit is completed.
+`.Visit.Location` is the visit's free-text directions, not the ticket's
+`location` record. A missing relation renders as a
 zero value (a machine ticket with no requester simply renders nothing for
 that side), so guard optional blocks with `{{if ...}}`.
 
-Small FuncMap: `formatTime`, `statusLabel`, `pluralize`.
+Small FuncMap: `formatTime` (a timestamp in the **server's local timezone**,
+`Jan 2, 2006 3:04 PM`; empty for a blank value), `statusLabel` (`in_progress`
+→ `in progress`), and `pluralize N "noun"` (`1 visit`, `3 visits`). The same
+map serves subject and body.
 
 `.Ticket.URL` is the role-neutral deep link `{AppURL}/t/{id}` — the SPA
 router forwards `/t/{id}` to the staff or portal detail view by who is logged
@@ -152,13 +170,17 @@ Admin staff only, under `/api/helpdesk/notifications`:
   the templates before saving, so a bad `{{...}}` is rejected at edit time
   rather than at send time.
 - `GET  /api/helpdesk/notifications/{event_type}/defaults` — the compiled-in
-  copy (backs "Reset to defaults").
+  subject, body and default recipients (backs "Reset to defaults"; read-only —
+  the admin still saves).
 - `GET  /api/helpdesk/notifications/{event_type}/nats-sample` — the subject
   pattern + a representative JSON envelope for the event's NATS channel,
   rendered from the publish code itself (`SampleEnvelope`) so it can't drift.
   Backs the "see event format" reference drawer next to the NATS toggle.
-- `POST /api/helpdesk/notifications/{event_type}/test` — render the current
-  draft and send a test to the caller.
+- `POST /api/helpdesk/notifications/{event_type}/test` — render the draft
+  (unsaved `subject`/`body` in the request body, else the stored row) against
+  built-in sample data and mail it to the calling admin, subject prefixed
+  `[TEST]`. Synchronous, email-only, and **not** written to the send log; an
+  SMTP failure comes back in-band as `{sent: false, error}`.
 
 ## Retention
 

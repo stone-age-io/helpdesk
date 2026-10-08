@@ -1,12 +1,13 @@
 # Data model & access rules
 
-The schema is Go-as-code in `migrations/`. `1800000000_init.go` creates every
-collection and sets the baseline access rules; later timestamped migrations
-amend specific pieces. This doc is the human-readable summary — the
+The schema is Go-as-code in `migrations/`. `1800000000_init.go` creates the
+core collections and sets the baseline access rules; later timestamped
+migrations add collections and amend specific pieces (the latest one to touch a
+rule wins). This doc is the human-readable summary — the
 migrations are the source of truth.
 
 Tenancy is **plain PocketBase collection rules**, not pb-tenancy. Every rule
-is built from four constants in `internal/authz`:
+is built from three constants in `internal/authz`:
 
 | Constant        | Expands to                                                     |
 | --------------- | -------------------------------------------------------------- |
@@ -29,7 +30,8 @@ rules by `@request.auth.collectionName`.
   can read the roster (needed for assignee pickers); only admins
   create/delete. A staff member may self-update profile fields (`name`,
   `avatar`) but cannot change their own `role` or `active` (blocked by an
-  `:isset` body guard).
+  `:isset` body guard). `ManageRule: AdminRule` (`1802000000`), so admin staff
+  can set an account's email/password from the SPA without being PB superusers.
 
   `field` is **not a permission boundary** — a field agent is ordinary staff,
   cross-customer, subject to every rule an `agent` is, and `AdminRule` still
@@ -41,8 +43,9 @@ rules by `@request.auth.collectionName`.
 - **`users`** — requesters (the repurposed default PB collection), scoped to
   one customer. Fields: `customer` (relation, **required**), `active`,
   `avatar` (single image, optional). `AuthRule: active = true && customer != ''`.
-  A requester sees only themselves in the collection; only admins
+  A requester sees only themselves in the collection (staff see all); only admins
   create/delete; self-update cannot reassign `customer` or toggle `active`.
+  `ManageRule: AdminRule`, as on `staff`.
   Also carries `phone` (added `1812000000`) — the requester's direct line,
   self-editable in the profile modal; the number a dispatcher/tech calls.
 
@@ -97,21 +100,24 @@ expanded — the page — and this route never grows a second copy of it.
 ### `tickets` — the unit of work
 
 `number` (unique int, assigned by the create hook), `customer` (required),
-`title`, `body`, `status` (`open` | `in_progress` | `waiting` | `resolved` |
-`closed`), `priority` (`low` | `normal` | `high` | `urgent`), `assignee`
-(→ staff), `requester` (→ users, optional — machine tickets have none),
-`source` (`portal` | `agent` | `nats` | `webhook` | `email` | `maintenance`;
+`title` (required), `body`, `status` (`open` | `in_progress` | `waiting` |
+`resolved` | `closed`, default `open`), `priority` (`low` | `normal` | `high` |
+`urgent`, default `normal`), `assignee` (→ staff), `requester` (→ users,
+optional — machine tickets have none), `source` (`portal` | `agent` | `nats` |
+`webhook` | `email` | `maintenance`, default `agent`;
 `email` added `1823000000`, `maintenance` — the preventive-maintenance
 scheduler — added `1829000000`, since none of the others honestly described a
 ticket the cron opened), `origin_subject` (the full hub-side NATS subject,
 provenance for machine tickets), `dedupe_key` (unique when set — ingestion idempotency, also
-carries the inbound email `Message-ID`), `attachments` (≤6 files),
+carries the inbound email `Message-ID`), `attachments` (≤6 files, 10 MB each),
 `category` (→ ticket_categories, optional — see below), `type` (`reactive` |
-`planned`, default `reactive` via the create hook),
-`project` (→ projects, optional — groups install/reactive work),
+`planned`, default `reactive`; renamed from `issue` | `install` in
+`1826000000`), `project` (→ projects, optional — groups planned/reactive work),
 `location` (→ locations, optional — the structured place, and the reporting
 axis), `location_note` (free text — dispatch hints, or the unmatched-code
-fallback from machine intake). All added/changed `1812000000`.
+fallback from machine intake). `type`, `project`, `location` and
+`location_note` were added/changed in `1812000000`; the defaults above are set
+by the `internal/tickets` create hook when a field is empty.
 `thing` (→ things, optional — the structured thing, the second reporting axis)
 and `thing_note` (free text — a scratch description, or the unmatched-code
 fallback), which replaced the free-text `asset` in `1824000000`.
@@ -219,8 +225,11 @@ create/update/delete `AdminRule`.
 ### `ticket_comments` — the thread
 
 `ticket` (required, cascade-delete), `author_staff` **or** `author_user`
-(exactly one, matching the author's class), `body`, `internal` (bool —
-staff-only working notes), `attachments` (≤6 files), `source_message_id`
+(exactly one, matching the author's class), `body` (required), `internal`
+(bool — staff-only working notes), `attachments` (≤6 files, 10 MB each),
+`requests_reply` (bool, added `1819000000` — staff tick *Request a reply*; only
+a public comment by a staff author sets `tickets.awaiting_requester`, so the
+flag is inert on a requester's comment), `source_message_id`
 (hidden text, unique when set, added `1823000000` — the inbound email
 `Message-ID`, so a redelivered reply can't post a duplicate comment; empty for
 UI/portal comments).
@@ -245,15 +254,16 @@ One row per workflow-field change: `ticket` (cascade), `field`, `old_value`,
 `new_value` (stored already human-readable), `actor_staff` / `actor_user`,
 `created`. Written by `internal/activity`. Audited fields: `status`,
 `priority`, `assignee` plus the classification/grouping fields `category`,
-`type`, `project`, `location` — relation values resolve to a label at write
-time (category/location name, project `#N Title`).
+`type`, `project`, `location`, `thing`, and the target date `due_at` — relation
+values resolve to a label at write time (category/location/thing name, project
+`#N Title`).
 
 Rules: read `StaffRule || (RequesterRule && field = 'status' &&
 ticket.customer = @request.auth.customer)` — staff see the whole trail;
 requesters see only **status** transitions on their own tickets, for the
 portal progress timeline (amended by `1808000000`). All other events —
 priority/assignee (staff names — the roster we hide) and the newer
-category/type/project/location — never match, and the
+category/type/project/location/thing/due_at — never match, and the
 actor relations stay staff-gated so an actor expand is dropped for a
 requester. No create/update/delete API rule — only the server hooks write
 here, via `app.Save`, which bypasses collection rules, so the trail can't be
@@ -261,9 +271,9 @@ forged through the API.
 
 ### `time_entries` — labor log
 
-`ticket` (cascade), `staff` (required), `minutes` (int ≥ 1), `work_date`,
-`note`, `visit` (→ visits, optional — added `1809000000`), `non_billable`
-(bool, default false — added `1820000000`).
+`ticket` (required, cascade), `staff` (required), `minutes` (required,
+int ≥ 1), `work_date` (required), `note`, `visit` (→ visits, optional — added
+`1809000000`), `non_billable` (bool, default false — added `1820000000`).
 
 The ticket is the **canonical labor ledger**: `ticket` is required, so the
 ticket total is always `sum(minutes)` filtered by ticket. `visit` is an
@@ -287,9 +297,9 @@ self; update/delete is own-entry-or-admin. Requesters never see time entries.
 
 ### `time_sessions` — running timer (added `1811000000`)
 
-`staff` (required), `ticket` (cascade), `visit` (→ visits, optional, no
-cascade), `started_at`, `note`. A row's existence means "this agent has a
-timer running" — at most **one per agent**, enforced by a unique index on
+`staff` (required), `ticket` (required, cascade), `visit` (→ visits, optional,
+no cascade), `started_at` (required), `note`. A row's existence means "this
+agent has a timer running" — at most **one per agent**, enforced by a unique index on
 `staff`. Stopping or canceling **deletes** the row; the durable record is the
 `time_entries` row that `internal/timers` mints from it on stop. So this is the
 ergonomic front-end to the labor log, *not* a second ledger — it holds only the
@@ -309,11 +319,14 @@ self, update/delete own-or-admin. Requesters never see it.
 
 ### `visits` — lite dispatch (relaxed `1803000000`, extended `1804000000`)
 
-`ticket` (cascade), `assignee` (→ staff, optional), `scheduled_at`
-(optional), `status` (`requested` | `scheduled` | `completed` | `canceled`),
+`ticket` (required, cascade), `assignee` (→ staff, optional), `scheduled_at`
+(optional), `status` (`requested` | `scheduled` | `completed` | `canceled`; an
+empty status defaults to `scheduled` if a time is set, else `requested`),
 `location` (free text — dispatch directions; the structured location comes from
-the ticket's `location` relation), `completed_at`, `notes`, `duration_minutes`
-(int, optional — added `1809000000`).
+the ticket's `location` relation), `completed_at` (stamped by the guard when the
+visit enters `completed` — a supplied value is kept, so it can be back-dated —
+and cleared if it leaves), `notes`, `duration_minutes` (int, optional — added
+`1809000000`).
 
 `duration_minutes` is the **scheduled** block length (planned), paired with
 `scheduled_at` to make a visit a real calendar block rather than a point in
@@ -432,8 +445,12 @@ readable; create/update/delete `AdminRule`, matching `ticket_categories`.
 open — plus the triage it stamps on every one: `category`, `assignee`,
 `priority`, `estimated_minutes`, and the `thing` / `location` / `project` it is
 about (all optional; no cascade delete, so retiring a thing never deletes the
-schedule that services it). The schedule itself is `interval_days` (required,
-≥ 1), `anchor`, `lead_time_days`, `next_due` and `paused`.
+schedule that services it). `priority` uses the ticket values and defaults to
+`normal`; `estimated_minutes` is int ≥ 1. The schedule itself is
+`interval_days` (required, int ≥ 1), `anchor` (`schedule` | `completion`,
+default `schedule` — both defaults set by the `internal/maintenance` create
+hook), `lead_time_days` (int ≥ 0 — generate this many days before `next_due`;
+`0` = on the day), `next_due` (date) and `paused` (bool).
 
 Like `projects`, this is a planning layer **above** the ticket → visit → time
 ledger: its only output is an ordinary ticket, and the collection could be
@@ -512,6 +529,12 @@ became `customers.code` in `1828000000`, and a customer without one is skipped
 rather than published under a fallback);
 `notification_send_log.channel` (`email` | `nats`) records which path each row
 is for.
+
+Rules: `notification_templates` list/view/update `AdminRule`, with no
+create/delete API rule (rows are seeded by migrations; new event types ship as
+code). `notification_dedupe` and `notification_send_log` are read-only
+`AdminRule` — only the notifier writes them (via `app.Save`) and the retention
+cron prunes them.
 
 ## Idempotency & uniqueness indexes
 

@@ -33,9 +33,12 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   `field`, where `field` steers the UI to a mobile on-site shell and is *not* a
   permission boundary) and requesters (`users`, scoped to one customer). One
   login page; the router shows the right shell.
-- **Staff workspace**: a dashboard landing (queue counts, backlog aging, weekly
-  inflow); a ticket queue with search, status/priority/assignee/customer/
-  category/location/thing filters, saved views, bulk assign/status, and CSV export;
+- **Staff workspace**: a dashboard landing (status/urgent/unassigned tiles over
+  your own active tickets, with backlog age, due dates and weekly inflow in a
+  rail — each tile and age/due count opens the queue pre-filtered to it); a
+  ticket queue with search, status/priority/assignee/customer/category/
+  location/thing/type/due/backlog-age filters, saved views, bulk
+  assign/status, and CSV export;
   a Dispatch board and a mobile-first field-work view; a directory of customers,
   locations, things and projects; a reports view (time & visits by
   tech/customer/location/thing/thing-type, billable vs. written-off, ticket
@@ -44,15 +47,18 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   templates.
 - **Field shell**: the same `/staff/*` routes in phone-shaped chrome —
   `Today · Schedule · Tickets · Time · More`, where **More** holds the scanner,
-  Locations and Things. Locations and Things offer a *My scheduled locations* narrowing
-  that only appears for staff who actually have scheduled visits, so it can
-  never leave a dispatcher staring at an empty roster.
+  Locations and Things, plus Projects and Maintenance. Locations and Things
+  offer a *My scheduled locations* narrowing that only appears for staff who
+  actually have scheduled visits, so it can never leave a dispatcher staring
+  at an empty roster.
 - **Requester portal**: a company dashboard, a searchable list of their own
   tickets, threaded ticket detail with attachments, a new-ticket form that can
-  name the location and thing, filters and Locations / Things pages over those two axes, a
-  Service Summary report (tickets, visits and — where the customer has opted in
-  — billable hours, by location, thing and category), plus read-only visit and
-  project views. The MSP roster is never shown.
+  name the location and thing, Locations and Things catalog pages each with a
+  read-only detail view (the record's `metadata` in full; our internal `notes`
+  withheld), filters over both axes that ride the URL, a Service Summary
+  report (tickets, visits and — where the customer has opted in — billable
+  hours, by location, thing and category), plus read-only visit and project
+  views. The MSP roster is never shown.
 - **Ticketing core**: sequential ticket numbers, status/priority/assignee, an
   admin-managed category, a structured location (`location`) and thing (`thing`)
   each with a free-text fallback, an optional effort estimate, comment threads
@@ -123,16 +129,18 @@ five-minute tour on seeded demo data. The rest of `docs/` is reference.
   provider's webhook — a reply carrying the `[#N]` subject token becomes a
   comment, anything else a new ticket. All idempotent. The helpdesk holds no
   mailbox credentials. See [docs/protocol.md](docs/protocol.md) and
-  [docs/email-ingestion.md](docs/email-ingestion.md). (A fifth `source`,
-  `maintenance`, is written by the scheduler above rather than arriving from
-  outside.)
+  [docs/email-ingestion.md](docs/email-ingestion.md). (Beside these and the
+  human `portal` / `agent`, a sixth `source`, `maintenance`, is written by the
+  scheduler above rather than arriving from outside.)
 - **Demo seeding**: `./helpdesk seed-demo --confirm` fills a showcase instance
   with a backdated, idempotent ticket history. In-process Go rather than an HTTP
   script because PocketBase's autodate overwrites `created` on save — no
   external client can produce a demo whose ages look real.
 - **Throughout the SPA**: live updates (PocketBase realtime subscriptions),
   light/dark themes, keyboard shortcuts, responsive table-to-card layouts,
-  and self-service profile edits + forgot-password reset.
+  filters that live in the URL on every filtered board (staff queue, Reports,
+  Dispatch; portal tickets, visits, projects, things, Summary), and
+  self-service profile edits + forgot-password reset.
 
 ## Build & run
 
@@ -170,7 +178,8 @@ To fill a showcase instance with realistic, backdated demo data:
 
 `--confirm` is required because the subcommand ships in the production binary.
 It is idempotent and suppresses all notification mail, so re-running it can't
-duplicate records or email 150 fictional people.
+duplicate records or email a few dozen fictional people. `--tickets N` sets the
+ticket count to converge on (default 150).
 
 ```bash
 go test ./...
@@ -179,7 +188,8 @@ go test ./...
 ## Repo layout
 
 ```
-cmd/helpdesk/        PB bootstrap, OnServe wiring, embedded UI, retention cron
+cmd/helpdesk/        PB bootstrap, OnServe wiring, SPA + /branding/* routes,
+                     crons (retention, auto-close, maintenance)
 config/              viper Config (HELPDESK_ env prefix)
 migrations/          Go schema-as-code (collections, rules, seeds)
 internal/
@@ -190,7 +200,7 @@ internal/
   projects/          project numbering + derived crew / rolled-up time
   maintenance/       preventive-maintenance recurrence: the generation sweep,
                      the completion-anchor hook, and `maintenance-run`
-  timeentries/       labor ledger + per-ticket time-total route
+  timeentries/       labor ledger + time-total / time-by-ticket routes
   timers/            start/stop timer → time entry (one open session per agent)
   activity/          ticket_events audit trail (workflow + classification)
   authfix/           auth-default fixups (email visibility on create)
@@ -206,6 +216,7 @@ internal/
   webui/             //go:embed all:public (committed SPA dist)
   testutil/          real-PB-against-t.TempDir() harness + HTTP rule harness
 ui/                  Vue 3 + Vite + Pinia + Tailwind + daisyUI SPA (also a PWA)
+branding.example/    template for the runtime branding overlay
 docs/                overview guide, data model, wire protocol, notifications,
                      config, and the (historical) implementation plans
 ```

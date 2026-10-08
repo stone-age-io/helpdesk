@@ -10,10 +10,19 @@ Two configuration surfaces, deliberately split:
 ## helpdesk.yaml
 
 Search order: `$HELPDESK_CONFIG` (explicit path) → `./helpdesk.yaml` →
-`/etc/helpdesk/helpdesk.yaml`. A missing file is fine — defaults + env
-cover containerized deployments. Every key has an env override with the
-`HELPDESK_` prefix and `.` → `_` (e.g. `nats.creds_file` →
+`/etc/helpdesk/helpdesk.yaml` (the search is by name, so `helpdesk.yml` /
+`.json` / `.toml` are found too). A missing file is fine — defaults + env
+cover containerized deployments — **except** an explicit `$HELPDESK_CONFIG`
+that doesn't exist, which is a startup error. Every key has an env override
+with the `HELPDESK_` prefix and `.` → `_` (e.g. `nats.creds_file` →
 `HELPDESK_NATS_CREDS_FILE`).
+
+List-valued keys (`nats.urls`, `inbound.allowed_ips`) take a
+**whitespace-separated** env value: `HELPDESK_INBOUND_ALLOWED_IPS="192.0.2.10
+198.51.100.0/24"`. A comma-joined value arrives as one entry. For `nats.urls`
+that happens to work (the URLs are re-joined with commas for the NATS client),
+but for `inbound.allowed_ips` it is an unparseable entry, which is dropped —
+and an allowlist with nothing parseable left in it **allows every IP**.
 
 ```yaml
 # PocketBase data directory (SQLite database, uploads).
@@ -23,8 +32,9 @@ data_dir: pb_data
 branding:
   dir: ""                        # host dir of theme.css / logo.svg / branding.json
 
-# Auto-close tickets left `resolved` (untouched) this many days, via a daily
-# cron. 0 disables it (tickets then close only when staff close them by hand).
+# Auto-close tickets left `resolved` this many days, via a daily cron. Measured
+# from `resolved_at`, so an unrelated edit while resolved doesn't reset the
+# clock. 0 disables it (tickets then close only when staff close them by hand).
 # The window is the grace period in which a requester reply reopens the ticket.
 auto_close_resolved_days: 7      # env HELPDESK_AUTO_CLOSE_RESOLVED_DAYS
 
@@ -42,7 +52,7 @@ nats:
 inbound:
   secret: ""                     # webhook Basic-auth password; empty ⇒ disabled
   allowed_ips: []                # optional: restrict to the provider's egress ranges (IPs or CIDRs)
-  # reply_to: ""                 # escape hatch; unset ⇒ the PB sender address is the intake mailbox
+  # reply_to: ""                 # reserved: read but NOT wired in v1 — replies thread via the PB sender address
 ```
 
 ### Branding overlay
@@ -62,7 +72,10 @@ empty `theme.css` / `{}` `branding.json` so a stock install never 404s
 | the logo (e.g. `logo.svg`) | an image | replaces the built-in mark; `.brand-logo-img` is a CSS hook for per-theme swaps. |
 
 Copy [`branding.example/`](../branding.example) to the host (e.g.
-`/etc/helpdesk/branding/`), add your `logo.svg`, and set `branding.dir`.
+`/etc/helpdesk/branding/`), add your `logo.svg`, set `appName`, and set
+`branding.dir`. Its `branding.json` ships `"appName": "Service Desk"`, and any
+`appName` counts as an operator choice — left as-is it replaces the portal's
+stock "Support" too (see below).
 
 **Where `appName` lands.** Each shell has its own stock wordmark — the staff and
 field apps say "Service Desk", the requester portal says "Support" — because on
@@ -98,18 +111,26 @@ Setting `nats.urls` without `nats.creds_file` is a startup error. A broker
 that is down at boot is **not** an error: the app logs, serves, and the
 durable consumer resumes when connectivity returns.
 
-Per-customer mapping: set `customers.platform_org_id` (SPA → customer
-detail) to the customer's platform organization id. Events for unmapped
-orgs are logged and dropped (acked).
+Per-customer mapping: set `customers.code` (SPA → customer detail) to the
+customer's platform organization **code** — the tenant token on subject token 2
+(ADR 0002; migration `1828000000`). `platform_org_id` is no longer consulted for
+routing. Events for unmapped codes are logged and dropped (acked). The same
+code names the customer on outbound notification subjects, and a customer
+without one has its NATS notification events skipped (see
+[`docs/notifications.md`](notifications.md)).
 
 ### Inbound email
 
 An email-parsing provider (Postmark to start) receives mail, parses the MIME,
 and `POST`s clean JSON to `POST /api/helpdesk/inbound/email/postmark`; the route
 is registered only when `inbound.secret` is set. The provider authenticates with
-that secret via HTTP Basic auth on the webhook URL; `inbound.allowed_ips` can
-additionally pin the caller to the provider's published egress ranges. The
-helpdesk holds **no mailbox credentials** — only this webhook secret.
+that secret via HTTP Basic auth on the webhook URL (the password is checked;
+the username is ignored); `inbound.allowed_ips` can additionally pin the caller
+to the provider's published egress ranges — bare IPs or CIDRs, checked before
+the secret. The allowlist matches PocketBase's resolved client IP, so behind a
+reverse proxy set PocketBase's trusted-proxy headers (below) or every request
+appears to come from the proxy. The helpdesk holds **no mailbox credentials** —
+only this webhook secret.
 
 Routing and threading are covered in full by
 [`docs/email-ingestion.md`](email-ingestion.md); the operator-facing essentials:
@@ -137,6 +158,10 @@ Routing and threading are covered in full by
   back onto the ticket (see Inbound email above).
 - **OAuth2** — optional Microsoft/Google login for the `users` (requester)
   collection; password auth works out of the box.
+- **Trusted proxy headers** — when the helpdesk sits behind a reverse proxy,
+  name the proxy's client-IP header (e.g. `X-Forwarded-For`) so PocketBase
+  resolves the real caller. `inbound.allowed_ips` is checked against that
+  resolved IP.
 
 ## First boot
 

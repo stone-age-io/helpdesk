@@ -52,7 +52,7 @@ CloudMailin adapter is a drop-in later (see [Swapping providers](#swapping-provi
    POST /api/helpdesk/inbound/email/{provider}      ← thin adapter (auth + map)
                         │  NormalizedInbound
                         ▼
-                    Ingest(app, msg)                ← provider-agnostic core
+                 IngestEmail(app, msg)              ← provider-agnostic core
                         │
           ┌─────────────┴──────────────┐
           ▼                            ▼
@@ -78,42 +78,51 @@ quoted history already stripped — so the core never touches MIME or attachment
 
 ```go
 type NormalizedInbound struct {
-    MessageID   string             // provider's RFC Message-ID; idempotency key
-    From        Addr               // sender (email + display name)
-    Subject     string
-    Body        string             // best available plain text: provider's stripped
-                                   // reply if present, else full text/plain
-    ReplyToken  string             // ticket number parsed from the [#N] subject
-                                   // token; "" if none. (A plus-hash reply address
-                                   // is a documented future upgrade — see Threading.)
-    Headers     map[string]string  // lower-cased; for the loop guard
-    SpamScore   float64            // provider-scored; SpamFlag folds it in
-    SpamFlag    bool
+    MessageID  string            // provider's RFC Message-ID; idempotency key
+    From       Addr              // sender (email + display name)
+    Subject    string
+    Body       string            // best available plain text: provider's stripped
+                                 // reply if present, else full text/plain
+    ReplyToken string            // optional override; "" ⇒ the core parses the
+                                 // [#N] subject token itself (a plus-hash reply
+                                 // address is a documented future upgrade — see
+                                 // Threading)
+    Headers    map[string]string // lower-cased keys; for the loop guard
+    DKIMPass   bool              // provider verdict — LOGGED, not enforced (v1)
+    SpamFlag   bool              // provider spam verdict
 }
 ```
 
-### `Ingest(app core.App, msg NormalizedInbound) (Result, error)`
+### `IngestEmail(app core.App, msg NormalizedInbound) (Result, error)`
 
 The whole decision, testable without HTTP (mirrors how `ingest.Consumer.Project`
 is tested directly with no broker). Order matters:
 
 1. **Loop / spam guard — drop early.** Ignore (ack, log, create nothing) when any of:
-   `Auto-Submitted` is `auto-replied`/`auto-generated`; `Precedence` is
-   `bulk`/`list`/`junk`; `From` is empty / `mailer-daemon@` / `postmaster@`; or
-   `SpamFlag`. This is non-negotiable: the helpdesk emails from a neighboring
-   address, so bounces and out-of-office replies *will* arrive, and without this a
-   notification→reply could loop.
-2. **Idempotency.** If a ticket already has `dedupe_key == MessageID`, or a comment
-   has `source_message_id == MessageID`, no-op. Providers retry on non-2xx, so this
-   absorbs redelivery. (Unique indexes are the real backstop — same pattern as
-   `tickets.number` / `tickets.dedupe_key`.)
-3. **Threading.** If `ReplyToken` resolves to a ticket:
+   `SpamFlag`; `From` is empty / `mailer-daemon@` / `postmaster@`; `Auto-Submitted`
+   is present with any value other than `no`; or `Precedence` is
+   `bulk`/`list`/`junk`. This is non-negotiable: the helpdesk emails from a
+   neighboring address, so bounces and out-of-office replies *will* arrive, and
+   without this a notification→reply could loop.
+2. **DKIM — log only.** `!DKIMPass` logs a warning and processing continues (see
+   Security posture).
+3. **Threading.** Take `ReplyToken`, else parse `[#N]` from the subject. If it
+   resolves to a ticket (looked up by `number` alone):
    - **`closed`** → do *not* comment. Mirror the portal / migration `1822000000`
      ("a closed ticket is final; open a new one"): fall through to step 4, prefixing
      the body with a `Reply to closed ticket #N` breadcrumb.
-   - **otherwise** → create a `ticket_comments` row (see below).
+   - **otherwise** → if a comment already has `source_message_id == MessageID`,
+     return `duplicate`; else create a `ticket_comments` row (see below).
+   An `N` that matches no ticket falls through to step 4 with no breadcrumb.
 4. **New ticket.** Resolve the customer (ladder below), normalize into the existing
-   `inbound.Payload`, and call `CreateTicket`. `source = "email"`.
+   `inbound.Payload` (title = subject, or `(no subject)`; `RequesterEmail` = sender;
+   `DedupeKey` = `MessageID`), and call `CreateTicket`. `source = "email"`. A
+   ticket that already has `dedupe_key == MessageID` comes back as `duplicate`.
+
+Idempotency is therefore per path, not a separate up-front step: providers retry
+on non-2xx, and each path absorbs its own redelivery. (Unique indexes are the
+real backstop — same pattern as `tickets.number` / `tickets.dedupe_key`.) An
+empty `MessageID` disables both checks.
 
 Returns a `Result` the adapter turns into a response (`created` / `commented` /
 `duplicate` / `ignored{reason}`).
@@ -149,8 +158,8 @@ provenance line, and act manually.
 A single forwarded `support@` address can't identify the tenant by recipient, so:
 
 1. `From` matches a `users.email` → that user's `customer`, and set `requester`.
-2. else `From` domain matches a `customers.email_domain` (new field) → that customer,
-   no requester.
+2. else `From` domain (never a public provider) matches an **active** customer's
+   `customers.email_domain` (new field) → that customer, no requester.
 3. else **reject** — ack (`200 ignored`, never 500) + log. There is no default/triage
    customer: the helpdesk is not an open funnel, it only accepts mail it can attribute
    to a known tenant.
@@ -164,8 +173,10 @@ The resulting model is deliberate:
   that knows its contacts, but operators should know a brand-new unregistered contact
   at a domain-less customer is silently dropped (logged), not queued.
 
-Customer scoping is preserved end-to-end (requester match is customer-scoped, exactly
-like the existing webhook at `inbound.go`), so a stray email can never cross tenants.
+Customer scoping holds on the new-ticket path (requester match is customer-scoped,
+exactly like the existing webhook at `inbound.go`), so a stray email can never open a
+ticket in the wrong tenant. The reply path is different — see the residual risk under
+Security posture.
 
 ### Threading token
 
@@ -198,48 +209,58 @@ for why).
 
 The *only* Postmark-aware code. It:
 
-1. **Authenticates the webhook** — Basic auth on the URL (Postmark supports a
-   user:pass in the webhook URL) checked against `inbound.secret`, plus an optional
-   source-IP allowlist (`inbound.allowed_ips`, Postmark's published egress ranges).
-   No auth → `401`.
+1. **Authenticates the webhook** — an optional source-IP allowlist first
+   (`inbound.allowed_ips`, Postmark's published egress ranges; bare IPs or CIDRs,
+   empty ⇒ no restriction) → `403`; then Basic auth on the URL (Postmark supports a
+   user:pass in the webhook URL) whose **password** is compared in constant time
+   against `inbound.secret` (the username is ignored) → `401` with a
+   `WWW-Authenticate` challenge.
 2. **Decodes** the Postmark inbound JSON into a local struct.
 3. **Maps** to `NormalizedInbound`:
 
-   | Postmark field                       | NormalizedInbound        |
-   |--------------------------------------|--------------------------|
-   | `MessageID`                          | `MessageID`              |
-   | `FromFull.{Email,Name}`              | `From`                   |
-   | `Subject`                            | `Subject`                |
-   | `StrippedTextReply` \|\| `TextBody`  | `Body`                   |
-   | `Headers[]`                          | `Headers` (lower-cased)  |
-   | `X-Spam-Status` / `X-Spam-Score`     | `SpamFlag` / `SpamScore` |
+   | Postmark field                                       | NormalizedInbound       |
+   |------------------------------------------------------|-------------------------|
+   | `MessageID` \|\| `Message-ID` header                 | `MessageID`             |
+   | `FromFull.Email` \|\| `From`; `FromFull.Name`        | `From`                  |
+   | `Subject`                                            | `Subject`               |
+   | `StrippedTextReply` (if non-blank) \|\| `TextBody`   | `Body`                  |
+   | `Headers[]`                                          | `Headers` (lower-cased) |
+   | `X-Spam-Status` header starts with `Yes`             | `SpamFlag`              |
+   | `Authentication-Results` lacks `dkim=fail`           | `DKIMPass`              |
 
-4. **Calls `Ingest`** and translates `Result` → HTTP.
+   `ReplyToken` is left empty — the core derives it from the subject. DKIM defaults
+   to pass so a provider that omits `Authentication-Results` never warns.
+
+4. **Calls `IngestEmail`** and translates `Result` → HTTP.
 
 **Response contract** (providers retry on non-2xx, so be careful):
 
 - `200` for anything intentionally handled *or* intentionally dropped
-  (`{status: created|commented|duplicate|ignored, id?, number?}`). A dropped
+  (`{status: created|commented|duplicate|ignored, id?, number?, reason?}`). A dropped
   loop/spam message returns `200 ignored` so the provider stops retrying.
+- `403` caller IP not in the allowlist.
 - `401` bad/missing secret.
-- `422` undecodable body.
+- `400` undecodable body.
 - `500` only for a genuine transient server error (let the provider retry).
 
 ## Schema changes
 
-One new timestamped migration (`19xxxxxxxx_email_ingestion.go`), idempotent, using
-`internal/authz` constants — no collection **rule** changes (all writes are
-server-side via `app.Save`, which bypasses rules):
+One new timestamped migration (`migrations/1823000000_email_ingestion.go`),
+idempotent — no collection **rule** changes (all writes are server-side via
+`app.Save`, which bypasses rules):
 
 - `tickets.source` select: add **`email`** (alongside `portal|agent|nats|webhook`).
 - `customers.email_domain` — text, **optional**, **unique when set** (partial unique
-  index on non-empty values, so two customers can't claim the same domain). Optional
+  index `idx_customers_email_domain` on non-empty values, so two customers can't
+  claim the same domain); the save hook stores it trimmed and lower-cased. Optional
   because a customer may be a single contact on a shared provider (e.g. a solo
   operator on `gmail.com`) with no domain of their own — such customers leave it blank
   and match only on rung 1 (exact `From` → registered user).
   - **Public-domain guard:** reject setting `email_domain` to a shared/free domain
     (`gmail.com`, `outlook.com`, `hotmail.com`, `yahoo.com`, `icloud.com`, …) — a small
-    blocklist checked in a `customers` save hook. Prevents a customer from claiming
+    blocklist checked in a `customers` save hook (`internal/customers`, rejects with
+    `400`; the list itself is `publicEmailDomains` in `email.go`, shared with the
+    resolution ladder). Prevents a customer from claiming
     `gmail.com` and vacuuming every Gmail sender into their tenant. Cheap, and
     tenant isolation is worth the ~10 lines.
 - `ticket_comments.source_message_id` — hidden text + **unique index**
@@ -260,9 +281,11 @@ and SMTP. So threading is achieved purely by operator config:
 That's the whole coupling: one operator setting, zero code, no template edits.
 
 **Escape hatch (only if sender ≠ intake):** if an install must send *from* one
-address but receive replies at another, add an optional `inbound.reply_to` config and
-one line in `notifier.deliver` — `msg.Headers["Reply-To"] = cfg.Inbound.ReplyTo`.
-Deferred until a deployment actually needs it.
+address but receive replies at another, wire the `inbound.reply_to` config — the key
+is already parsed into `InboundConfig.ReplyTo`, but nothing reads it, so setting it
+today does **nothing** — with one line in `notifier.deliverEmail`:
+`msg.Headers["Reply-To"] = cfg.Inbound.ReplyTo`. Deferred until a deployment
+actually needs it.
 
 Note for Workspace shops: PocketBase's SMTP is username/password only, so if outbound
 goes *through* Gmail it must use Google's IP-authenticated relay or a transactional
@@ -276,9 +299,12 @@ New block, viper defaults + `HELPDESK_*` overrides, mirroring `NATSConfig`:
 ```yaml
 inbound:
   secret: "<webhook basic-auth password>"   # empty ⇒ email ingestion disabled
-  allowed_ips: []                            # optional provider egress allowlist
-  # reply_to: "support@example.com"          # optional escape hatch; unset ⇒ sender address is the intake mailbox
+  allowed_ips: []                            # optional provider egress allowlist (IPs or CIDRs)
+  # reply_to: "support@example.com"          # parsed but UNWIRED in v1 — see Outbound coupling
 ```
+
+Env overrides follow the usual mapping (`HELPDESK_INBOUND_SECRET`,
+`HELPDESK_INBOUND_ALLOWED_IPS`, `HELPDESK_INBOUND_REPLY_TO`).
 
 `InboundConfig.Enabled()` = `secret != ""`. Disabled is valid — the app serves
 without email ingestion (parallels `NATSConfig.Enabled()`). Note there is
@@ -288,22 +314,29 @@ ladder).
 
 ## Wiring (`cmd/helpdesk/main.go`)
 
-Register the route inside the existing `OnServe` block, next to the other
+The route is registered inside the existing `OnServe` block, next to the other
 `inbound.Register(e)` call — the provider webhook is plain HTTP, no lifecycle
-resources to tear down. `Register` takes the `InboundConfig` (or a new
-`inbound.RegisterEmail(e, cfg.Inbound)`), and no-ops when disabled.
+resources to tear down:
+`inbound.RegisterEmail(e, cfg.Inbound.Secret, cfg.Inbound.AllowedIPs)`, which binds
+`POST /api/helpdesk/inbound/email/postmark` and no-ops when the secret is empty.
+(It checks the secret directly rather than calling `InboundConfig.Enabled()`; same
+condition.)
 
 ## Testing
 
 Follows repo convention (`testutil.SetupApp(t)`, real PB against `t.TempDir()`):
 
-- **Core:** table-driven tests calling `Ingest` directly with hand-built
+- **Core** (`email_test.go`): tests calling `IngestEmail` directly with hand-built
   `NormalizedInbound` values — new ticket, reply→comment→**reopen** (assert the
   resolved ticket flips to open and `awaiting_requester` clears), reply to `closed`
-  → new ticket, each rung of the customer ladder, loop-guard drops, MessageID
-  idempotency. No HTTP, no provider.
-- **Adapter:** feed captured Postmark JSON fixtures through the handler, assert the
-  mapping and the response codes (incl. `401`/`422`).
+  → new ticket, each rung of the customer ladder plus the unresolved-sender drop,
+  loop-guard drops, reply MessageID idempotency, `[#N]` parsing. No HTTP, no provider.
+- **Adapter** (`postmark_test.go`): a captured Postmark JSON fixture through
+  `normalize()` (mapping plus the `From` / `Message-ID` / `TextBody` fallbacks and
+  the spam flag), constant-time secret matching, and the IP allowlist. The HTTP
+  status codes themselves are not exercised by a test.
+- **Domain guard** (`internal/customers/hooks_test.go`): normalization,
+  public-domain rejection, blank allowed, uniqueness across tenants.
 - Because these writes hit `ticket_comments`, tests must `notifier.WaitInFlight`
   before asserting on mail (the comment fires `ticket.commented`).
 
@@ -322,9 +355,12 @@ Follows repo convention (`testutil.SetupApp(t)`, real PB against `t.TempDir()`):
 - **No mail credentials in the helpdesk** — only a webhook secret. This is the whole
   reason we're not doing IMAP/OAuth; it keeps the app within the `CLAUDE.md`
   credential-minimization line.
-- Webhook authenticated (secret + optional IP allowlist); unauthenticated → `401`.
-- **Spoofing / DKIM (v1 = log-only):** we record the provider's DKIM/SPF verdict but
-  do not block on it. Reject-unmatched is the primary spam/abuse control — mail we
+- Webhook authenticated (secret + optional IP allowlist); unauthenticated → `401`,
+  disallowed IP → `403`.
+- **Spoofing / DKIM (v1 = log-only):** a `dkim=fail` in the provider's
+  `Authentication-Results` is logged as a warning (process log only — nothing is
+  stored on the ticket or comment, and SPF is not read), and we do not block on it.
+  Reject-unmatched is the primary spam/abuse control — mail we
   can't attribute to a known tenant is dropped, so the open-funnel risk is already
   closed. Author matching is by `From` **within the ticket's customer**; an unmatched
   sender never gets attribution and never auto-reopens.
@@ -333,9 +369,21 @@ Follows repo convention (`testutil.SetupApp(t)`, real PB against `t.TempDir()`):
     reopen a resolved ticket as "bob." Acceptable for an internal MSP tool at v1, and
     audited via the logged verdict. **Upgrade path** if it ever matters: on a *reply*
     with DKIM `fail`, skip the auto-reopen / hold for staff review (don't hard-block).
-- Tenant isolation identical to the existing webhook: all matching is
-  customer-scoped, so email can't cross tenants. The `email_domain` public-domain
-  guard (see Schema) closes the one way domain-mapping could have leaked across them.
+- Tenant isolation on **new tickets** is identical to the existing webhook: all
+  matching is customer-scoped, so a new ticket can't land in the wrong tenant. The
+  `email_domain` public-domain guard (see Schema) closes the one way domain-mapping
+  could have leaked across them.
+  - **Named residual risk — the reply path is scoped by attribution, not by
+    acceptance.** The `[#N]` lookup is by ticket number alone and does not resolve
+    the sender's tenant, so any message that passes the loop/spam guard with a
+    valid `[#N]` in its subject is recorded as a **public** comment on ticket N,
+    whoever sent it. Customer scoping only decides *attribution*: a sender who is
+    not a registered user of that ticket's customer gets no `author_user`, so the
+    comment cannot reopen the ticket or impersonate anyone, and the provenance line
+    names the real sender. It is still visible to that customer's requesters in
+    the portal and still fires `ticket.commented`. Ticket numbers are sequential,
+    so this is guessable. **Upgrade path:** hold unattributed replies as internal comments,
+    or require the sender to resolve to the ticket's customer.
 
 ## Swapping providers
 
