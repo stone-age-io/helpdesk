@@ -169,8 +169,11 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 	}
 
 	if payload.DedupeKey != "" {
+		// Per customer (migration 1830000000): another tenant's identical key
+		// is that tenant's ticket, not a redelivery of this one.
 		existing, err := c.app.FindFirstRecordByFilter(
-			"tickets", "dedupe_key = {:k}", dbx.Params{"k": payload.DedupeKey})
+			"tickets", "customer = {:c} && dedupe_key = {:k}",
+			dbx.Params{"c": customer.Id, "k": payload.DedupeKey})
 		if err != nil && !isNotFound(err) {
 			slog.Warn("ingest: dedupe lookup failed", "err", err)
 			return Retry

@@ -111,6 +111,35 @@ func TestCreateTicketDedupes(t *testing.T) {
 	}
 }
 
+// TestCreateTicketDedupeIsPerCustomer: a key another tenant already used must
+// neither swallow this ticket nor hand back the other tenant's ticket.
+func TestCreateTicketDedupeIsPerCustomer(t *testing.T) {
+	app, acme := setup(t)
+	col, _ := app.FindCollectionByNameOrId("customers")
+	globex := core.NewRecord(col)
+	globex.Set("name", "Globex")
+	globex.Set("active", true)
+	if err := app.Save(globex); err != nil {
+		t.Fatalf("save globex: %v", err)
+	}
+
+	p := Payload{Title: "pump fault", DedupeKey: "pump-7"}
+	first, _, err := CreateTicket(app, acme, p)
+	if err != nil {
+		t.Fatalf("acme: %v", err)
+	}
+	second, created, err := CreateTicket(app, globex, p)
+	if err != nil {
+		t.Fatalf("globex: %v", err)
+	}
+	if !created {
+		t.Fatal("globex's ticket was deduped against acme's key")
+	}
+	if second.Id == first.Id || second.GetString("customer") != globex.Id {
+		t.Errorf("globex got acme's ticket back: %s (customer %s)", second.Id, second.GetString("customer"))
+	}
+}
+
 func TestRequesterMatchIsCustomerScoped(t *testing.T) {
 	app, customer := setup(t)
 

@@ -163,6 +163,121 @@ func TestIngestReplyThreadsAndReopens(t *testing.T) {
 	}
 }
 
+// TestIngestReplyFromDomainIsPublic: a colleague at the customer's own domain,
+// with no portal account, still adds to the conversation — publicly, but
+// unattributed, so it doesn't reopen a resolved ticket on their say-so.
+func TestIngestReplyFromDomainIsPublic(t *testing.T) {
+	app, customer := emailSetup(t)
+	seedUser(t, app, customer, "Rita", "rita@acme.example")
+
+	created, _ := IngestEmail(app, msg("rita@acme.example", "badge reader", "dead"))
+	num := created.Ticket.GetInt("number")
+
+	reply := msg("colleague@acme.example", "Re: [#"+strconv.Itoa(num)+"] badge reader", "mine too")
+	res, err := IngestEmail(app, reply)
+	if err != nil || res.Outcome != OutcomeCommented {
+		t.Fatalf("outcome: got %q err %v, want commented", res.Outcome, err)
+	}
+	c, err := app.FindFirstRecordByFilter("ticket_comments", "ticket = {:t}",
+		map[string]any{"t": created.Ticket.Id})
+	if err != nil {
+		t.Fatalf("no comment: %v", err)
+	}
+	if c.GetBool("internal") {
+		t.Error("a sender at the customer's domain should comment publicly")
+	}
+	if c.GetString("author_user") != "" {
+		t.Errorf("unregistered sender should be unattributed, got %q", c.GetString("author_user"))
+	}
+}
+
+// TestIngestReplyFromOutsiderIsHeldInternal: ticket numbers are sequential, so
+// [#N] is guessable. A sender who isn't on the ticket's customer — another
+// tenant's user, or a stranger — gets an internal comment staff can review,
+// never a public one the customer's requesters would read.
+func TestIngestReplyFromOutsiderIsHeldInternal(t *testing.T) {
+	app, acme := emailSetup(t)
+	seedUser(t, app, acme, "Rita", "rita@acme.example")
+
+	col, _ := app.FindCollectionByNameOrId("customers")
+	globex := core.NewRecord(col)
+	globex.Set("name", "Globex")
+	globex.Set("active", true)
+	globex.Set("email_domain", "globex.example")
+	if err := app.Save(globex); err != nil {
+		t.Fatalf("save globex: %v", err)
+	}
+	seedUser(t, app, globex, "Gus", "gus@globex.example")
+
+	created, _ := IngestEmail(app, msg("rita@acme.example", "door sensor", "offline"))
+	ticket := created.Ticket
+	ticket.Set("status", "resolved")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	num := strconv.Itoa(ticket.GetInt("number"))
+
+	for _, from := range []string{"gus@globex.example", "stranger@unknown.test"} {
+		res, err := IngestEmail(app, msg(from, "Re: [#"+num+"] door sensor from "+from, "click here"))
+		if err != nil || res.Outcome != OutcomeCommented {
+			t.Fatalf("%s: outcome %q err %v, want commented", from, res.Outcome, err)
+		}
+	}
+
+	comments, _ := app.FindRecordsByFilter("ticket_comments", "ticket = {:t}", "", 0, 0,
+		map[string]any{"t": ticket.Id})
+	if len(comments) != 2 {
+		t.Fatalf("want 2 held comments, got %d", len(comments))
+	}
+	for _, c := range comments {
+		if !c.GetBool("internal") {
+			t.Errorf("outsider reply was published to the portal: %q", c.GetString("body"))
+		}
+		if c.GetString("author_user") != "" {
+			t.Errorf("outsider reply was attributed to %q", c.GetString("author_user"))
+		}
+	}
+	if fresh, _ := app.FindRecordById("tickets", ticket.Id); fresh.GetString("status") != "resolved" {
+		t.Errorf("outsider reply changed status to %q", fresh.GetString("status"))
+	}
+}
+
+// TestIngestReplyToOtherTenantsClosedTicket: replying to a closed ticket that
+// belongs to someone else opens a ticket for the sender's own customer, and
+// does not name the other tenant's ticket in it.
+func TestIngestReplyToOtherTenantsClosedTicket(t *testing.T) {
+	app, acme := emailSetup(t)
+	seedUser(t, app, acme, "Rita", "rita@acme.example")
+
+	col, _ := app.FindCollectionByNameOrId("customers")
+	globex := core.NewRecord(col)
+	globex.Set("name", "Globex")
+	globex.Set("active", true)
+	if err := app.Save(globex); err != nil {
+		t.Fatalf("save globex: %v", err)
+	}
+	seedUser(t, app, globex, "Gus", "gus@globex.example")
+
+	created, _ := IngestEmail(app, msg("rita@acme.example", "door sensor", "offline"))
+	ticket := created.Ticket
+	ticket.Set("status", "closed")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	num := strconv.Itoa(ticket.GetInt("number"))
+
+	res, err := IngestEmail(app, msg("gus@globex.example", "Re: [#"+num+"] door sensor", "hello"))
+	if err != nil || res.Outcome != OutcomeCreated {
+		t.Fatalf("outcome %q err %v, want created", res.Outcome, err)
+	}
+	if got := res.Ticket.GetString("customer"); got != globex.Id {
+		t.Errorf("new ticket customer: got %q want globex", got)
+	}
+	if body := res.Ticket.GetString("body"); strings.Contains(body, "#"+num) {
+		t.Errorf("new ticket names another tenant's ticket: %q", body)
+	}
+}
+
 func TestIngestReplyToClosedMakesNewTicket(t *testing.T) {
 	app, customer := emailSetup(t)
 	seedUser(t, app, customer, "Rita", "rita@acme.example")

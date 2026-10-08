@@ -148,6 +148,37 @@ func TestProjectDedupeKeyIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestProjectDedupeKeyIsPerCustomer: two tenants' publishers choose keys
+// independently, so the same key from a second customer is a new ticket, not a
+// redelivery to be acked away (migration 1830000000).
+func TestProjectDedupeKeyIsPerCustomer(t *testing.T) {
+	app, c, _ := setup(t)
+	col, _ := app.FindCollectionByNameOrId("customers")
+	globex := core.NewRecord(col)
+	globex.Set("name", "Globex")
+	globex.Set("active", true)
+	globex.Set("code", "globex")
+	if err := app.Save(globex); err != nil {
+		t.Fatalf("save globex: %v", err)
+	}
+
+	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
+	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+		t.Fatalf("acme: %v", out)
+	}
+	if out := c.Project("helpdesk.globex.tickets.create", payload); out != Ack {
+		t.Fatalf("globex: %v", out)
+	}
+	rows, err := app.FindRecordsByFilter("tickets", "customer = {:c}", "", 0, 0,
+		map[string]any{"c": globex.Id})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("globex's ticket was swallowed by acme's key: %d rows, err %v", len(rows), err)
+	}
+	if n := countTickets(t, app); n != 2 {
+		t.Errorf("want one ticket per customer, got %d", n)
+	}
+}
+
 func TestProjectRejectsGarbage(t *testing.T) {
 	app, c, _ := setup(t)
 	cases := map[string][2]string{

@@ -129,12 +129,13 @@ func Generate(app core.App, now time.Time) (int, int, error) {
 // it does for a machine ticket, and only staff are mailed.
 func createTicket(app core.App, plan *core.Record, due time.Time) (bool, error) {
 	// pm:{planID}:{occurrence} rides the existing unique partial index on
-	// tickets.dedupe_key — the same idempotency the NATS and webhook intakes
+	// (customer, dedupe_key) — the same idempotency the NATS and webhook intakes
 	// use, so a cron that fires twice (or a manual maintenance-run beside it)
 	// costs nothing.
 	dedupe := fmt.Sprintf("pm:%s:%s", plan.Id, due.Format(dateLayout))
 	if existing, err := app.FindFirstRecordByFilter(
-		"tickets", "dedupe_key = {:k}", dbx.Params{"k": dedupe},
+		"tickets", "customer = {:c} && dedupe_key = {:k}",
+		dbx.Params{"c": plan.GetString("customer"), "k": dedupe},
 	); err == nil && existing != nil {
 		return false, nil
 	}

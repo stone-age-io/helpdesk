@@ -466,7 +466,7 @@ func (s *seeder) writeTicket(t ticketFixture) error {
 	dedupe := "seed-" + t.Key
 	cust := s.customers[t.Customer]
 
-	rec, created, err := s.ensure("tickets", "dedupe_key = {:d}", dbx.Params{"d": dedupe}, func(r *core.Record) {
+	rec, created, err := s.ensure("tickets", "customer = {:c} && dedupe_key = {:d}", dbx.Params{"c": cust, "d": dedupe}, func(r *core.Record) {
 		r.Set("customer", cust)
 		r.Set("title", t.Title)
 		r.Set("body", t.Body)

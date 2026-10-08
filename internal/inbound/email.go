@@ -3,7 +3,7 @@ package inbound
 // Email ingestion core — provider-agnostic. An email-parsing provider (Postmark
 // to start, see postmark.go) turns inbound mail into a NormalizedInbound and
 // hands it to IngestEmail, which either threads a reply onto an existing ticket
-// (as a public comment) or creates a new ticket. All logic lives here; adapters
+// (as a comment) or creates a new ticket. All logic lives here; adapters
 // only translate their wire format into NormalizedInbound. See
 // docs/email-ingestion.md.
 
@@ -77,20 +77,25 @@ func IngestEmail(app core.App, msg NormalizedInbound) (Result, error) {
 			"from", msg.From.Email, "message_id", msg.MessageID)
 	}
 
-	// Threading: a reply naming an existing, non-closed ticket becomes a public
-	// comment on it. A closed ticket is final (mirrors migration 1822000000), so
-	// it falls through to a fresh ticket with a breadcrumb. The token comes from
-	// the [#N] subject tag (derived here so adapters stay dumb); a provider with
-	// a stronger signal may pre-fill ReplyToken to override.
+	// Threading: a reply naming an existing, non-closed ticket becomes a comment
+	// on it. A closed ticket is final (mirrors migration 1822000000), so it falls
+	// through to a fresh ticket with a breadcrumb. The token comes from the [#N]
+	// subject tag (derived here so adapters stay dumb); a provider with a
+	// stronger signal may pre-fill ReplyToken to override.
+	//
+	// Ticket numbers are global and sequential, so the token says which ticket
+	// and nothing about who may write on it: anyone can type [#42]. Whether the
+	// sender belongs to that ticket's customer decides what the reply becomes —
+	// see createEmailComment.
 	token := msg.ReplyToken
 	if token == "" {
 		token = ParseTicketToken(msg.Subject)
 	}
-	var bodyPrefix string
+	var closed *core.Record
 	if n, ok := parseTicketNumber(token); ok {
 		if ticket := findTicketByNumber(app, n); ticket != nil {
 			if ticket.GetString("status") == "closed" {
-				bodyPrefix = fmt.Sprintf("Reply to closed ticket #%d:\n\n", n)
+				closed = ticket
 			} else {
 				if msg.MessageID != "" && commentExistsForMessage(app, msg.MessageID) {
 					return Result{Outcome: OutcomeDuplicate, Ticket: ticket}, nil
@@ -112,6 +117,13 @@ func IngestEmail(app core.App, msg NormalizedInbound) (Result, error) {
 		slog.Info("inbound email rejected: no customer for sender",
 			"from", msg.From.Email, "message_id", msg.MessageID)
 		return Result{Outcome: OutcomeIgnored, Reason: "unresolved customer"}, nil
+	}
+
+	// The breadcrumb names the closed ticket only when it is this customer's —
+	// another tenant's ticket number is not this ticket's business.
+	var bodyPrefix string
+	if closed != nil && closed.GetString("customer") == customer.Id {
+		bodyPrefix = fmt.Sprintf("Reply to closed ticket #%d:\n\n", closed.GetInt("number"))
 	}
 
 	// Reuse the one webhook projection; it also matches the requester by email
@@ -188,11 +200,20 @@ func resolveCustomer(app core.App, from Addr) (*core.Record, error) {
 	return cust, nil
 }
 
-// createEmailComment records a reply as a PUBLIC comment. Attribution is only to
-// a registered user OF THIS CUSTOMER — an unmatched sender stays unattributed,
-// so the tickets hook won't auto-reopen a resolved ticket on their say-so. That
-// hook (internal/tickets) does the rest: a public, user-authored comment reopens
-// a resolved ticket and clears awaiting_requester.
+// createEmailComment records a reply on the ticket. What it becomes depends on
+// whether the sender belongs to the ticket's customer, by the same two rungs
+// resolveCustomer uses for a new ticket, but checked against THIS customer:
+//
+//   - a registered user of the customer → a PUBLIC comment attributed to them;
+//     the tickets hook (internal/tickets) then reopens a resolved ticket and
+//     clears awaiting_requester, exactly as a portal reply would.
+//   - a sender at the customer's email_domain → a PUBLIC comment, unattributed,
+//     so the hook won't auto-reopen on the say-so of someone with no account.
+//   - anyone else → an INTERNAL comment: held for staff, never shown in the
+//     portal, and (internal notes never send) emailing nobody. A requester
+//     replying from a personal address and a CC'd vendor both land here, which
+//     is why it is held rather than dropped — staff can repost it. What the
+//     sender cannot do is put text in front of another tenant's requesters.
 func createEmailComment(app core.App, ticket *core.Record, msg NormalizedInbound) (*core.Record, error) {
 	col, err := app.FindCollectionByNameOrId("ticket_comments")
 	if err != nil {
@@ -200,19 +221,48 @@ func createEmailComment(app core.App, ticket *core.Record, msg NormalizedInbound
 	}
 	rec := core.NewRecord(col)
 	rec.Set("ticket", ticket.Id)
-	if user, err := app.FindFirstRecordByFilter("users",
-		"email = {:e} && customer = {:c}",
-		dbx.Params{"e": msg.From.Email, "c": ticket.GetString("customer")},
-	); err == nil && user != nil {
-		rec.Set("author_user", user.Id)
+	userID, belongs := senderBelongsTo(app, msg.From, ticket.GetString("customer"))
+	if userID != "" {
+		rec.Set("author_user", userID)
 	}
-	rec.Set("body", provenanceBody(msg))
-	rec.Set("internal", false)
+	if belongs {
+		rec.Set("body", provenanceBody(msg))
+	} else {
+		slog.Info("inbound email reply held as internal: sender not of the ticket's customer",
+			"from", msg.From.Email, "ticket", ticket.GetInt("number"), "message_id", msg.MessageID)
+		rec.Set("body", truncate("Held for review — the sender is not on this customer's account.\n\n"+
+			provenanceBody(msg), maxBodyLen))
+	}
+	rec.Set("internal", !belongs)
 	rec.Set("source_message_id", msg.MessageID)
 	if err := app.Save(rec); err != nil {
 		return nil, err
 	}
 	return rec, nil
+}
+
+// senderBelongsTo reports whether an email sender belongs to customerID: a
+// registered user of that customer (returning their id, for attribution), or an
+// address at the customer's own email_domain (never a public provider).
+func senderBelongsTo(app core.App, from Addr, customerID string) (userID string, ok bool) {
+	email := strings.TrimSpace(from.Email)
+	if email == "" || customerID == "" {
+		return "", false
+	}
+	if user, err := app.FindFirstRecordByFilter("users",
+		"email = {:e} && customer = {:c}", dbx.Params{"e": email, "c": customerID},
+	); err == nil && user != nil {
+		return user.Id, true
+	}
+	domain := domainOf(email)
+	if domain == "" || IsPublicEmailDomain(domain) {
+		return "", false
+	}
+	cust, err := app.FindRecordById("customers", customerID)
+	if err != nil || cust == nil {
+		return "", false
+	}
+	return "", cust.GetString("email_domain") == domain
 }
 
 // provenanceBody prefixes the sender so staff see who wrote a comment even when

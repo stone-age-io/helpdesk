@@ -461,8 +461,10 @@ subject rewrite is operator-signed, so it's unforgeable; a payload org id
 would not be. The helpdesk owns its inbox stream `HELPDESK_EVENTS`
 (subjects `helpdesk.*.tickets.>`) and a durable consumer `helpdesk-ingest`.
 Projection semantics: unknown org → warn + ack (operator sets
-`customers.code`, later events flow); `dedupe_key` + unique
-partial index absorb redelivery/publisher retries; bad payloads ack
+`customers.code`, later events flow); `dedupe_key` + a unique partial
+index on `(customer, dedupe_key)` absorb redelivery/publisher retries (per
+customer since `1830000000` — the key is publisher-chosen, and a global index
+let one tenant's key swallow another's event); bad payloads ack
 (terminal). NATS is **best-effort**: connect failure logs and the app
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
 `sub helpdesk.>` (widened to `pub helpdesk.>` for outbound notifications),
@@ -492,7 +494,12 @@ helpdesk holds **no mailbox credentials**. A provider-agnostic core
 only maps the wire format, so SES/CloudMailin is a drop-in sibling file. A reply
 carrying the `[#N]` subject token (already in every notification subject) becomes
 a public `ticket_comment` — the existing comment hook then auto-reopens a resolved
-ticket for free; a `closed` ticket spawns a new one instead. Otherwise it's a new
+ticket for free; a `closed` ticket spawns a new one instead. **Only if the sender
+belongs to the ticket's customer** (a user of it, or its `email_domain`): ticket
+numbers are global and sequential, so `[#N]` picks the ticket and never grants the
+right to write on it, and anyone else's reply is held as an *internal* comment —
+not dropped, because a requester's personal address and a CC'd vendor land there
+too. Mail without a live `[#N]` is a new
 ticket (`source = email`, added to the select). The sender resolves to a customer
 by exact `users.email`, else `customers.email_domain` (new field, unique, never a
 public provider — guarded in `internal/customers`); unresolvable senders are

@@ -4,9 +4,8 @@
 //
 // The token is a per-customer shared secret (customers.webhook_token,
 // hidden from the record API); possessing it both authenticates the caller
-// and selects the customer. This route is also the future email-provider
-// (Postmark/Mailgun) integration point — a provider webhook adapter would
-// normalize into the same payload.
+// and selects the customer. Email arrives on its own route (postmark.go), but
+// projects through the same CreateTicket.
 //
 // The package also owns the staff-side token lifecycle route the SPA's
 // customer detail view calls:
@@ -112,12 +111,11 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 		return nil, false, &badPayloadError{"title is required"}
 	}
 
-	if p.DedupeKey != "" {
-		existing, err := app.FindFirstRecordByFilter(
-			"tickets", "dedupe_key = {:k}", dbx.Params{"k": p.DedupeKey})
-		if err == nil && existing != nil {
-			return existing, false, nil
-		}
+	// dedupe_key is unique per customer (migration 1830000000): publishers in
+	// different tenants choose their keys independently, so a key is only a
+	// duplicate of this customer's own ticket.
+	if existing := findByDedupeKey(app, customer.Id, p.DedupeKey); existing != nil {
+		return existing, false, nil
 	}
 
 	col, err := app.FindCollectionByNameOrId("tickets")
@@ -185,9 +183,28 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 		}
 	}
 	if err := app.Save(rec); err != nil {
+		// A concurrent delivery of the same key won the unique index between our
+		// lookup and this save; it is a duplicate, not a fault.
+		if existing := findByDedupeKey(app, customer.Id, p.DedupeKey); existing != nil {
+			return existing, false, nil
+		}
 		return nil, false, err
 	}
 	return rec, true, nil
+}
+
+// findByDedupeKey returns the customer's ticket carrying key, or nil (also for
+// an empty key, which never dedupes).
+func findByDedupeKey(app core.App, customerID, key string) *core.Record {
+	if key == "" {
+		return nil
+	}
+	rec, err := app.FindFirstRecordByFilter("tickets",
+		"customer = {:c} && dedupe_key = {:k}", dbx.Params{"c": customerID, "k": key})
+	if err != nil {
+		return nil
+	}
+	return rec
 }
 
 // handleTokenReveal returns the customer's webhook token to admin staff,
