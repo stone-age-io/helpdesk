@@ -17,7 +17,7 @@ email-disabled and NATS-enabled — completion is already visible to humans via
 the ticket's status and comments, but "work done on site" is exactly the signal
 MSP-internal automation wants. See [notifications.md](notifications.md) for the
 current event / recipient / suppression matrix and
-[protocol.md](protocol.md#nats-notification-events-outbound) for the envelope.
+[protocol.md](protocol.md#3-nats-notification-events-outbound) for the envelope.
 
 ## Goal & shape
 
