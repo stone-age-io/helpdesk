@@ -476,6 +476,17 @@ JetStream accepts both and an emitted event can't loop back through ingest.
 The MSP's automation owns that stream's consumer; the helpdesk only
 publishes.
 
+**Service discovery** (`internal/natsx/service.go`): on connect the helpdesk
+registers as NATS micro service `helpdesk` with `host` metadata and **no
+endpoints**, matching the agent's, rule-router's and access-control's
+registrations, so `nats micro ls` in the hub account shows what is running
+and at which version. Identity only — it is not the request/reply NATS service
+listed under Out of scope, and adding an endpoint would be that. Never fatal: a
+failure logs and the app carries on, and a credential without `$SRV.>`
+subscribe loses discovery only. The version is `debug.ReadBuildInfo`'s module
+version (no ldflags), normalised to semver because `micro.AddService` refuses
+anything else. `Conn.Close` stops it before draining.
+
 **Webhook inbound** (`internal/inbound`):
 `POST /api/helpdesk/inbound/{token}` resolves the customer by
 `webhook_token` (hidden field; admin-only reveal/rotate route at

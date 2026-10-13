@@ -169,6 +169,9 @@ func main() {
 			if err != nil {
 				log.Printf("nats connect failed (tickets arrive via portal/webhook only): %v", err)
 			} else {
+				// Identity only, never fatal: `nats micro ls` lists the helpdesk.
+				nc.RegisterService()
+
 				subj := subjects.Default()
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()

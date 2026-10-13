@@ -17,6 +17,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nats.go/micro"
 )
 
 const (
@@ -30,6 +31,8 @@ const (
 type Conn struct {
 	NC *nats.Conn
 	JS jetstream.JetStream
+
+	svc micro.Service // set by RegisterService; nil if never registered
 }
 
 // Connect establishes the NATS connection and JetStream context using
@@ -154,10 +157,14 @@ func (p *Publisher) Publish(ctx context.Context, subject string, data []byte, ms
 	return nil
 }
 
-// Close drains and closes the NATS connection.
+// Close stops the discovery service, then drains and closes the NATS
+// connection.
 func (c *Conn) Close() error {
 	if c == nil || c.NC == nil {
 		return nil
+	}
+	if c.svc != nil {
+		_ = c.svc.Stop()
 	}
 	if err := c.NC.Drain(); err != nil {
 		return fmt.Errorf("drain NATS connection: %w", err)
