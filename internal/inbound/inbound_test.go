@@ -288,3 +288,60 @@ func TestCreateTicketResolvesThingByCode(t *testing.T) {
 		t.Errorf("breadcrumb: got %q, want ZZZ", got)
 	}
 }
+
+// TestCreateTicketDedupeKeyReleasedWhenDone: a webhook key suppresses only
+// while its ticket is open; resolving or closing it lets the next one through.
+func TestCreateTicketDedupeKeyReleasedWhenDone(t *testing.T) {
+	for _, status := range []string{"resolved", "closed"} {
+		t.Run(status, func(t *testing.T) {
+			app, customer := setup(t)
+			p := Payload{Title: "pump fault", DedupeKey: "pump-7"}
+			first, _, err := CreateTicket(app, customer, p)
+			if err != nil {
+				t.Fatalf("first: %v", err)
+			}
+			first.Set("status", status)
+			if err := app.Save(first); err != nil {
+				t.Fatalf("set %s: %v", status, err)
+			}
+
+			second, created, err := CreateTicket(app, customer, p)
+			if err != nil {
+				t.Fatalf("after %s: %v", status, err)
+			}
+			if !created || second.Id == first.Id {
+				t.Errorf("after %s: want a new ticket, got created=%v id=%s", status, created, second.Id)
+			}
+		})
+	}
+}
+
+// TestCreateTicketRepeatWhileOpenIsCounted: the same key while open returns
+// the existing ticket as a duplicate and counts the repeat on it.
+func TestCreateTicketRepeatWhileOpenIsCounted(t *testing.T) {
+	app, customer := setup(t)
+	p := Payload{Title: "pump fault", DedupeKey: "pump-7"}
+	first, _, err := CreateTicket(app, customer, p)
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	for want := 1; want <= 2; want++ {
+		dup, created, err := CreateTicket(app, customer, p)
+		if err != nil {
+			t.Fatalf("repeat %d: %v", want, err)
+		}
+		if created || dup.Id != first.Id {
+			t.Fatalf("repeat %d: want the open ticket back as a duplicate", want)
+		}
+		rec, err := app.FindRecordById("tickets", first.Id)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got := rec.GetInt("repeat_count"); got != want {
+			t.Errorf("repeat_count: got %d, want %d", got, want)
+		}
+		if rec.GetDateTime("last_repeat_at").IsZero() {
+			t.Error("last_repeat_at not stamped")
+		}
+	}
+}

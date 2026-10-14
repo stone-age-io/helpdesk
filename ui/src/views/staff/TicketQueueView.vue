@@ -563,13 +563,21 @@ onUnmounted(() => {
       <template #cell-number="{ value }">
         <span class="font-mono text-sm">{{ value }}</span>
       </template>
-      <template #cell-title="{ value }">
-        <span class="block max-w-md truncate font-medium text-sm">{{ value }}</span>
+      <!-- ×N: a NATS/webhook source re-sent this ticket's key while it was
+           open (repeat_count). Hidden at zero, which is nearly every ticket. -->
+      <template #cell-title="{ value, item }">
+        <span class="flex items-center gap-2 max-w-md">
+          <span class="truncate font-medium text-sm">{{ value }}</span>
+          <span v-if="item.repeat_count" class="badge-soft badge-soft-neutral shrink-0" :title="`Repeated ${item.repeat_count} times`">×{{ item.repeat_count }}</span>
+        </span>
       </template>
       <template #card-number="{ item }">
-        <div class="text-sm font-bold truncate">
-          <span class="font-mono text-base-content/60">#{{ item.number }}</span>
-          {{ item.title }}
+        <div class="flex items-center gap-2 text-sm font-bold min-w-0">
+          <span class="truncate">
+            <span class="font-mono text-base-content/60">#{{ item.number }}</span>
+            {{ item.title }}
+          </span>
+          <span v-if="item.repeat_count" class="badge-soft badge-soft-neutral shrink-0 font-normal">×{{ item.repeat_count }}</span>
         </div>
       </template>
       <template #cell-category="{ item }">

@@ -1,11 +1,14 @@
 package ingest
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/testutil"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
@@ -385,5 +388,103 @@ func TestProjectUnknownCodeAcksWithoutTicket(t *testing.T) {
 	}
 	if after := countTickets(t, app); after != before {
 		t.Errorf("ticket count changed %d -> %d, want no ticket", before, after)
+	}
+}
+
+// TestProjectDedupeKeyReleasedWhenDone: a stable key from a flapping source
+// suppresses only while its ticket is open. Once resolved or closed, the next
+// occurrence is a new problem and gets a new ticket.
+func TestProjectDedupeKeyReleasedWhenDone(t *testing.T) {
+	for _, status := range []string{"resolved", "closed"} {
+		t.Run(status, func(t *testing.T) {
+			app, c, _ := setup(t)
+			payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
+
+			if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+				t.Fatalf("first: %v", out)
+			}
+			first, err := app.FindFirstRecordByFilter("tickets", "dedupe_key = 'pump-7-overcurrent'")
+			if err != nil {
+				t.Fatalf("first ticket: %v", err)
+			}
+			first.Set("status", status)
+			if err := app.Save(first); err != nil {
+				t.Fatalf("set %s: %v", status, err)
+			}
+
+			if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+				t.Fatalf("after %s: %v", status, out)
+			}
+			if n := countTickets(t, app); n != 2 {
+				t.Fatalf("after %s: got %d tickets, want a new one (2)", status, n)
+			}
+			second, err := app.FindFirstRecordByFilter("tickets", "dedupe_key = 'pump-7-overcurrent'")
+			if err != nil {
+				t.Fatalf("second ticket should hold the key: %v", err)
+			}
+			if second.Id == first.Id || second.GetInt("repeat_count") != 0 {
+				t.Errorf("want a fresh ticket holding the key, got %s with repeat_count %d",
+					second.Id, second.GetInt("repeat_count"))
+			}
+		})
+	}
+}
+
+// TestProjectRepeatWhileOpenIsCounted: the same key while the ticket is open
+// opens nothing, counts the repeat on the ticket, and mails nobody.
+func TestProjectRepeatWhileOpenIsCounted(t *testing.T) {
+	app, c, _ := setup(t)
+	n := notifications.New(app)
+	t.Cleanup(func() { n.WaitInFlight(5 * time.Second) })
+	notifications.RegisterHooks(app, n)
+	var mails atomic.Int32
+	app.OnMailerSend().BindFunc(func(e *core.MailerEvent) error {
+		mails.Add(1)
+		return nil // swallow, as the notification tests do
+	})
+	sendLogs := func() int {
+		t.Helper()
+		n.WaitInFlight(5 * time.Second)
+		rows, err := app.FindRecordsByFilter(notifications.SendLogCollectionName, "", "", 0, 0)
+		if err != nil {
+			t.Fatalf("list send log: %v", err)
+		}
+		return len(rows)
+	}
+
+	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
+	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+		t.Fatalf("first: %v", out)
+	}
+	// ticket.created must have logged, or "nothing more was logged" below
+	// would prove nothing.
+	logsBefore, mailsBefore := sendLogs(), mails.Load()
+	if logsBefore == 0 {
+		t.Fatal("precondition: ticket.created wrote no send log")
+	}
+
+	for want := 1; want <= 2; want++ {
+		if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+			t.Fatalf("repeat %d: %v", want, out)
+		}
+		rec, err := app.FindFirstRecordByFilter("tickets", "dedupe_key = 'pump-7-overcurrent'")
+		if err != nil {
+			t.Fatalf("ticket: %v", err)
+		}
+		if got := rec.GetInt("repeat_count"); got != want {
+			t.Errorf("repeat_count: got %d, want %d", got, want)
+		}
+		if rec.GetDateTime("last_repeat_at").IsZero() {
+			t.Error("last_repeat_at not stamped")
+		}
+	}
+	if got := countTickets(t, app); got != 1 {
+		t.Errorf("repeats while open created tickets: %d, want 1", got)
+	}
+	if got := sendLogs(); got != logsBefore {
+		t.Errorf("counting a repeat notified: send log %d → %d", logsBefore, got)
+	}
+	if got := mails.Load(); got != mailsBefore {
+		t.Errorf("counting a repeat sent mail: %d → %d", mailsBefore, got)
 	}
 }

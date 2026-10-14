@@ -280,7 +280,10 @@ must not become four open tickets. `paused`, not `active` — the
 `things.retired` / `non_billable` idiom, so a new plan's zero value means
 "running". Idempotency reuses `tickets.dedupe_key` as `pm:{planId}:{date}`, so
 the 03:45 cron and a hand-run `helpdesk maintenance-run` (the
-catch-up path, since PB's cron is process-local) can overlap harmlessly. The
+catch-up path, since PB's cron is process-local) can overlap harmlessly — and,
+unlike a NATS/webhook key, a PM key is **not released** when its ticket closes
+(`1831000000`), because the crash-between-save-and-advance recovery relies on it
+still deduping a closed occurrence. The
 cron runs *after* `auto_close_resolved` on purpose. Generation deliberately does
 **not** `Suppress` mail — the opposite call from auto-close, because a new
 preventive ticket is real news, and a plan has no requester so only staff are
@@ -464,7 +467,17 @@ Projection semantics: unknown org → warn + ack (operator sets
 `customers.code`, later events flow); `dedupe_key` + a unique partial
 index on `(customer, dedupe_key)` absorb redelivery/publisher retries (per
 customer since `1830000000` — the key is publisher-chosen, and a global index
-let one tenant's key swallow another's event); bad payloads ack
+let one tenant's key swallow another's event) **only while the ticket is
+open**: since `1831000000` a `nats`/`webhook` ticket releases its key on
+resolve or close (the `internal/tickets` update hook), so a flapping alarm's
+stable key opens a fresh ticket after the fix instead of being acked away
+forever, and a repeat that lands while it is open bumps `repeat_count` /
+`last_repeat_at` (`tickets.CountRepeat`, `Suppress`ed, counts deliveries — a
+failed count NAKs, so a redelivery may count twice). Lookups and the index are
+unchanged; the index stays the race backstop. `internal/demoseed` puts its
+`seed-*` keys back with a raw write after walking a ticket to resolved, or a
+re-seed would duplicate it. `repeat_count`/`last_repeat_at` are server-only: a
+request hook pins them on every record-API create/update; bad payloads ack
 (terminal). NATS is **best-effort**: connect failure logs and the app
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
 `sub helpdesk.>` (widened to `pub helpdesk.>` for outbound notifications),
@@ -491,7 +504,10 @@ anything else. `Conn.Close` stops it before draining.
 `POST /api/helpdesk/inbound/{token}` resolves the customer by
 `webhook_token` (hidden field; admin-only reveal/rotate route at
 `POST /api/helpdesk/customers/{id}/webhook-token[?rotate=1]` — minted on
-first reveal). Idempotent via `dedupe_key` (200 + `duplicate:true`).
+first reveal). Idempotent via `dedupe_key` (200 + `duplicate:true`) while the
+ticket is open, with the repeat counted — same release-on-resolve semantics as
+NATS. `CreateTicket` is shared with email, so it counts only when `source` is
+`webhook`.
 `requester_email` matches only within the token's customer. Wire
 contract for both intakes: `docs/protocol.md`.
 
@@ -516,7 +532,9 @@ by exact `users.email`, else `customers.email_domain` (new field, unique, never 
 public provider — guarded in `internal/customers`); unresolvable senders are
 acked-and-dropped (no catch-all). Idempotency rides the email `Message-ID`
 (`tickets.dedupe_key` and the hidden `ticket_comments.source_message_id`, both
-migration `1823000000`). DKIM is log-only in v1, and ingestion is **text-only** —
+migration `1823000000`); an email ticket **never releases** its key and a
+redelivery is never counted — it is one message, and Postmark may retry after
+the ticket closed. DKIM is log-only in v1, and ingestion is **text-only** —
 attachments are a deliberate non-goal (inline signature images would swamp the
 per-record file cap). Full design: `docs/email-ingestion.md`.
 

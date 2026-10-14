@@ -13,8 +13,9 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 )
 
-// Register binds the ticket create hook (sequential number + field defaults)
-// and the comment-driven auto-reopen. PocketBase serializes writes on one
+// Register binds the ticket create hook (sequential number + field defaults),
+// the status guard (which also releases machine dedupe keys), the repeat-field
+// pin, and the comment-driven auto-reopen. PocketBase serializes writes on one
 // SQLite connection, and the unique index on `number` is the collision
 // backstop.
 func Register(app *pocketbase.PocketBase) {
@@ -44,13 +45,39 @@ func Register(app *pocketbase.PocketBase) {
 	// as the status change (no extra round-trip); setting it true is driven by
 	// staff comments below. The same hook keeps `resolved_at` in step with the
 	// status so the auto-close cron has a trustworthy age.
+	//
+	// It also releases a machine ticket's dedupe_key (migration 1831000000): a
+	// NATS or webhook key means "this problem", so once the ticket is done the
+	// next occurrence must open a new one rather than be acked away forever.
+	// Email and maintenance keys are NOT released — a Message-ID or a
+	// pm:{plan}:{date} names one message / one occurrence, and both intakes rely
+	// on it deduping after closure (Postmark retries, PM crash recovery).
 	app.OnRecordUpdate("tickets").BindFunc(func(e *core.RecordEvent) error {
 		if now := e.Record.GetString("status"); now == "resolved" || now == "closed" {
 			if e.Record.Original().GetString("status") != now {
 				e.Record.Set("awaiting_requester", false)
+				if src := e.Record.GetString("source"); src == "nats" || src == "webhook" {
+					e.Record.Set("dedupe_key", "")
+				}
 			}
 		}
 		syncResolvedAt(e.Record)
+		return e.Next()
+	})
+
+	// repeat_count / last_repeat_at are written only by the machine intakes
+	// (CountRepeat). Pin them on every record-API write so neither a requester's
+	// create nor a staff PATCH can set or roll them back. Request hooks only:
+	// the intakes' own app.Save never passes through here.
+	app.OnRecordCreateRequest("tickets").BindFunc(func(e *core.RecordRequestEvent) error {
+		e.Record.Set("repeat_count", 0)
+		e.Record.Set("last_repeat_at", "")
+		return e.Next()
+	})
+	app.OnRecordUpdateRequest("tickets").BindFunc(func(e *core.RecordRequestEvent) error {
+		orig := e.Record.Original()
+		e.Record.Set("repeat_count", orig.GetInt("repeat_count"))
+		e.Record.Set("last_repeat_at", orig.GetString("last_repeat_at"))
 		return e.Next()
 	})
 

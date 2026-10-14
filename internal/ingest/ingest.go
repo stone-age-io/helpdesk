@@ -22,6 +22,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/stone-age-io/helpdesk/internal/subjects"
+	"github.com/stone-age-io/helpdesk/internal/tickets"
 )
 
 // CreatePayload is the wire shape customer-side apps publish to
@@ -31,9 +32,11 @@ type CreatePayload struct {
 	Title    string `json:"title"`
 	Body     string `json:"body,omitempty"`
 	Priority string `json:"priority,omitempty"` // low|normal|high|urgent; anything else → normal
-	// DedupeKey makes ingestion idempotent per customer event: a publisher
-	// that retries (or a flapping sensor stamping a stable key) creates one
-	// ticket, not many.
+	// DedupeKey makes ingestion idempotent per customer event while its ticket
+	// is open: a publisher that retries (or a flapping sensor stamping a stable
+	// key) creates one ticket, not many, and each repeat is counted on it
+	// (repeat_count). Resolving or closing the ticket releases the key, so the
+	// next occurrence opens a new ticket.
 	DedupeKey string `json:"dedupe_key,omitempty"`
 	// Thing and Location are free text, stored as thing_note / location_note.
 	// ThingCode and LocationCode are the platform join keys: each resolves to a
@@ -179,7 +182,15 @@ func (c *Consumer) Project(subject string, data []byte) Outcome {
 			return Retry
 		}
 		if existing != nil {
-			return Ack // already projected (redelivery or publisher retry)
+			// The key is held by an OPEN ticket — resolving or closing a nats
+			// ticket releases it (internal/tickets). Count the repeat instead of
+			// opening a second ticket. A failed count retries, so a redelivery
+			// after a count that did land may count twice.
+			if err := tickets.CountRepeat(c.app, existing); err != nil {
+				slog.Warn("ingest: count repeat failed", "ticket", existing.Id, "err", err)
+				return Retry
+			}
+			return Ack
 		}
 	}
 

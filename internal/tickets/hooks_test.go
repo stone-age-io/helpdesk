@@ -1,6 +1,10 @@
 package tickets
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -467,5 +471,144 @@ func TestTypeDefaultsToReactive(t *testing.T) {
 	}
 	if got := rec.GetString("type"); got != "reactive" {
 		t.Errorf("default type: got %q, want reactive", got)
+	}
+}
+
+// TestResolveReleasesMachineDedupeKey: a NATS or webhook key means "this
+// problem", so resolving or closing gives it back and the next occurrence opens
+// a new ticket. Email (Message-ID) and maintenance (pm:{plan}:{date}) keys are
+// idempotency tokens that must keep deduping after closure, so they stay.
+func TestResolveReleasesMachineDedupeKey(t *testing.T) {
+	cases := []struct {
+		source string
+		keep   bool
+	}{
+		{"nats", false},
+		{"webhook", false},
+		{"email", true},
+		{"maintenance", true},
+	}
+	for _, tc := range cases {
+		for _, status := range []string{"resolved", "closed"} {
+			t.Run(tc.source+"/"+status, func(t *testing.T) {
+				app := testutil.SetupApp(t)
+				Register(app)
+				customer := seedCustomer(t, app, "Acme")
+
+				ticket := seedTicket(t, app, customer, "open")
+				ticket.Set("source", tc.source)
+				ticket.Set("dedupe_key", "key-1")
+				if err := app.Save(ticket); err != nil {
+					t.Fatalf("set source: %v", err)
+				}
+				// An unrelated edit while open must not release it.
+				ticket.Set("priority", "high")
+				if err := app.Save(ticket); err != nil {
+					t.Fatalf("edit: %v", err)
+				}
+				ticket.Set("status", status)
+				if err := app.Save(ticket); err != nil {
+					t.Fatalf("set %s: %v", status, err)
+				}
+
+				rec, err := app.FindRecordById("tickets", ticket.Id)
+				if err != nil {
+					t.Fatalf("reload: %v", err)
+				}
+				want := ""
+				if tc.keep {
+					want = "key-1"
+				}
+				if got := rec.GetString("dedupe_key"); got != want {
+					t.Errorf("dedupe_key after %s: got %q, want %q", status, got, want)
+				}
+			})
+		}
+	}
+}
+
+// TestCountRepeat: one more, stamped now, on the same ticket.
+func TestCountRepeat(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	ticket := seedTicket(t, app, customer, "open")
+
+	for want := 1; want <= 2; want++ {
+		if err := CountRepeat(app, ticket); err != nil {
+			t.Fatalf("CountRepeat: %v", err)
+		}
+		rec, err := app.FindRecordById("tickets", ticket.Id)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got := rec.GetInt("repeat_count"); got != want {
+			t.Errorf("repeat_count: got %d, want %d", got, want)
+		}
+		if rec.GetDateTime("last_repeat_at").IsZero() {
+			t.Error("last_repeat_at not stamped")
+		}
+	}
+}
+
+// TestRepeatFieldsAreServerOnly drives the record API: a staff PATCH can't set
+// the count and a requester's create can't seed one. Only CountRepeat writes it.
+func TestRepeatFieldsAreServerOnly(t *testing.T) {
+	app := testutil.SetupApp(t)
+	Register(app)
+	customer := seedCustomer(t, app, "Acme")
+	requester := seedRequester(t, app, customer)
+	agent := seedStaff(t, app)
+	mux := testutil.Handler(t, app)
+
+	send := func(method, path, token string, body map[string]any) map[string]any {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(method, path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", token)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s %s: got %d: %s", method, path, rec.Code, rec.Body.String())
+		}
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out
+	}
+
+	created := send("POST", "/api/collections/tickets/records", testutil.AuthToken(t, requester), map[string]any{
+		"customer": customer.Id, "requester": requester.Id, "title": "door stuck", "source": "portal",
+		"repeat_count": 50, "last_repeat_at": "2026-01-01 00:00:00.000Z",
+	})
+	id, _ := created["id"].(string)
+
+	ticket, err := app.FindRecordById("tickets", id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if ticket.GetInt("repeat_count") != 0 || !ticket.GetDateTime("last_repeat_at").IsZero() {
+		t.Errorf("requester create set repeat fields: count=%d at=%q",
+			ticket.GetInt("repeat_count"), ticket.GetString("last_repeat_at"))
+	}
+
+	if err := CountRepeat(app, ticket); err != nil {
+		t.Fatalf("CountRepeat: %v", err)
+	}
+	stamped := ticket.GetString("last_repeat_at")
+
+	send("PATCH", "/api/collections/tickets/records/"+id, testutil.AuthToken(t, agent), map[string]any{
+		"priority": "high", "repeat_count": 0, "last_repeat_at": "",
+	})
+	ticket, err = app.FindRecordById("tickets", id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if ticket.GetString("priority") != "high" {
+		t.Error("the rest of the staff PATCH should still apply")
+	}
+	if ticket.GetInt("repeat_count") != 1 || ticket.GetString("last_repeat_at") != stamped {
+		t.Errorf("staff PATCH rolled back repeat fields: count=%d at=%q",
+			ticket.GetInt("repeat_count"), ticket.GetString("last_repeat_at"))
 	}
 }

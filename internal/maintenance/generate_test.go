@@ -266,6 +266,44 @@ func TestGenerateIdempotentPerOccurrence(t *testing.T) {
 	}
 }
 
+// TestGenerateDedupesClosedOccurrence: NATS and webhook keys are released when
+// their ticket closes (internal/tickets); a pm:{plan}:{date} key must NOT be.
+// It names one occurrence, and the crash-recovery path above relies on it —
+// a crash between the save and the advance, with the ticket closed before the
+// re-run, must still not produce a second ticket for the same visit.
+func TestGenerateDedupesClosedOccurrence(t *testing.T) {
+	app, cust := setup(t)
+	plan := seedPlan(t, app, cust.Id, map[string]any{"next_due": day(0), "interval_days": 90})
+
+	if _, _, err := Generate(app, time.Now().UTC()); err != nil {
+		t.Fatalf("first generate: %v", err)
+	}
+	tk := planTickets(t, app, plan.Id)[0]
+	tk.Set("status", "closed")
+	if err := app.Save(tk); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	p := reload(t, app, plan)
+	p.Set("next_due", day(0))
+	if err := app.Save(p); err != nil {
+		t.Fatalf("rewind plan: %v", err)
+	}
+
+	created, _, err := Generate(app, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("second generate: %v", err)
+	}
+	if created != 0 {
+		t.Errorf("created = %d for an occurrence whose ticket is closed, want 0", created)
+	}
+	if n := len(planTickets(t, app, plan.Id)); n != 1 {
+		t.Errorf("got %d tickets for one occurrence, want 1", n)
+	}
+	if got := reload(t, app, tk).GetString("dedupe_key"); got == "" {
+		t.Error("closing a maintenance ticket released its dedupe_key")
+	}
+}
+
 // TestGenerateSkipsWhenPreviousStillOpen: one quarterly inspection nobody did
 // must not become four open tickets — but the plan still tracks the calendar.
 func TestGenerateSkipsWhenPreviousStillOpen(t *testing.T) {

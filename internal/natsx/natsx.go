@@ -97,7 +97,7 @@ func (c *Conn) EnsureStream(ctx context.Context, name string, subjs []string) (j
 // notification stream: a Nats-Msg-Id republished within this window is
 // collapsed. Kept short — this only guards accidental double-publish of the
 // same event, not long-horizon idempotency (which the inbound side does with
-// a DB dedupe_key).
+// a DB dedupe_key, held for as long as its ticket stays open).
 const notifyDedupeWindow = 2 * time.Minute
 
 // EnsureNotifyStream returns the outbound notification stream, creating it if

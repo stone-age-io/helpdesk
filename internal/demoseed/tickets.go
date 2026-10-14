@@ -556,6 +556,15 @@ func (s *seeder) writeTicket(t ticketFixture) error {
 				return fmt.Errorf("transition %s → %s: %w", t.Key, st, err)
 			}
 		}
+		// Resolving a nats/webhook ticket releases its dedupe_key
+		// (internal/tickets), but this key is the seeder's natural key, not a
+		// publisher's — without it the next run re-creates the ticket. Put it
+		// back with a raw write, the same hook-free path backdate uses.
+		if _, err := s.app.DB().NewQuery(
+			"UPDATE {{tickets}} SET [[dedupe_key]] = {:d} WHERE [[id]] = {:id}",
+		).Bind(dbx.Params{"d": dedupe, "id": rec.Id}).Execute(); err != nil {
+			return fmt.Errorf("restore seed key %s: %w", t.Key, err)
+		}
 		// The audit rows land with `created` = now; pull them back into the
 		// ticket's own window so the timeline is chronological.
 		if err := s.backdateEvents(rec.Id, createdAt); err != nil {

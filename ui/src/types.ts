@@ -180,6 +180,11 @@ export interface Ticket extends BaseRecord {
   due_at?: string
   // The plan that generated this ticket, when the scheduler opened it.
   maintenance_plan?: string
+  // Server-maintained (migration 1831000000): how often a NATS/webhook source
+  // re-sent this ticket's dedupe_key while it was open, and when it last did.
+  // Counts deliveries, so a webhook caller's retries are included.
+  repeat_count?: number
+  last_repeat_at?: string
 }
 
 // Preventive-maintenance schedule (migration 1829000000). A planning layer

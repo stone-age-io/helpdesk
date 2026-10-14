@@ -469,6 +469,12 @@ onUnmounted(() => {
               <p v-if="ticket.origin_subject" class="text-xs font-mono text-base-content/50 mt-2">
                 via {{ ticket.origin_subject }}
               </p>
+              <!-- A NATS/webhook source re-sent this ticket's key while it was
+                   open (migration 1831000000): counted, not a new ticket. -->
+              <p v-if="ticket.repeat_count" class="text-xs text-base-content/60 mt-2">
+                Repeated {{ ticket.repeat_count }} {{ ticket.repeat_count === 1 ? 'time' : 'times' }}
+                <span v-if="ticket.last_repeat_at">· last {{ formatDistanceToNow(new Date(ticket.last_repeat_at), { addSuffix: true }) }}</span>
+              </p>
             </template>
             <template v-else>
               <input v-model="editTitle" type="text" maxlength="300" class="input input-bordered input-sm w-full font-bold" />

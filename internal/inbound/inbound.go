@@ -25,6 +25,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/stone-age-io/helpdesk/internal/authz"
+	"github.com/stone-age-io/helpdesk/internal/tickets"
 )
 
 // tokenEntropy sizes the webhook token: 18 bytes → 24-char URL-safe base64.
@@ -104,17 +105,31 @@ func (e *badPayloadError) Error() string { return e.msg }
 
 // CreateTicket projects one webhook payload into a ticket for the resolved
 // customer. Returns created=false when the dedupe key already has a ticket
-// (idempotent retries). Exposed for tests, which drive it without HTTP.
+// (idempotent retries; a webhook repeat is also counted on it). Exposed for
+// tests, which drive it without HTTP.
 func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record, bool, error) {
 	title := strings.TrimSpace(p.Title)
 	if title == "" {
 		return nil, false, &badPayloadError{"title is required"}
 	}
 
+	source := p.Source
+	if source == "" {
+		source = "webhook"
+	}
+
 	// dedupe_key is unique per customer (migration 1830000000): publishers in
 	// different tenants choose their keys independently, so a key is only a
-	// duplicate of this customer's own ticket.
+	// duplicate of this customer's own ticket. A webhook ticket releases its key
+	// when resolved or closed (internal/tickets), so a webhook match is an open
+	// ticket and the repeat is counted on it. An email's Message-ID is never
+	// released or counted: a match is the same message delivered again.
 	if existing := findByDedupeKey(app, customer.Id, p.DedupeKey); existing != nil {
+		if source == "webhook" {
+			if err := tickets.CountRepeat(app, existing); err != nil {
+				return nil, false, err
+			}
+		}
 		return existing, false, nil
 	}
 
@@ -128,11 +143,6 @@ func CreateTicket(app core.App, customer *core.Record, p Payload) (*core.Record,
 	case "low", "normal", "high", "urgent":
 	default:
 		priority = "normal"
-	}
-
-	source := p.Source
-	if source == "" {
-		source = "webhook"
 	}
 
 	rec := core.NewRecord(col)

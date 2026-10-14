@@ -376,3 +376,43 @@ func TestParseTicketToken(t *testing.T) {
 		}
 	}
 }
+
+// TestIngestRedeliveryAfterCloseStillDedupes: a Message-ID is one message, not
+// "the same problem", so unlike a webhook key it is never released. A provider
+// retrying a new-ticket email after that ticket closed must not open a second
+// one — and a redelivery is not a repeat, so nothing is counted.
+func TestIngestRedeliveryAfterCloseStillDedupes(t *testing.T) {
+	app, customer := emailSetup(t)
+	seedUser(t, app, customer, "Rita", "rita@acme.example")
+	m := msg("rita@acme.example", "door sensor", "offline")
+
+	created, err := IngestEmail(app, m)
+	if err != nil || created.Outcome != OutcomeCreated {
+		t.Fatalf("first delivery: outcome %q err %v", created.Outcome, err)
+	}
+	ticket := created.Ticket
+	ticket.Set("status", "closed")
+	if err := app.Save(ticket); err != nil {
+		t.Fatalf("close ticket: %v", err)
+	}
+
+	res, err := IngestEmail(app, m)
+	if err != nil {
+		t.Fatalf("redelivery: %v", err)
+	}
+	if res.Outcome != OutcomeDuplicate || res.Ticket.Id != ticket.Id {
+		t.Fatalf("redelivery after close: got %q (ticket %v), want duplicate of %s",
+			res.Outcome, res.Ticket, ticket.Id)
+	}
+	rec, err := app.FindRecordById("tickets", ticket.Id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := rec.GetInt("repeat_count"); got != 0 {
+		t.Errorf("email redelivery counted as a repeat: %d", got)
+	}
+	rows, _ := app.FindRecordsByFilter("tickets", "", "", 0, 0)
+	if len(rows) != 1 {
+		t.Errorf("got %d tickets, want 1", len(rows))
+	}
+}
