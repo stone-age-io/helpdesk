@@ -167,10 +167,13 @@ cd .. && go build ./cmd/helpdesk
 ./helpdesk version              # the build the toolchain stamped
 ```
 
-CI rebuilds the SPA on every push and fails if `internal/webui/public` differs
-from what is committed, which is the one way that step gets caught: forget it
-and the Go build still passes, the tests still pass, and the binary quietly
-serves the previous UI.
+CI rebuilds the SPA on every push, which typechecks it, and checks that the
+committed `index.html` references only chunks that are committed. It does
+**not** verify the bundle is up to date with `ui/`, and cannot: the bundle is
+platform specific (vite builds through rolldown, whose native binding ships per
+platform), so a Linux runner and a Windows desktop produce different bytes and
+different content hashes from identical sources. Rebuilding and committing
+remains yours to remember.
 
 The first start seeds a bootstrap staff admin (`admin@helpdesk.local`) and
 prints its password **once**. Configuration is `helpdesk.yaml` plus

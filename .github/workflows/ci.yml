@@ -76,35 +76,41 @@ jobs:
         run: npm ci && npm run build
         working-directory: ui
 
-      # internal/webui/public is //go:embed-ed at Go compile time and committed,
-      # so a fresh checkout builds without npm. That only holds while the
-      # committed bundle matches the source, and re-committing it is exactly the
-      # step a hurried change forgets: the Go build still passes, the tests still
-      # pass, and the binary quietly serves the previous SPA.
+      # WHAT THIS DOES NOT DO, AND WHY, BECAUSE TWO ATTEMPTS GOT IT WRONG.
       #
-      # This compares the SET OF EMITTED CHUNKS, not their bytes, and the
-      # distinction is the whole reason this step works.
-      #
-      # Each chunk's filename carries vite's content hash, so changing a source
-      # file and not rebuilding renames its chunk: the rebuild writes a file
-      # that is not tracked, and the tracked one it replaced disappears. Both
-      # are caught below. vite empties the output directory first, so a stale
-      # chunk cannot simply linger.
-      #
-      # The bytes are deliberately not compared because they are not comparable.
+      # It does not compare the committed bundle with the one just built.
+      # internal/webui/public is //go:embed-ed and committed so a fresh checkout
+      # builds without npm (CLAUDE.md), and that artifact is PLATFORM SPECIFIC:
       # vite 8 builds through rolldown, whose native binding ships per platform,
-      # so a bundle built on Windows and one built on this Linux runner differ
-      # in a few CR bytes embedded in minified string literals while hashing
-      # identically. The first version of this check compared bytes and failed
-      # on a tree that was perfectly current. See .gitattributes.
-      - name: Committed bundle is current
+      # and a Windows build and a Linux build of identical sources differ both
+      # in bytes and in the content hashes in the chunk filenames. Comparing
+      # bytes failed on a current tree; comparing the chunk set failed the same
+      # way, because the hashes differ too. Neither can pass on a runner whose
+      # OS is not the one the bundle was committed from, so neither is a check,
+      # only a tax.
+      #
+      # Running this job on windows-latest would make a strict comparison work,
+      # at the cost of pinning "who may commit the bundle" to one OS. That is a
+      # real option and a deliberate decision, not a default to drift into.
+      #
+      # What is left is still worth having. The build above runs vue-tsc, so the
+      # SPA is typechecked on every push, and the step below catches the failure
+      # that actually reaches a user: an index.html referencing chunks that are
+      # not committed, which serves a blank page with no error anywhere. That
+      # check is a property of the committed tree alone, so it is reliable
+      # everywhere.
+      - name: Committed bundle is internally consistent
         run: |
-          new="$(git ls-files --others --exclude-standard -- internal/webui/public)"
-          gone="$(git diff --name-only --diff-filter=D -- internal/webui/public)"
-          if [ -n "$new" ] || [ -n "$gone" ]; then
-            echo "::error::internal/webui/public is stale. Run 'cd ui && npm run build' and commit the result."
-            [ -n "$new" ] && { echo "Chunks this build emitted that are not committed:"; echo "$new"; }
-            [ -n "$gone" ] && { echo "Committed chunks this build no longer emits:"; echo "$gone"; }
+          missing=0
+          # Every hashed asset index.html pulls in must exist in the commit.
+          for ref in $(grep -oE '(src|href)="/assets/[^"]+"' internal/webui/public/index.html | sed -E 's/.*"\/(.*)"/\1/'); do
+            if [ ! -f "internal/webui/public/$ref" ]; then
+              echo "::error file=internal/webui/public/index.html::references $ref, which is not committed"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "The committed SPA would serve a blank page. Run 'cd ui && npm run build' and commit the whole of internal/webui/public."
             exit 1
           fi
-          echo "Committed bundle matches a fresh build (same chunk set)."
+          echo "index.html's $(grep -coE '(src|href)="/assets/[^"]+"' internal/webui/public/index.html) asset reference(s) all resolve."
