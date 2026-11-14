@@ -1,0 +1,137 @@
+# Changelog
+
+All notable changes to the helpdesk are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## Versioning, and what it promises
+
+The helpdesk is **before 1.0**, so a minor version can change any surface,
+and each entry below says when one did. The sibling rule in the platform's
+[Stability](https://github.com/stone-age-io/platform-docs/blob/main/docs/stability.md)
+page applies here too: a client must ignore fields it does not know, because a
+new field in a response, a record or a payload is an addition rather than a
+break.
+
+The surfaces worth pinning a version against, once there is more than one:
+
+- The **inbound wire contracts** — the NATS subject `helpdesk.{orgCode}.tickets.create`
+  and the webhook and email payloads, in [`docs/protocol.md`](docs/protocol.md).
+- The **outbound event envelope**, `schema: helpdesk.event`, which carries its
+  own `version` field and is bumped there rather than here.
+- The **configuration keys** and their `HELPDESK_*` overrides, in
+  [`docs/configuration.md`](docs/configuration.md).
+- The **collection and field names** a sibling app or an export-then-seed
+  script reads, in [`docs/data-model.md`](docs/data-model.md).
+
+Not covered, and free to change in any release: the SPA's routes and layout,
+log lines and error text, the PocketBase dashboard at `/_`, the database file
+itself, and what `seed-demo` creates.
+
+## [Unreleased]
+
+Nothing yet.
+
+## [0.1.0] — unreleased
+
+First tagged release. Everything below is the starting state rather than a list
+of changes, so it is grouped by what the application does rather than by
+Added/Changed. Development history is in the commit log, which runs from
+2026-07-10.
+
+### Service desk
+
+- **Tickets** with sequential numbers, a two-stage terminal (`resolved` is a
+  grace window a requester reply reopens; `closed` is final), and a daily cron
+  that promotes tickets left resolved past `auto_close_resolved_days`.
+- **Two identity classes**: `staff` (cross-customer; `agent`, `admin` or
+  `field`) and requesters (`users`, scoped to one customer), separated by
+  collection rules rather than by application code.
+- **Classification and grouping**: category, type (`reactive` | `planned`),
+  project, location, thing, estimated minutes and a due date — the last being a
+  plain date with no clock, no breach state and no escalation.
+- **Audit trail**: every workflow-field change writes a staff-only
+  `ticket_events` row, written server-side so it cannot be forged through the
+  record API.
+- **Attachments** on tickets and comments, visible only to callers who can see
+  the owning record.
+
+### Field work
+
+- **Visits**: `requested → scheduled → completed | canceled`, with one enforced
+  invariant (a scheduled visit has both a time and an assignee) and a
+  `completed_at` stamp that survives later edits.
+- **Dispatch**: a needs-scheduling bucket plus a day-grouped, filterable
+  calendar.
+- **A mobile field shell** with its own bottom-bar navigation, and a visit work
+  view running Arrive → live timer → Complete.
+- **Projects and locations**: a planning layer above the ticket ledger. A
+  project's crew and total time are derived at read time, never stored.
+- **Preventive maintenance**: recurring plans whose only output is an ordinary
+  ticket, anchored either to the schedule or to the last completion.
+
+### Time tracking
+
+- **Time entries** in minutes, with an optional visit tag and a `non_billable`
+  flag stored as the exception so the zero value is billable.
+- **Start/stop timers**, one open session per agent, enforced by a unique index
+  rather than by the stop route.
+- **Per-customer disclosure**: `show_time_to_requester` gates what a requester
+  sees, and when it is on they see the billable sum only.
+- Deliberately absent: rates, dollar amounts, and any ledger lock on invoiced
+  time.
+
+### Intake
+
+- **NATS ingestion** from `helpdesk.{orgCode}.tickets.create`, with the tenant
+  read from the operator-signed subject and never from the payload.
+- **An authenticated webhook**, and **inbound email** through a parsing provider
+  (Postmark), which means the helpdesk holds no mailbox credentials. A reply
+  carrying `[#N]` becomes a comment, but only from someone belonging to that
+  ticket's customer.
+- **Idempotency** on `dedupe_key`, scoped per customer, released when a machine
+  ticket resolves so a recurring alarm opens a fresh ticket rather than being
+  acked away forever.
+
+### Outbound
+
+- **Eight email event types** from database-stored templates, with a recipient
+  spec per template and two independent suppression paths.
+- **A second NATS channel**: the same events publish a fixed, versioned envelope
+  to `helpdesk.{customerCode}.events.{event_type}` when a template opts in.
+- **Service discovery**: the binary registers as NATS micro service `helpdesk`,
+  identity only, with no endpoints.
+
+### Interfaces
+
+- **A staff app, a requester portal and a field shell**, one Vue 3 SPA embedded
+  in the binary so a fresh checkout builds without npm.
+- **QR labels and scanning**: the payload is the bare code, resolved globally
+  and then disambiguated, with manual entry as half the design rather than a
+  fallback.
+- **Reports** for staff and a customer-facing service summary, both scoped by
+  customer, location and thing.
+- **An operator branding overlay** — app name, logo and theme without a rebuild
+  — and an installable PWA with a deliberately no-op service worker.
+
+### Operations
+
+- **One binary** embedding PocketBase, configured by `helpdesk.yaml` plus
+  `HELPDESK_*` overrides.
+- **Schema as Go migrations**, idempotent and applied on start.
+- **`seed-demo`** fills a showcase instance with a backdated history that reads
+  as real, which an external script cannot produce.
+- **`version`** reports the build the toolchain stamped.
+
+### Known gaps at 0.1.0
+
+- **No `GET /api/ready` and no `GET /metrics`**, which the platform's
+  [Health & Metrics](https://github.com/stone-age-io/platform-docs/blob/main/docs/health-metrics.md)
+  page expects of every Stone-Age.io binary. PocketBase's `/api/health` answers
+  liveness only. Readiness is the nearer of the two.
+- **PocketBase is v0.38.1**, where the platform is built on v0.41.1.
+- **Things and locations do not sync from the platform**, and architecturally
+  cannot: there is no event stream for them, and the alternatives are a
+  control-plane credential this application must never hold or an edge KV
+  mirror. The catalog is hand-curated and joins upstream by code.
+- **DKIM on inbound email is log-only**, and email ingestion is text-only by
+  design.

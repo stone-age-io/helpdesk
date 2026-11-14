@@ -164,7 +164,13 @@ cd ui && npm ci                 # once
 npm run build                   # vue-tsc + vite → ../internal/webui/public (commit the output)
 cd .. && go build ./cmd/helpdesk
 ./helpdesk serve                # UI at http://127.0.0.1:8090/ · PocketBase admin at /_
+./helpdesk version              # the build the toolchain stamped
 ```
+
+CI rebuilds the SPA on every push and fails if `internal/webui/public` differs
+from what is committed, which is the one way that step gets caught: forget it
+and the Go build still passes, the tests still pass, and the binary quietly
+serves the previous UI.
 
 The first start seeds a bootstrap staff admin (`admin@helpdesk.local`) and
 prints its password **once**. Configuration is `helpdesk.yaml` plus
@@ -287,3 +293,13 @@ the current app:
   and the service-delivery layer.
 - [`docs/nats-notifications-plan.md`](docs/nats-notifications-plan.md): the
   NATS notification channel.
+
+---
+
+## Releases and License
+
+Releases are tagged and summarised in [CHANGELOG.md](CHANGELOG.md), which also
+says which surfaces a version number is worth pinning against. The helpdesk is
+before 1.0, so a minor version can still change any of them.
+
+Licensed under the [MIT License](LICENSE).

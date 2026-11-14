@@ -1,0 +1,84 @@
+name: CI
+
+# Pull requests and the default branch. Tags are deliberately not built here:
+# this workflow proves the tree is sound, and cutting a release is a separate
+# decision a person makes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch. A force-push or a quick second commit cancels the run it
+  # superseded rather than queueing behind it; the suite stands up a real
+  # PocketBase per test and is slow enough that the queue would be the thing
+  # people notice.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build and tests
+    runs-on: ubuntu-latest
+    # Each test gets a real PocketBase against t.TempDir() with every migration
+    # applied, so the suite is minutes rather than seconds. The default 360 is
+    # far too generous for a hung test to sit in.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Read from go.mod, so the toolchain moves in one place.
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  ui:
+    name: SPA builds and matches what is committed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # `npm run build` runs vue-tsc first, so this typechecks the SPA as well
+      # as bundling it.
+      - name: Build the SPA
+        run: npm ci && npm run build
+        working-directory: ui
+
+      # internal/webui/public is //go:embed-ed at Go compile time and committed,
+      # so a fresh checkout builds without npm. That only holds while the
+      # committed bundle matches the source, and re-committing it is exactly the
+      # step a hurried change forgets: the Go build still passes, the tests still
+      # pass, and the binary quietly serves the previous SPA.
+      #
+      # This check works only because .gitattributes stops git rewriting line
+      # endings in that directory. Without it a no-op build reported nine
+      # modified chunks on Windows and this step would fail on every run.
+      - name: Committed bundle is current
+        run: |
+          if ! git diff --quiet -- internal/webui/public; then
+            echo "::error::internal/webui/public is stale. Run 'cd ui && npm run build' and commit the result."
+            git diff --stat -- internal/webui/public
+            exit 1
+          fi
+          echo "Committed bundle matches a fresh build."

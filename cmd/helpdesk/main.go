@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+	"github.com/spf13/cobra"
 
 	"github.com/stone-age-io/helpdesk/config"
 	"github.com/stone-age-io/helpdesk/internal/activity"
@@ -34,6 +36,7 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/timeentries"
 	"github.com/stone-age-io/helpdesk/internal/timers"
+	"github.com/stone-age-io/helpdesk/internal/version"
 	"github.com/stone-age-io/helpdesk/internal/visits"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
@@ -73,6 +76,26 @@ func main() {
 	// `helpdesk maintenance-run` performs the daily generation sweep on demand —
 	// the catch-up path after downtime, since PB's cron is process-local.
 	maintenance.RegisterCommand(app)
+
+	// `helpdesk version` reports the same build string NATS service discovery
+	// publishes, so `nats micro ls` and the box you are standing at can be
+	// compared without guessing. It is inline rather than a RegisterCommand in
+	// internal/version because that package stays stdlib-only; this is the one
+	// caller that needs cobra, and it is eight lines.
+	//
+	// RootCmd.Version is set from the same source on purpose. PocketBase seeds
+	// it with its own string ("(untracked)" for a build with no ldflags), so
+	// `helpdesk --version` and `helpdesk version` otherwise answer the same
+	// question differently — and the wrong one of the two is the one an
+	// operator reaches for first.
+	app.RootCmd.Version = version.Build()
+	app.RootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the helpdesk version",
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Printf("helpdesk %s\n", version.Build())
+		},
+	})
 
 	tickets.Register(app)
 	projects.Register(app)

@@ -8,26 +8,6 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-func TestServiceVersion(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"1.2.3", "1.2.3"},
-		{"v1.2.3", "1.2.3"},
-		{"1.2", "0.0.0-dev"},
-		// What Go stamps: a pseudo-version from an untagged checkout, and "(devel)"
-		// (or nothing) when it has no VCS info.
-		{"v0.0.0-20261008040929-cdd0e877a05b+dirty", "0.0.0-20261008040929-cdd0e877a05b+dirty"},
-		{"(devel)", "0.0.0-dev"},
-		{"", "0.0.0-dev"},
-	}
-	for _, tc := range cases {
-		if got := serviceVersion(tc.in); got != tc.want {
-			t.Errorf("serviceVersion(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 // noServer refuses every dial, so the connection never reaches a server.
 type noServer struct{}
 

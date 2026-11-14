@@ -1,0 +1,24 @@
+# Line endings are LF in the repository, everywhere.
+#
+# Without this file git falls back to each clone's core.autocrlf, which on
+# Windows is `true`: text files are rewritten CRLF on checkout and normalised
+# back on commit. That round trip is not stable for the generated SPA bundle.
+# A `npm run build` that changed nothing reported nine modified chunks, and
+# their content hashes were identical, which is the giveaway: the bytes vite
+# hashed never changed. Nothing was wrong with what was committed either, since
+# marking the directory below made the nine disappear without rewriting one of
+# them. It was git's own normalisation on comparison, and it is invisible until
+# it wastes an afternoon.
+#
+# That also blocks the thing worth having. CLAUDE.md says to rebuild and
+# re-commit internal/webui/public whenever anything under ui/ changes, which is
+# exactly the step a hurried commit forgets, and CI can catch it by rebuilding
+# and diffing. It can only do that if a no-op build is a no-op diff.
+* text=auto eol=lf
+
+# The committed SPA bundle is generated: vite writes it, we commit it verbatim
+# so a fresh checkout builds without npm. Git must not rewrite a single byte of
+# it, so it is marked binary rather than merely LF — minified chunks carry
+# escaped CR and high-bit characters that git's text heuristic reads
+# inconsistently, which is how this started.
+internal/webui/public/** -text
