@@ -248,15 +248,16 @@ func handleTokenReveal(re *core.RequestEvent) error {
 
 // resolveLocation maps a location code to a locations id within the customer
 // (empty/unknown → ("", false)); no auto-stub, matching the ingest path.
-// Customer-scoped so a code can never resolve across tenants.
+// Customer-scoped so a code can never resolve across tenants, and case-folded
+// per ADR 0003 rule 3 — see the ingest copy for why the index folds with it.
 func resolveLocation(app core.App, customerID, code string) (string, bool) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return "", false
 	}
 	loc, err := app.FindFirstRecordByFilter(
-		"locations", "customer = {:c} && code = {:code}",
-		dbx.Params{"c": customerID, "code": code})
+		"locations", "customer = {:c} && code:lower = {:code}",
+		dbx.Params{"c": customerID, "code": strings.ToLower(code)})
 	if err != nil || loc == nil {
 		return "", false
 	}
@@ -265,15 +266,16 @@ func resolveLocation(app core.App, customerID, code string) (string, bool) {
 
 // resolveThing maps a thing code to a things id within the customer
 // (empty/unknown → ("", false)); no auto-stub, matching the ingest path.
-// Customer-scoped so a code can never resolve across tenants.
+// Customer-scoped so a code can never resolve across tenants, and case-folded
+// per ADR 0003 rule 3 — see the ingest copy for why the index folds with it.
 func resolveThing(app core.App, customerID, code string) (string, bool) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return "", false
 	}
 	thing, err := app.FindFirstRecordByFilter(
-		"things", "customer = {:c} && code = {:code}",
-		dbx.Params{"c": customerID, "code": code})
+		"things", "customer = {:c} && code:lower = {:code}",
+		dbx.Params{"c": customerID, "code": strings.ToLower(code)})
 	if err != nil || thing == nil {
 		return "", false
 	}

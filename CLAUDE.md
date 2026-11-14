@@ -313,6 +313,20 @@ the boundary — joined by `(customer, code)` exactly like locations, so
 no auto-stub). It exists to answer the two questions free text couldn't: *every
 ticket for this device* and *which devices burn the most hours*.
 
+**Every code match in this app ignores case** — both intakes, the customer
+token on subject token 2, and the scanner — because ADR 0003 rule 3 settles it
+for the ecosystem: stored as entered, compared ignoring case, with subjects and
+permissions left exact (NATS is case-sensitive and the stored spelling is the
+only spelling). Migration `1832000000` folds the five code indexes to match,
+and the two halves are **one change, not two**: a fold-case lookup over a
+case-sensitive index is worse than what it replaces, because a customer could
+then hold both `RDR-01` and `rdr-01` and `FindFirstRecordByFilter` would return
+an arbitrary one — a silent *wrong-record* attach, where the bug being fixed
+was only a silent miss. The index enforces uniqueness and nothing else: SQLite
+applies a *column's* collation to a comparison, not an index's, so the
+resolvers match with PocketBase's `:lower` (→ `LOWER(code) = ?`), pass an
+already-lowered param, and do not use the index.
+
 There is **no live sync and there cannot be one**: the platform publishes no
 event stream for things, so the only read paths are a control-plane credential
 (forbidden here) or an edge KV mirror. This is a hand-curated local catalog that
@@ -573,7 +587,10 @@ re-litigating:
   legitimately hold both under one code — both are searched.
 - **Manual entry is half the design, not a fallback.** Every label prints its
   code in human-readable text because the symbol will eventually be scratched,
-  greasy, or in a closet too dark to focus in.
+  greasy, or in a closet too dark to focus in. Which is why the lookup
+  **ignores case** (`code:lower`, migration `1832000000`): a camera reads a
+  symbol exactly, a person in that closet types `door-1` off a sticker reading
+  `DOOR-1`, and "not in the catalog" is the wrong answer to give them.
 
 Labels are sized to real stock in **millimetres**, not pixels, with a per-size
 `@page` box written from script (`@page` cannot be interpolated from a template

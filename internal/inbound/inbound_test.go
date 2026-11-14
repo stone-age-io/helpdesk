@@ -237,6 +237,16 @@ func TestCreateTicketResolvesLocationByCode(t *testing.T) {
 	if got := rec2.GetString("location_note"); got != "ZZZ" {
 		t.Errorf("breadcrumb: got %q, want ZZZ", got)
 	}
+
+	// Case-folded (ADR 0003 rule 3), and still customer-scoped: folding case
+	// must not have widened the match past the tenant.
+	rec3, _, err := CreateTicket(app, customer, Payload{Title: "z", LocationCode: "hq"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec3.GetString("location"); got != loc.Id {
+		t.Errorf("case-mismatched code: got %q, want %q", got, loc.Id)
+	}
 }
 
 func TestCreateTicketResolvesThingByCode(t *testing.T) {
@@ -286,6 +296,15 @@ func TestCreateTicketResolvesThingByCode(t *testing.T) {
 	}
 	if got := rec2.GetString("thing_note"); got != "ZZZ" {
 		t.Errorf("breadcrumb: got %q, want ZZZ", got)
+	}
+
+	// Case-folded (ADR 0003 rule 3), and still customer-scoped.
+	rec3, _, err := CreateTicket(app, customer, Payload{Title: "z", ThingCode: "hq-cam-1"})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if got := rec3.GetString("thing"); got != thing.Id {
+		t.Errorf("case-mismatched code: got %q, want %q", got, thing.Id)
 	}
 }
 

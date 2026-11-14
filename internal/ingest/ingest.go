@@ -301,8 +301,14 @@ func resolveCustomer(app core.App, token string) (*core.Record, bool) {
 	if token == "" {
 		return nil, false
 	}
+	// Case-folded (ADR 0003 rule 3; migration 1832000000 folds the index to
+	// match). The platform mints organization codes lowercase, so this is
+	// defensive — but the token is matched against a code an operator typed in
+	// by hand, and a mismatch sends every machine-filed ticket for this tenant
+	// down the unmapped-org path below, which warns and ACKS. Unrecoverable,
+	// for one word.
 	rec, err := app.FindFirstRecordByFilter(
-		"customers", "code = {:org}", dbx.Params{"org": token})
+		"customers", "code:lower = {:org}", dbx.Params{"org": strings.ToLower(token)})
 	if err != nil {
 		if !isNotFound(err) {
 			slog.Warn("ingest: customer lookup failed", "org", token, "err", err)
@@ -317,14 +323,22 @@ func resolveCustomer(app core.App, token string) (*core.Record, bool) {
 // Empty/unknown → ("", false); callers keep a free-text fallback rather than
 // auto-creating an addressless stub (worse than nothing for a dispatched tech).
 // Scoped by customer so a code can never resolve across tenants.
+//
+// The match ignores case, per ADR 0003 rule 3 in platform-docs: a code is
+// stored as entered and compared ignoring case, so a publisher sending
+// `rdr-01` finds the catalog's `RDR-01` instead of silently landing in the
+// note field and costing the ticket its reporting axis. Migration 1832000000
+// folds the unique index to match, which is what keeps this single-valued —
+// without it a customer could hold both spellings and this would pick one
+// arbitrarily. `:lower` is PocketBase's modifier, so the param is lowered too.
 func resolveLocation(app core.App, customerID, code string) (string, bool) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return "", false
 	}
 	loc, err := app.FindFirstRecordByFilter(
-		"locations", "customer = {:c} && code = {:code}",
-		dbx.Params{"c": customerID, "code": code})
+		"locations", "customer = {:c} && code:lower = {:code}",
+		dbx.Params{"c": customerID, "code": strings.ToLower(code)})
 	if err != nil || loc == nil {
 		return "", false
 	}
@@ -342,8 +356,8 @@ func resolveThing(app core.App, customerID, code string) (string, bool) {
 		return "", false
 	}
 	thing, err := app.FindFirstRecordByFilter(
-		"things", "customer = {:c} && code = {:code}",
-		dbx.Params{"c": customerID, "code": code})
+		"things", "customer = {:c} && code:lower = {:code}",
+		dbx.Params{"c": customerID, "code": strings.ToLower(code)})
 	if err != nil || thing == nil {
 		return "", false
 	}

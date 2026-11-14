@@ -259,6 +259,24 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	if got := recC.GetString("location_note"); got != "rear dock" {
 		t.Errorf("free-text should win location_note: got %q, want 'rear dock'", got)
 	}
+
+	// Case-folded (ADR 0003 rule 3). A publisher's `bldg-c` must find the
+	// catalog's `BLDG-C` rather than silently becoming a note and costing the
+	// ticket its reporting axis.
+	if out := c.Project("helpdesk.acme.tickets.create",
+		[]byte(`{"title":"d","location_code":"bldg-c"}`)); out != Ack {
+		t.Fatalf("case-mismatched code: %v", out)
+	}
+	recD, err := app.FindFirstRecordByFilter("tickets", "title = 'd'")
+	if err != nil {
+		t.Fatalf("ticket d: %v", err)
+	}
+	if got := recD.GetString("location"); got != loc.Id {
+		t.Errorf("case-mismatched code should resolve: got %q, want %q", got, loc.Id)
+	}
+	if got := recD.GetString("location_note"); got != "" {
+		t.Errorf("resolved code leaves no breadcrumb, got %q", got)
+	}
 }
 
 func TestProjectResolvesThingByCode(t *testing.T) {
@@ -332,6 +350,41 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	recD, _ := app.FindFirstRecordByFilter("tickets", "title = 'dd'")
 	if got := recD.GetString("location"); got != "" {
 		t.Errorf("resolved thing should not backfill ticket location, got %q", got)
+	}
+
+	// Case-folded (ADR 0003 rule 3), same contract as the location resolver.
+	if out := c.Project("helpdesk.acme.tickets.create",
+		[]byte(`{"title":"ee","thing_code":"pump-7"}`)); out != Ack {
+		t.Fatalf("case-mismatched code: %v", out)
+	}
+	recE, _ := app.FindFirstRecordByFilter("tickets", "title = 'ee'")
+	if got := recE.GetString("thing"); got != thing.Id {
+		t.Errorf("case-mismatched code should resolve: got %q, want %q", got, thing.Id)
+	}
+}
+
+// The subject's tenant token resolves to a customer regardless of case. The
+// platform mints organization codes lowercase (ADR 0002 rule 1), so this guards
+// the hand-typed side: `customers.code` is entered by an operator, and a
+// mismatch would send every machine-filed ticket for that tenant down the
+// unmapped-org path, which warns and ACKS — unrecoverable, and silent to the
+// publisher.
+func TestProjectResolvesCustomerCodeIgnoringCase(t *testing.T) {
+	app, c, _ := setup(t)
+
+	if out := c.Project("helpdesk.ACME.tickets.create",
+		[]byte(`{"title":"shouty tenant token"}`)); out != Ack {
+		t.Fatalf("Project = %v, want Ack", out)
+	}
+	if n := countTickets(t, app); n != 1 {
+		t.Fatalf("case-mismatched org token dropped the ticket: %d created, want 1", n)
+	}
+	rec, err := app.FindFirstRecordByFilter("tickets", "title = 'shouty tenant token'")
+	if err != nil {
+		t.Fatalf("ticket: %v", err)
+	}
+	if got := rec.GetString("source"); got != "nats" {
+		t.Errorf("source: got %q, want nats", got)
 	}
 }
 

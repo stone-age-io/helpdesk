@@ -1,5 +1,11 @@
 # Helpdesk configuration. Copy to helpdesk.yaml (or set HELPDESK_CONFIG).
 # Every key can be overridden by env: HELPDESK_DATA_DIR, HELPDESK_NATS_URLS, ...
+# List-valued keys (nats.urls, inbound.allowed_ips) take a WHITESPACE-separated
+# value: HELPDESK_INBOUND_ALLOWED_IPS="192.0.2.10 198.51.100.0/24". A comma-
+# joined value parses as one entry and would allow every IP.
+#
+# SMTP and the application URL are PocketBase settings (dashboard at /_), not
+# keys here. Full reference: docs/configuration.md.
 
 # PocketBase data directory (SQLite database, uploads).
 data_dir: pb_data
@@ -12,14 +18,22 @@ data_dir: pb_data
 branding:
   dir: ""
 
+# Auto-close tickets left `resolved` this many days, via a daily cron. Measured
+# from `resolved_at`, so an unrelated edit while resolved does not reset the
+# clock. The window is the grace period in which a requester reply reopens the
+# ticket. 0 disables it, and tickets then close only when staff close them.
+auto_close_resolved_days: 7
+
 # NATS connection to the platform operator's hub account. Leave urls empty to
-# run without NATS (tickets then arrive only via portal/agent/webhook).
+# run without NATS (tickets then arrive only via portal/agent/webhook/email).
 #
 # The creds file is a Stone-Age.io-issued nats_user in the hub account,
-# permission-scoped to `sub helpdesk.>`. Managed customer orgs' ticket events
-# are imported into the hub as helpdesk.{platform_org_id}.> by the platform.
-# To also emit outbound notification events (see notify_stream), the grant is
-# widened to `pub helpdesk.>` — the helpdesk is otherwise blind to it.
+# permission-scoped to `sub helpdesk.>`. A managed customer org's ticket events
+# are imported into the hub as helpdesk.{orgCode}.tickets.> by the platform's
+# operator-signed subject rewrite, where {orgCode} is `customers.code` — the
+# ecosystem's tenant token (ADR 0002 in platform-docs). To also emit outbound
+# notification events (see notify_stream), the grant is widened to
+# `pub helpdesk.>` — the helpdesk is otherwise blind to it.
 nats:
   urls: []
   # urls: ["nats://localhost:4222"]
@@ -30,3 +44,19 @@ nats:
   # helpdesk.*.events.>). Used only when a notification template has
   # publish_nats enabled; setup fails softly if publish isn't granted.
   notify_stream: HELPDESK_NOTIFICATIONS
+
+# Inbound email via an email-parsing provider (Postmark first). The provider
+# receives forwarded mail, parses the MIME, and POSTs clean JSON to
+# /api/helpdesk/inbound/email/{provider} — the helpdesk holds no mailbox
+# credentials. The route is registered ONLY when `secret` is set, so leaving it
+# empty disables inbound email entirely and mail arrives only via
+# portal/agent/webhook/NATS. See docs/email-ingestion.md.
+inbound:
+  # Basic-auth password for the email webhook. Empty = inbound email disabled.
+  secret: ""
+  # Optional. Restricts the webhook to the provider's egress ranges.
+  allowed_ips: []
+  # allowed_ips: ["192.0.2.10", "198.51.100.0/24"]
+  # Reserved: read but NOT wired in v1. Replies thread via the PocketBase
+  # sender address.
+  # reply_to: ""

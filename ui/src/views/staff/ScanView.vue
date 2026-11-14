@@ -65,11 +65,17 @@ async function resolve(code: string) {
   error.value = ''
   matches.value = []
 
-  const q = quote(code)
+  // Case-folded, per ADR 0003 rule 3 — the platform console's scanner matches
+  // the same labels the same way. This is mostly for the manual field, which is
+  // half the design and not a fallback: the label prints its code in human text
+  // precisely because the symbol will eventually be scratched, greasy, or in a
+  // closet too dark to focus in, and someone typing `door-1` off a sticker
+  // reading `DOOR-1` must not be told the gear is not in the catalog.
+  const q = quote(code.toLowerCase())
   try {
     const [things, locations] = await Promise.all([
-      pb.collection('things').getFullList<Thing>({ filter: `code = '${q}'`, expand: 'customer,location' }),
-      pb.collection('locations').getFullList<Location>({ filter: `code = '${q}'`, expand: 'customer' }),
+      pb.collection('things').getFullList<Thing>({ filter: `code:lower = '${q}'`, expand: 'customer,location' }),
+      pb.collection('locations').getFullList<Location>({ filter: `code:lower = '${q}'`, expand: 'customer' }),
     ])
 
     const found: Match[] = [
