@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Transient (non-persisted) keys carrying the acting identity from the

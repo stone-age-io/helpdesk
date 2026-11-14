@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
 	// Side-effect import: registers the schema migrations into the test binary.
 	_ "github.com/stone-age-io/helpdesk/migrations"

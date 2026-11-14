@@ -60,3 +60,32 @@ inbound:
   # Reserved: read but NOT wired in v1. Replies thread via the PocketBase
   # sender address.
   # reply_to: ""
+
+# Readiness, at GET /api/ready. Unauthenticated, with one body for everyone:
+# its callers are orchestrators, load balancers and uptime checkers, none of
+# which holds a PocketBase session. Put it behind a reverse proxy to restrict
+# it. There is deliberately no `enabled` key — readiness is a contract with
+# whatever runs this process, not something an install turns off.
+#
+# A background prober runs the checks and the endpoint serves the last result,
+# so a probe never waits on a slow check. `interval_seconds` is therefore how
+# stale an answer may be, not what a probe costs. 503 is returned only when a
+# check FAILS; a warning is 200, because a probe can only restart or evict the
+# process and neither fixes a misconfiguration.
+readiness:
+  interval_seconds: 30
+  timeout_seconds: 10
+
+# Prometheus exposition at GET /metrics. Unlike readiness this can be turned
+# off, since an install may reasonably not want the port exposed at all.
+#
+# `token`, when set, is required as `Authorization: Bearer <token>` or as the
+# PASSWORD half of Basic auth (the username is ignored, so a scraper's
+# basic_auth block works as-is). It is not PocketBase auth: PocketBase tokens
+# are JWTs that expire, and scrapers cannot refresh them.
+#
+# Empty leaves the endpoint open, which is why no series carries a customer
+# label — an open port must not put a tenant's name next to a ticket count.
+metrics:
+  enabled: true
+  token: ""

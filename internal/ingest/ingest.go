@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"

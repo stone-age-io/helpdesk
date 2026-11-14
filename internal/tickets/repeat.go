@@ -1,8 +1,8 @@
 package tickets
 
 import (
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 )

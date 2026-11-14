@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/spf13/cobra"
 
 	"github.com/stone-age-io/helpdesk/config"
@@ -26,9 +26,11 @@ import (
 	"github.com/stone-age-io/helpdesk/internal/authfix"
 	"github.com/stone-age-io/helpdesk/internal/customers"
 	"github.com/stone-age-io/helpdesk/internal/demoseed"
+	"github.com/stone-age-io/helpdesk/internal/health"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
 	"github.com/stone-age-io/helpdesk/internal/maintenance"
+	"github.com/stone-age-io/helpdesk/internal/metrics"
 	"github.com/stone-age-io/helpdesk/internal/natsx"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/projects"
@@ -175,7 +177,36 @@ func main() {
 		consumer *ingest.Consumer
 	)
 
+	// The readiness prober's loop lives for as long as the server does.
+	proberCtx, stopProber := context.WithCancel(context.Background())
+
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		// Readiness. The NATS state is read through closures rather than
+		// captured, because the connection below is built later in this same
+		// hook and can come and go afterwards; a captured nil would report
+		// "never connected" forever.
+		prober := health.NewProber(version.Build(), cfg.Readiness.Interval(), cfg.Readiness.Timeout())
+		prober.Add("database", health.Database(app))
+		prober.Add("schema", health.Schema(app))
+		prober.Add("schema_version", health.SchemaVersion(app))
+		prober.Add("staff_admin", health.StaffAdmin(app))
+		prober.Add("smtp", health.SMTP(app))
+		prober.Add("application_url", health.ApplicationURL(app))
+		prober.Add("nats_ingest", health.NATSIngest(
+			func() bool { return cfg.NATS.Enabled() },
+			func() bool { return nc != nil && nc.NC != nil && nc.NC.IsConnected() },
+		))
+		prober.Add("inbound_email", health.InboundEmail(cfg.Inbound.Secret))
+		health.RegisterRoutes(e, prober)
+
+		// Metrics share the prober's work rather than running their own checks:
+		// a scrape and a probe would otherwise disagree about the same process,
+		// and the disagreement would be a function of who asked last.
+		mset := metrics.New(version.Build())
+		mset.RegisterDB(app)
+		prober.OnProbe(mset.Observe)
+		metrics.RegisterRoutes(e, mset, cfg.Metrics.Enabled, cfg.Metrics.Token)
+
 		notifications.RegisterRoutes(e)
 		inbound.Register(e)
 		inbound.RegisterEmail(e, cfg.Inbound.Secret, cfg.Inbound.AllowedIPs)
@@ -221,6 +252,12 @@ func main() {
 			}
 		}
 
+		// Started last, so the first probe sees the NATS connection above
+		// rather than reporting it down for one interval on every boot. It
+		// probes once synchronously, so /api/ready has a real answer as soon
+		// as the server is listening.
+		prober.Start(proberCtx)
+
 		serveBranding(e, cfg.BrandingDir)
 		if err := serveSPA(e); err != nil {
 			return err
@@ -230,6 +267,7 @@ func main() {
 	})
 
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		stopProber()
 		consumer.Stop()
 		if nc != nil {
 			_ = nc.Close()

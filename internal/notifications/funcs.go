@@ -6,7 +6,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tools/types"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 )
 
 // FuncMap returns the helper functions exposed to templates. Three only —

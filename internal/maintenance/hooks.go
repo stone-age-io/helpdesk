@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Register binds the plan create defaults and the completion-anchor follow-up.

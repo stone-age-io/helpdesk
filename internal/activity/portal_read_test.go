@@ -3,7 +3,7 @@ package activity
 import (
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
 	"github.com/stone-age-io/helpdesk/internal/testutil"
 )

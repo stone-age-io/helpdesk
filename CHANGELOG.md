@@ -115,20 +115,28 @@ Added/Changed. Development history is in the commit log, which runs from
 
 ### Operations
 
-- **One binary** embedding PocketBase, configured by `helpdesk.yaml` plus
-  `HELPDESK_*` overrides.
+- **One binary** embedding PocketBase v0.41.1, configured by `helpdesk.yaml`
+  plus `HELPDESK_*` overrides. Note PocketBase moved to `ganigeorgiev.com/`
+  module paths; the `github.com/pocketbase/` ones stop at v0.40.6.
 - **Schema as Go migrations**, idempotent and applied on start.
 - **`seed-demo`** fills a showcase instance with a backdated history that reads
   as real, which an external script cannot produce.
 - **`version`** reports the build the toolchain stamped.
 
+### Observability
+
+- **`GET /api/ready`**, the shape the rest of the ecosystem uses: eight checks
+  for the things that go silently wrong (no SMTP, a default application URL, a
+  NATS connection that never came up), rolled up by a background prober so the
+  endpoint never waits on a dependency. `503` only on a failure; a warning is
+  `200`, because a probe can only restart or evict the process.
+- **`GET /metrics`**, Prometheus text format: the readiness report as a state
+  set, build info, row counts, tickets by status and the database size. No
+  series carries a customer label. Optional static token, since scrapers cannot
+  refresh a PocketBase JWT.
+
 ### Known gaps at 0.1.0
 
-- **No `GET /api/ready` and no `GET /metrics`**, which the platform's
-  [Health & Metrics](https://github.com/stone-age-io/platform-docs/blob/main/docs/health-metrics.md)
-  page expects of every Stone-Age.io binary. PocketBase's `/api/health` answers
-  liveness only. Readiness is the nearer of the two.
-- **PocketBase is v0.38.1**, where the platform is built on v0.41.1.
 - **Things and locations do not sync from the platform**, and architecturally
   cannot: there is no event stream for them, and the alternatives are a
   control-plane credential this application must never hold or an edge KV

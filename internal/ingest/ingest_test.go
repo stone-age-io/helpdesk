@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/subjects"

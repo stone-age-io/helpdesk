@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -28,8 +29,49 @@ type Config struct {
 	// which a requester reply reopens the ticket before it's finalized.
 	AutoCloseResolvedDays int
 
-	NATS    NATSConfig
-	Inbound InboundConfig
+	NATS      NATSConfig
+	Inbound   InboundConfig
+	Readiness ReadinessConfig
+	Metrics   MetricsConfig
+}
+
+// MetricsConfig controls the Prometheus exposition at GET /metrics.
+//
+// Unlike readiness, this one can be turned off: an install may reasonably not
+// want the port exposed at all, and removing the route is clearer than serving
+// one that 401s.
+type MetricsConfig struct {
+	// Enabled registers the route. Default true.
+	Enabled bool
+
+	// Token, when set, is required as `Authorization: Bearer <token>` or as the
+	// password half of Basic auth. Empty leaves the endpoint open, which is the
+	// upstream default and is why no series carries a customer label.
+	Token string
+}
+
+// ReadinessConfig paces the background prober behind GET /api/ready. There is
+// deliberately no `enabled` knob: readiness is a contract with whatever is
+// orchestrating this process, so it is not something an install turns off.
+type ReadinessConfig struct {
+	// IntervalSeconds is how often the checks run. The endpoint always serves
+	// the last result, so this is the staleness of the answer, not the cost of
+	// a probe.
+	IntervalSeconds int
+
+	// TimeoutSeconds bounds a single check. One slow check must not hold up
+	// the others or stall the loop.
+	TimeoutSeconds int
+}
+
+// Interval is the probe period as a duration.
+func (r ReadinessConfig) Interval() time.Duration {
+	return time.Duration(r.IntervalSeconds) * time.Second
+}
+
+// Timeout is the per-check bound as a duration.
+func (r ReadinessConfig) Timeout() time.Duration {
+	return time.Duration(r.TimeoutSeconds) * time.Second
 }
 
 // InboundConfig authenticates the email-provider webhook (Postmark to start).
@@ -90,6 +132,12 @@ func Load() (*Config, error) {
 	v.SetDefault("inbound.secret", "")
 	v.SetDefault("inbound.allowed_ips", []string{})
 	v.SetDefault("inbound.reply_to", "")
+	// 30s is the platform's cadence. The endpoint serves the cached result, so
+	// this is how stale an answer may be, not what a probe costs.
+	v.SetDefault("readiness.interval_seconds", 30)
+	v.SetDefault("readiness.timeout_seconds", 10)
+	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.token", "")
 
 	v.SetEnvPrefix("HELPDESK")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -126,6 +174,14 @@ func Load() (*Config, error) {
 			Secret:     v.GetString("inbound.secret"),
 			AllowedIPs: v.GetStringSlice("inbound.allowed_ips"),
 			ReplyTo:    v.GetString("inbound.reply_to"),
+		},
+		Readiness: ReadinessConfig{
+			IntervalSeconds: v.GetInt("readiness.interval_seconds"),
+			TimeoutSeconds:  v.GetInt("readiness.timeout_seconds"),
+		},
+		Metrics: MetricsConfig{
+			Enabled: v.GetBool("metrics.enabled"),
+			Token:   v.GetString("metrics.token"),
 		},
 	}
 

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // RegisterEmail binds the Postmark inbound webhook. An empty secret disables the

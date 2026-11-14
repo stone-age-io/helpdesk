@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/dbx"
 
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 )

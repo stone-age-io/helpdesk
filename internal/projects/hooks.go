@@ -5,8 +5,8 @@
 package projects
 
 import (
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Register binds the project create hook: a sequential `number` (the unique

@@ -3,7 +3,7 @@
 // takes a core.App and must be called exactly once at process boot.
 package authfix
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // EnforceEmailVisibility stamps emailVisibility=true on every new staff and
 // requester row before save. PB defaults the field to false, which masks
