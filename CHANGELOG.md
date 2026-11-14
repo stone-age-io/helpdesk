@@ -31,7 +31,7 @@ itself, and what `seed-demo` creates.
 
 Nothing yet.
 
-## [0.1.0] — unreleased
+## [0.1.0] — 2026-11-14
 
 First tagged release. Everything below is the starting state rather than a list
 of changes, so it is grouped by what the application does rather than by
