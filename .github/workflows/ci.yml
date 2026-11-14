@@ -29,9 +29,9 @@ jobs:
     # far too generous for a hung test to sit in.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Read from go.mod, so the toolchain moves in one place.
           go-version-file: go.mod
@@ -43,19 +43,30 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # `go mod tidy -diff` belongs here and is deliberately absent: on the
+      # machine this was written on it reports the whole of go.sum as replaced
+      # by byte-identical content in the same order, and a gate nobody can
+      # reproduce a green run for is worse than a missing one. Worth adding
+      # once someone can explain that locally.
+
+      # -count=1 defeats the test cache. setup-go caches the build cache between
+      # runs, and a cached PASS is not a result, it is the memory of one from a
+      # commit that may not be this one.
       - name: Test
-        run: go test ./...
+        run: go test -count=1 ./...
 
   ui:
     name: SPA builds and matches what is committed
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Pinned rather than lts/*, so a Node release cannot change the build
+          # without a commit saying so.
+          node-version: '24'
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
@@ -71,14 +82,29 @@ jobs:
       # step a hurried change forgets: the Go build still passes, the tests still
       # pass, and the binary quietly serves the previous SPA.
       #
-      # This check works only because .gitattributes stops git rewriting line
-      # endings in that directory. Without it a no-op build reported nine
-      # modified chunks on Windows and this step would fail on every run.
+      # This compares the SET OF EMITTED CHUNKS, not their bytes, and the
+      # distinction is the whole reason this step works.
+      #
+      # Each chunk's filename carries vite's content hash, so changing a source
+      # file and not rebuilding renames its chunk: the rebuild writes a file
+      # that is not tracked, and the tracked one it replaced disappears. Both
+      # are caught below. vite empties the output directory first, so a stale
+      # chunk cannot simply linger.
+      #
+      # The bytes are deliberately not compared because they are not comparable.
+      # vite 8 builds through rolldown, whose native binding ships per platform,
+      # so a bundle built on Windows and one built on this Linux runner differ
+      # in a few CR bytes embedded in minified string literals while hashing
+      # identically. The first version of this check compared bytes and failed
+      # on a tree that was perfectly current. See .gitattributes.
       - name: Committed bundle is current
         run: |
-          if ! git diff --quiet -- internal/webui/public; then
+          new="$(git ls-files --others --exclude-standard -- internal/webui/public)"
+          gone="$(git diff --name-only --diff-filter=D -- internal/webui/public)"
+          if [ -n "$new" ] || [ -n "$gone" ]; then
             echo "::error::internal/webui/public is stale. Run 'cd ui && npm run build' and commit the result."
-            git diff --stat -- internal/webui/public
+            [ -n "$new" ] && { echo "Chunks this build emitted that are not committed:"; echo "$new"; }
+            [ -n "$gone" ] && { echo "Committed chunks this build no longer emits:"; echo "$gone"; }
             exit 1
           fi
-          echo "Committed bundle matches a fresh build."
+          echo "Committed bundle matches a fresh build (same chunk set)."

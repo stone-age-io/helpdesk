@@ -1,24 +1,38 @@
-# Line endings are LF in the repository, everywhere.
+# Line endings, and the files that must not have them rewritten.
 #
-# Without this file git falls back to each clone's core.autocrlf, which on
-# Windows is `true`: text files are rewritten CRLF on checkout and normalised
-# back on commit. That round trip is not stable for the generated SPA bundle.
-# A `npm run build` that changed nothing reported nine modified chunks, and
-# their content hashes were identical, which is the giveaway: the bytes vite
-# hashed never changed. Nothing was wrong with what was committed either, since
-# marking the directory below made the nine disappear without rewriting one of
-# them. It was git's own normalisation on comparison, and it is invisible until
-# it wastes an afternoon.
+# `* text=auto` is the general policy. Note it deliberately leaves a file that
+# is ALREADY committed with CRLF alone, so adding an entry here does not
+# retroactively convert anything; only an explicit `text` does, via
+# `git add --renormalize`. The pins below follow the platform's file.
 #
-# That also blocks the thing worth having. CLAUDE.md says to rebuild and
-# re-commit internal/webui/public whenever anything under ui/ changes, which is
-# exactly the step a hurried commit forgets, and CI can catch it by rebuilding
-# and diffing. It can only do that if a no-op build is a no-op diff.
-* text=auto eol=lf
+# Go: gofmt writes LF and reports a CRLF file as unformatted, so a formatting
+# check would fail on files nobody touched. That is why CI can run one.
+#
+# Shell and YAML: a CRLF copy fails on Linux with `bad interpreter` or
+# `$'\r': command not found`, and inside a container that surfaces as an
+# immediate exit with no useful message.
+* text=auto
 
-# The committed SPA bundle is generated: vite writes it, we commit it verbatim
-# so a fresh checkout builds without npm. Git must not rewrite a single byte of
-# it, so it is marked binary rather than merely LF — minified chunks carry
-# escaped CR and high-bit characters that git's text heuristic reads
-# inconsistently, which is how this started.
+*.go    text eol=lf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+*.png binary
+
+# The generated SPA bundle, which git must not rewrite a byte of.
+#
+# This is not a tidiness preference. Minified chunks carry raw CR bytes inside
+# string literals, inlined from dependency sources: ScanView's chunk holds 20
+# of them and QrLabelModal's holds 8. They are data, not line endings, and
+# `sed 's/\r$//'` leaves every one of them alone. Any eol conversion here would
+# silently corrupt that data, and the damage would reach whoever ran the
+# committed binary rather than whoever converted it.
+#
+# A consequence worth knowing, because it shapes the CI check: the bundle is
+# NOT byte-reproducible across platforms. vite 8 builds through rolldown, whose
+# native binding ships per platform, so a Windows build and a Linux build of
+# the same sources differ in a handful of those embedded bytes. The content
+# hashes in the filenames are identical, which is why CI compares the set of
+# emitted chunks rather than their bytes.
 internal/webui/public/** -text
