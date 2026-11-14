@@ -71,9 +71,16 @@ func caseInsensitiveCodesDown(app core.App) error {
 
 // rebuildCodeIndexes re-adds each code index with or without the NOCASE
 // collation. AddIndex removes an index of the same name first, so re-adding is
-// the replace, and the partial `code != ''` predicate is carried through
-// unchanged: blanks are the normal state for a customer the platform never
-// onboarded, and SQLite treats '' as a value rather than NULL.
+// the replace, and the partial "code is not the empty string" predicate is
+// carried through unchanged: blanks are the normal state for a customer the
+// platform never onboarded, and SQLite treats an empty string as a value
+// rather than NULL.
+//
+// (The predicate is spelled out in words rather than written as SQL because a
+// doc comment is not a literal: gofmt rewrites a pair of straight single
+// quotes into a typographic quote, which would silently turn the empty-string
+// test into something that means nothing. The same trap cost the platform two
+// migrations.)
 func rebuildCodeIndexes(app core.App, nocase bool) error {
 	for _, ci := range codeIndexes {
 		col, err := app.FindCollectionByNameOrId(ci.collection)

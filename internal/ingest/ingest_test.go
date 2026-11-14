@@ -185,10 +185,10 @@ func TestProjectDedupeKeyIsPerCustomer(t *testing.T) {
 func TestProjectRejectsGarbage(t *testing.T) {
 	app, c, _ := setup(t)
 	cases := map[string][2]string{
-		"bad json":        {"helpdesk.acme.tickets.create", `{"title":`},
-		"missing title":   {"helpdesk.acme.tickets.create", `{"body":"no title"}`},
-		"unknown verb":    {"helpdesk.acme.tickets.resolve", `{"title":"x"}`},
-		"unparseable":     {"helpdesk.tickets.create", `{"title":"x"}`},
+		"bad json":         {"helpdesk.acme.tickets.create", `{"title":`},
+		"missing title":    {"helpdesk.acme.tickets.create", `{"body":"no title"}`},
+		"unknown verb":     {"helpdesk.acme.tickets.resolve", `{"title":"x"}`},
+		"unparseable":      {"helpdesk.tickets.create", `{"title":"x"}`},
 		"invalid priority": {"helpdesk.acme.tickets.create", `{"title":"prio","priority":"catastrophic"}`},
 	}
 	for name, c2 := range cases {

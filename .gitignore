@@ -6,3 +6,6 @@ ui/dist/
 /helpdesk
 /helpdesk.exe
 /helpdesk.exe~
+
+# goreleaser build output
+/dist/

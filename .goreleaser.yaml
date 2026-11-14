@@ -1,0 +1,101 @@
+# Release configuration, ported from the platform's with one simplification
+# that matters: there are no `before` hooks here.
+#
+# The platform has to build its console before goreleaser compiles anything,
+# because it commits a PLACEHOLDER pb_public and embeds the real one at build
+# time. This repo commits the built SPA under internal/webui/public instead
+# (CLAUDE.md: a fresh checkout builds without npm), so the bundle in the tag is
+# the bundle that ships and goreleaser needs no Node at all.
+#
+# That is a real trade rather than a free win. It means a release ships whatever
+# bundle was committed, so `cd ui && npm run build` before tagging is part of
+# cutting a release, not an optimisation. CI checks that index.html references
+# only committed chunks, which catches the broken half of getting this wrong but
+# not the stale half.
+version: 2
+
+project_name: helpdesk
+
+builds:
+  - id: helpdesk
+    main: ./cmd/helpdesk
+    binary: helpdesk
+    env:
+      # Free, because PocketBase's SQLite driver is modernc.org/sqlite, a
+      # pure-Go translation. No C toolchain, so every target below
+      # cross-compiles from one runner.
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # `v{{.Version}}`, not `{{.Version}}`: goreleaser strips the leading v, so
+      # the bare form would have a released binary report "0.1.0" where a local
+      # `go build` from the same tag reports "v0.1.0" and the container (which
+      # is passed the ref name) reports "v0.1.0" too. One of the three
+      # disagreeing is the sort of thing somebody debugs at the wrong moment.
+      #
+      # It is {{.Version}} rather than {{.Tag}} so a snapshot stays honest:
+      # .Tag on an untagged build is the PREVIOUS tag, so a snapshot would
+      # claim to be the last release. .Version gives v0.1.0-SNAPSHOT-<sha>.
+      - -s -w -X github.com/stone-age-io/helpdesk/internal/version.stamped=v{{.Version}}
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64]
+    ignore:
+      # Windows on arm64 is not a deployment target for a server binary.
+      - goos: windows
+        goarch: arm64
+      # FreeBSD is amd64 only, matching the platform and the agent.
+      - goos: freebsd
+        goarch: arm64
+
+archives:
+  - id: helpdesk
+    ids: [helpdesk]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - helpdesk.yaml.example
+    name_template: >-
+      helpdesk_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# The release body is NOT built here. goreleaser's changelog is a list of commit
+# subjects, and this repo's reasoning lives in CHANGELOG.md as paragraphs.
+# scripts/release-notes.sh assembles the whole body and the release workflow
+# passes it with --release-notes, which makes everything below inert on a real
+# release.
+#
+# DO NOT set `disable: true` here. It reads as the tidy way to say "the body
+# comes from elsewhere" and it silently breaks --release-notes: reading that
+# file is a step INSIDE the changelog pipe, so disabling the pipe skips the read
+# and publishes an empty body. The platform shipped a release that way and had
+# to edit it by hand afterwards. The settings below are the fallback for someone
+# running goreleaser without the flag; only the flag itself suppresses them.
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+release:
+  github:
+    owner: stone-age-io
+    name: helpdesk
+  # A tag carrying a prerelease suffix (v0.2.0-rc1) publishes as a GitHub
+  # prerelease. The default is false, which would mark a release candidate as
+  # "Latest" on the repository front page and hand it to the releases feed.
+  prerelease: auto

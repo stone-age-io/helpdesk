@@ -1,0 +1,116 @@
+# Cuts a release when a v* tag is pushed: cross-compiled binaries via
+# goreleaser, and the container image to GHCR.
+#
+# The image is built with the repository's own Dockerfile rather than
+# goreleaser's docker support, so there is one definition of the image and it is
+# the one people can read and build locally. goreleaser would want a
+# binary-copying Dockerfile of its own, which means two files that must agree.
+#
+# No Node anywhere in here, unlike the platform's equivalent. This repo commits
+# the built SPA, so the bundle in the tag is the bundle that ships — which also
+# means `cd ui && npm run build` before tagging is part of cutting a release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+  packages: write   # push to ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # goreleaser derives the version and the changelog from tags, and a
+          # shallow clone has neither.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The release body comes from CHANGELOG.md, not from commit subjects — see
+      # the comment above `changelog:` in .goreleaser.yaml. The script refuses to
+      # print an empty section, so a tag pushed before `## [Unreleased]` was
+      # promoted fails HERE, before anything is built or published, rather than
+      # producing a release with a blank body that has to be edited by hand.
+      - name: Build release notes from CHANGELOG.md
+        run: ./scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          # Pinned to the v2 line rather than 'latest'. With 'latest' the action
+          # locks to '~> v2' anyway and annotates every run saying so, but it
+          # would stop doing that the day GoReleaser 3 ships, and a major would
+          # arrive mid-release with no commit asking for it.
+          version: '~> v2'
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # goreleaser reports success whether or not it used the notes file, so this
+      # asserts the published body rather than trusting the exit code. The
+      # platform shipped a release with an EMPTY body exactly this way: the flag
+      # was passed and logged correctly, but a setting in its config skipped the
+      # pipe that reads it, and nothing in the run went red. A release body is
+      # only visibly wrong to someone who opens the release page, which is the
+      # kind of failure that needs an assertion rather than a reviewer.
+      - name: Verify the release body came from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)
+          if ! grep -qF "## Stone Age Helpdesk $GITHUB_REF_NAME" <<<"$body"; then
+            echo "::error::release body is not the one scripts/release-notes.sh built"
+            echo "first 20 lines of what was published:"
+            head -20 <<<"$body"
+            exit 1
+          fi
+          echo "release body OK ($(wc -l <<<"$body") lines)"
+
+      # ------------------------------------------------------------------ image
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # :latest is computed rather than listed, because a prerelease must not
+      # move it. It is what people pull for production, and a v0.2.0-rc1 that
+      # quietly became :latest would ship a release candidate to every
+      # deployment that does not pin, with nothing in the run to say so.
+      - name: Compute image tags
+        id: image_tags
+        run: |
+          image=ghcr.io/stone-age-io/helpdesk
+          tags="$image:$GITHUB_REF_NAME"
+          case "$GITHUB_REF_NAME" in
+            *-*) echo "prerelease tag, holding :latest at its current image" ;;
+            *)   tags="$tags,$image:latest" ;;
+          esac
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "will push: $tags"
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          # arm64 as well as amd64. The binary is static either way, and a desk
+          # this small is a plausible thing to run on an ARM VPS or a Pi.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # Without this the image reports "(devel)" when asked its version:
+          # .dockerignore excludes .git, so the build has no VCS to read. See
+          # internal/version.
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          tags: ${{ steps.image_tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

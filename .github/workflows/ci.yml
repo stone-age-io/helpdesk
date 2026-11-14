@@ -43,6 +43,22 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # Every tracked .go file is gofmt-clean as of this commit. It was not
+      # before: a dozen carried CRLF line endings, and one migration had a pair
+      # of straight single quotes inside a doc comment — the empty string in a
+      # SQL predicate. gofmt rewrites that pair into a typographic quote, so
+      # running it would have corrupted what the comment said rather than
+      # reformatting it. That comment was reworded to avoid the construct, which
+      # is what makes this gate safe to add. Keep SQL out of doc comments.
+      - name: Formatting
+        run: |
+          unformatted="$(gofmt -l . | grep -v '^internal/webui/public/' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite these files:"; echo "$unformatted"
+            exit 1
+          fi
+          echo "all tracked Go files are gofmt-clean"
+
       # `go mod tidy -diff` belongs here and is deliberately absent: on the
       # machine this was written on it reports the whole of go.sum as replaced
       # by byte-identical content in the same order, and a gate nobody can
@@ -114,3 +130,34 @@ jobs:
             exit 1
           fi
           echo "index.html's $(grep -coE '(src|href)="/assets/[^"]+"' internal/webui/public/index.html) asset reference(s) all resolve."
+
+  image:
+    name: Container image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Until this existed, the Dockerfile's first exercise was a tag push, so
+      # the release workflow was where anyone found out it was broken: binaries
+      # published, image failed, nothing to do but fix it and cut another tag.
+      # The platform learned that the expensive way on its v0.3.0.
+      #
+      # amd64 only, and no push. The multi-arch image and the registry are the
+      # release workflow's business, and duplicating them here would buy a
+      # slower pipeline and a second place to keep the tag list right. Without
+      # QEMU this is roughly a minute.
+      #
+      # VERSION=ci rather than a real version: this proves the image builds, and
+      # a tag would make the cached layers disagree with the release build's.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,33 @@
+# The build context is copied wholesale into the builder stage.
+#
+# NOTE WHAT IS NOT HERE: internal/webui/public. The platform ignores its
+# equivalent because it commits a placeholder and rebuilds the console inside
+# the image; this repo commits the real bundle and the Go build embeds it, so
+# ignoring it would produce a binary serving nothing.
+#
+# .git is excluded for the usual reason — the whole history is waste in a build
+# context — and that is exactly why the build takes VERSION as a build-arg:
+# without .git the toolchain cannot stamp a version from VCS. See
+# internal/version.
+.git
+.github
+
+# Somebody's real database and uploaded attachments. Shipping this would ship
+# their customers' tickets.
+pb_data
+
+# Rebuilt or irrelevant inside the image.
+ui/node_modules
+ui/dist
+
+# Local build output. /helpdesk is anchored for the reason .gitignore gives: a
+# bare `helpdesk` would also match cmd/helpdesk/.
+/helpdesk
+/helpdesk.exe
+
+# Operator secrets and local config.
+*.creds
+helpdesk.yaml
+
+.claude
+*.log

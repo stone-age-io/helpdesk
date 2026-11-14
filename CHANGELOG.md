@@ -27,9 +27,35 @@ Not covered, and free to change in any release: the SPA's routes and layout,
 log lines and error text, the PocketBase dashboard at `/_`, the database file
 itself, and what `seed-demo` creates.
 
+> [!NOTE]
+> **Keep `## [Unreleased]` empty until it has real entries**
+> `scripts/release-notes.sh` builds the GitHub release body from the section
+> matching the tag, and a prerelease tag reads `## [Unreleased]`. It refuses to
+> publish an empty body, which is the guard that stops a release shipping with
+> nothing in it — so a placeholder line, or even a comment, turns that guard
+> off and publishes the placeholder as the release notes.
+
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Releases are built rather than hand-cut.** A `v*` tag now runs goreleaser for
+  cross-compiled binaries (linux, darwin, windows, freebsd; amd64 and arm64
+  where it makes sense) and publishes a multi-arch container image to
+  `ghcr.io/stone-age-io/helpdesk`. The release body is assembled from this file
+  by `scripts/release-notes.sh` rather than from commit subjects, and the
+  workflow asserts the published body is the one it built.
+- **A Dockerfile**, two stages and no Node: this repo commits its SPA, so the
+  bundle in the tag is the bundle that ships. `HEALTHCHECK` uses `/api/ready`.
+- **CI builds the container image** on every push, so the Dockerfile is no
+  longer first exercised by a tag push.
+
+### Changed
+
+- `internal/version` accepts a link-time stamp. Ordinary `go build` still reads
+  the module version from VCS; the stamp exists because the container build
+  excludes `.git` and would otherwise report `(devel)` on a tagged image.
+
 
 ## [0.1.0] — 2026-11-14
 
