@@ -49,7 +49,7 @@ func countTickets(t *testing.T, app core.App) int {
 func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	app, c, customer := setup(t)
 
-	out := c.Project("helpdesk.acme.tickets.create",
+	out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"pump fault","body":"overcurrent","priority":"high","thing":"pump-7","location":"line-3"}`))
 	if out != Ack {
 		t.Fatalf("Project = %v, want Ack", out)
@@ -62,7 +62,7 @@ func TestProjectCreatesTicketWithProvenance(t *testing.T) {
 	if got := rec.GetString("customer"); got != customer.Id {
 		t.Errorf("customer: got %q, want %q", got, customer.Id)
 	}
-	if got := rec.GetString("origin_subject"); got != "helpdesk.acme.tickets.create" {
+	if got := rec.GetString("origin_subject"); got != "helpdesk.acme.cmd.tickets.create" {
 		t.Errorf("origin_subject: got %q", got)
 	}
 	if got := rec.GetString("priority"); got != "high" {
@@ -99,7 +99,7 @@ func TestProjectResolvesCategoryByKey(t *testing.T) {
 	}
 
 	// Known key → classified.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"a","category":"pumps"}`)); out != Ack {
 		t.Fatalf("known category: %v", out)
 	}
@@ -112,7 +112,7 @@ func TestProjectResolvesCategoryByKey(t *testing.T) {
 	}
 
 	// Unknown key → created but unclassified (no drop, no error).
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"b","category":"nonexistent"}`)); out != Ack {
 		t.Fatalf("unknown category: %v", out)
 	}
@@ -127,7 +127,7 @@ func TestProjectResolvesCategoryByKey(t *testing.T) {
 
 func TestProjectUnknownOrgAcksWithoutTicket(t *testing.T) {
 	app, c, _ := setup(t)
-	out := c.Project("helpdesk.other-org.tickets.create", []byte(`{"title":"x"}`))
+	out := c.Project("helpdesk.other-org.cmd.tickets.create", []byte(`{"title":"x"}`))
 	if out != Ack {
 		t.Fatalf("unknown org: got %v, want Ack (operator maps later; no redelivery storm)", out)
 	}
@@ -140,10 +140,10 @@ func TestProjectDedupeKeyIsIdempotent(t *testing.T) {
 	app, c, _ := setup(t)
 	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
 
-	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 		t.Fatalf("first: %v", out)
 	}
-	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 		t.Fatalf("second: %v", out)
 	}
 	if n := countTickets(t, app); n != 1 {
@@ -166,10 +166,10 @@ func TestProjectDedupeKeyIsPerCustomer(t *testing.T) {
 	}
 
 	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
-	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 		t.Fatalf("acme: %v", out)
 	}
-	if out := c.Project("helpdesk.globex.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.globex.cmd.tickets.create", payload); out != Ack {
 		t.Fatalf("globex: %v", out)
 	}
 	rows, err := app.FindRecordsByFilter("tickets", "customer = {:c}", "", 0, 0,
@@ -185,11 +185,11 @@ func TestProjectDedupeKeyIsPerCustomer(t *testing.T) {
 func TestProjectRejectsGarbage(t *testing.T) {
 	app, c, _ := setup(t)
 	cases := map[string][2]string{
-		"bad json":         {"helpdesk.acme.tickets.create", `{"title":`},
-		"missing title":    {"helpdesk.acme.tickets.create", `{"body":"no title"}`},
-		"unknown verb":     {"helpdesk.acme.tickets.resolve", `{"title":"x"}`},
-		"unparseable":      {"helpdesk.tickets.create", `{"title":"x"}`},
-		"invalid priority": {"helpdesk.acme.tickets.create", `{"title":"prio","priority":"catastrophic"}`},
+		"bad json":         {"helpdesk.acme.cmd.tickets.create", `{"title":`},
+		"missing title":    {"helpdesk.acme.cmd.tickets.create", `{"body":"no title"}`},
+		"unknown verb":     {"helpdesk.acme.cmd.tickets.resolve", `{"title":"x"}`},
+		"unparseable":      {"helpdesk.cmd.tickets.create", `{"title":"x"}`},
+		"invalid priority": {"helpdesk.acme.cmd.tickets.create", `{"title":"prio","priority":"catastrophic"}`},
 	}
 	for name, c2 := range cases {
 		if out := c.Project(c2[0], []byte(c2[1])); out != Ack {
@@ -222,7 +222,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Matching code → the structured relation is set.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"a","location_code":"BLDG-C"}`)); out != Ack {
 		t.Fatalf("matching code: %v", out)
 	}
@@ -235,7 +235,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"b","location_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("unknown code: %v", out)
 	}
@@ -251,7 +251,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	}
 
 	// Free-text location wins the note even alongside an unresolved code.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"cc","location":"rear dock","location_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("freetext+code: %v", out)
 	}
@@ -263,7 +263,7 @@ func TestProjectResolvesLocationByCode(t *testing.T) {
 	// Case-folded (ADR 0003 rule 3). A publisher's `bldg-c` must find the
 	// catalog's `BLDG-C` rather than silently becoming a note and costing the
 	// ticket its reporting axis.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"d","location_code":"bldg-c"}`)); out != Ack {
 		t.Fatalf("case-mismatched code: %v", out)
 	}
@@ -292,7 +292,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Matching code → the structured relation is set.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"a","thing_code":"PUMP-7"}`)); out != Ack {
 		t.Fatalf("matching code: %v", out)
 	}
@@ -305,7 +305,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Unknown code → no relation; the code is kept as a breadcrumb in the note.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"b","thing_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("unknown code: %v", out)
 	}
@@ -321,7 +321,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Free-text thing wins the note even alongside an unresolved code.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"cc","thing":"the big pump","thing_code":"NOPE"}`)); out != Ack {
 		t.Fatalf("freetext+code: %v", out)
 	}
@@ -343,7 +343,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	if err := app.Save(thing); err != nil {
 		t.Fatalf("update thing: %v", err)
 	}
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"dd","thing_code":"PUMP-7"}`)); out != Ack {
 		t.Fatalf("placed thing: %v", out)
 	}
@@ -353,7 +353,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 	}
 
 	// Case-folded (ADR 0003 rule 3), same contract as the location resolver.
-	if out := c.Project("helpdesk.acme.tickets.create",
+	if out := c.Project("helpdesk.acme.cmd.tickets.create",
 		[]byte(`{"title":"ee","thing_code":"pump-7"}`)); out != Ack {
 		t.Fatalf("case-mismatched code: %v", out)
 	}
@@ -372,7 +372,7 @@ func TestProjectResolvesThingByCode(t *testing.T) {
 func TestProjectResolvesCustomerCodeIgnoringCase(t *testing.T) {
 	app, c, _ := setup(t)
 
-	if out := c.Project("helpdesk.ACME.tickets.create",
+	if out := c.Project("helpdesk.ACME.cmd.tickets.create",
 		[]byte(`{"title":"shouty tenant token"}`)); out != Ack {
 		t.Fatalf("Project = %v, want Ack", out)
 	}
@@ -400,7 +400,7 @@ func TestProjectResolvesCustomerByCodeOnly(t *testing.T) {
 	app, c, customer := setup(t)
 
 	t.Run("the organization code resolves", func(t *testing.T) {
-		subject := "helpdesk.acme.tickets.create"
+		subject := "helpdesk.acme.cmd.tickets.create"
 		if out := c.Project(subject, []byte(`{"title":"by-code"}`)); out != Ack {
 			t.Fatalf("Project = %v, want Ack", out)
 		}
@@ -421,7 +421,7 @@ func TestProjectResolvesCustomerByCodeOnly(t *testing.T) {
 		// "org123" IS this customer's platform_org_id. It must not be a tenant
 		// token: one subject position resolving against two columns is the
 		// ambiguity ADR 0002 removed.
-		if out := c.Project("helpdesk.org123.tickets.create", []byte(`{"title":"by-id"}`)); out != Ack {
+		if out := c.Project("helpdesk.org123.cmd.tickets.create", []byte(`{"title":"by-id"}`)); out != Ack {
 			t.Fatalf("Project = %v, want Ack", out)
 		}
 		if after := countTickets(t, app); after != before {
@@ -436,7 +436,7 @@ func TestProjectUnknownCodeAcksWithoutTicket(t *testing.T) {
 	app, c, _ := setup(t)
 
 	before := countTickets(t, app)
-	if out := c.Project("helpdesk.not-a-tenant.tickets.create", []byte(`{"title":"x"}`)); out != Ack {
+	if out := c.Project("helpdesk.not-a-tenant.cmd.tickets.create", []byte(`{"title":"x"}`)); out != Ack {
 		t.Fatalf("Project = %v, want Ack", out)
 	}
 	if after := countTickets(t, app); after != before {
@@ -453,7 +453,7 @@ func TestProjectDedupeKeyReleasedWhenDone(t *testing.T) {
 			app, c, _ := setup(t)
 			payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
 
-			if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+			if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 				t.Fatalf("first: %v", out)
 			}
 			first, err := app.FindFirstRecordByFilter("tickets", "dedupe_key = 'pump-7-overcurrent'")
@@ -465,7 +465,7 @@ func TestProjectDedupeKeyReleasedWhenDone(t *testing.T) {
 				t.Fatalf("set %s: %v", status, err)
 			}
 
-			if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+			if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 				t.Fatalf("after %s: %v", status, out)
 			}
 			if n := countTickets(t, app); n != 2 {
@@ -506,7 +506,7 @@ func TestProjectRepeatWhileOpenIsCounted(t *testing.T) {
 	}
 
 	payload := []byte(`{"title":"pump fault","dedupe_key":"pump-7-overcurrent"}`)
-	if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+	if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 		t.Fatalf("first: %v", out)
 	}
 	// ticket.created must have logged, or "nothing more was logged" below
@@ -517,7 +517,7 @@ func TestProjectRepeatWhileOpenIsCounted(t *testing.T) {
 	}
 
 	for want := 1; want <= 2; want++ {
-		if out := c.Project("helpdesk.acme.tickets.create", payload); out != Ack {
+		if out := c.Project("helpdesk.acme.cmd.tickets.create", payload); out != Ack {
 			t.Fatalf("repeat %d: %v", want, out)
 		}
 		rec, err := app.FindFirstRecordByFilter("tickets", "dedupe_key = 'pump-7-overcurrent'")

@@ -68,7 +68,7 @@ watch(
             <div class="overflow-y-auto px-4 py-3 space-y-4 text-sm">
               <p class="text-base-content/70">
                 When <span class="font-medium">Publish to NATS</span> is on, this event publishes a fixed,
-                versioned JSON envelope (<code class="text-xs">schema: helpdesk.event</code>, v1). The shape is
+                versioned JSON envelope (<code class="text-xs">schema: helpdesk.event</code>, v2). The shape is
                 code-defined — not editable — and the fields below are exactly what this event carries;
                 other events differ.
               </p>
@@ -83,8 +83,8 @@ watch(
                   <h4 class="font-semibold text-xs uppercase tracking-wider text-base-content/60">Subject</h4>
                   <code class="block text-xs bg-base-200 px-2 py-1.5 rounded break-all">{{ sample.subject }}</code>
                   <p class="text-xs text-base-content/60">
-                    <code class="text-xs">&lt;customer&gt;</code> is the ticket's customer id. Consumers can
-                    filter with <code class="text-xs">helpdesk.*.events.&gt;</code>.
+                    <code class="text-xs">&lt;customer-code&gt;</code> is the ticket's customer code. Consumers can
+                    filter with <code class="text-xs">helpdesk.*.evt.&gt;</code>.
                   </p>
                 </section>
 

@@ -454,7 +454,7 @@ parse-validates templates before save; compiled-in defaults back the
 route `/t/{id}`. **Second channel:** each template also carries a
 `publish_nats` toggle (migration `1814000000`); when on, the same event
 `dispatch` also publishes a fixed, versioned JSON envelope (`envelope.go`,
-`schema: helpdesk.event`) to `helpdesk.{customerCode}.events.{event_type}` via
+`schema: helpdesk.event`) to `helpdesk.{customerCode}.evt.{event_type}` via
 an injected `Publisher` (nil until NATS connects → clean no-op, independent
 of email). Token 2 is `customers.code` — the ecosystem tenant token, the same
 handle the *inbound* subject carries, so both directions of the boundary name a
@@ -470,13 +470,13 @@ has the full event / recipient / suppression matrix; `docs/protocol.md` has
 the outbound envelope + subject contract.
 
 **NATS ingestion** (`internal/subjects`, `internal/natsx`,
-`internal/ingest`): customer apps publish `helpdesk.tickets.create` in
+`internal/ingest`): customer apps publish `helpdesk.cmd.tickets.create` in
 their own org account; the platform's managed-org export (platform commit
-`45ca1e3`) delivers it hub-side as `helpdesk.{orgCode}.tickets.create`.
+`45ca1e3`) delivers it hub-side as `helpdesk.{orgCode}.cmd.tickets.create`.
 The org id is parsed **from the subject only** (token 2) — the export's
 subject rewrite is operator-signed, so it's unforgeable; a payload org id
 would not be. The helpdesk owns its inbox stream `HELPDESK_EVENTS`
-(subjects `helpdesk.*.tickets.>`) and a durable consumer `helpdesk-ingest`.
+(subjects `helpdesk.*.cmd.tickets.>`) and a durable consumer `helpdesk-ingest`.
 Projection semantics: unknown org → warn + ack (operator sets
 `customers.code`, later events flow); `dedupe_key` + a unique partial
 index on `(customer, dedupe_key)` absorb redelivery/publisher retries (per
@@ -496,9 +496,9 @@ request hook pins them on every record-API create/update; bad payloads ack
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
 `sub helpdesk.>` (widened to `pub helpdesk.>` for outbound notifications),
 via creds file. The helpdesk also **owns a second, outbound** stream
-`HELPDESK_NOTIFICATIONS` (subjects `helpdesk.*.events.>`, config
+`HELPDESK_NOTIFICATIONS` (subjects `helpdesk.*.evt.>`, config
 `nats.notify_stream`) for the notification publish channel — deliberately
-disjoint from the ingest stream at token 3 (`events` vs `tickets`), so
+disjoint from the ingest stream at token 3 (`evt` vs `cmd`), so
 JetStream accepts both and an emitted event can't loop back through ingest.
 The MSP's automation owns that stream's consumer; the helpdesk only
 publishes.

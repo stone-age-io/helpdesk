@@ -71,7 +71,7 @@ func TestPublishTicketCreatedEnvelope(t *testing.T) {
 	}
 	m := msgs[0]
 
-	wantSubject := "helpdesk." + h.customer.GetString("code") + ".events.ticket.created"
+	wantSubject := "helpdesk." + h.customer.GetString("code") + ".evt.ticket.created"
 	if m.subject != wantSubject {
 		t.Errorf("subject = %q, want %q", m.subject, wantSubject)
 	}
@@ -95,8 +95,8 @@ func TestPublishTicketCreatedEnvelope(t *testing.T) {
 	if env.Ticket.Number == 0 || env.Ticket.Title != "Pump fault" {
 		t.Errorf("ticket = %+v", env.Ticket)
 	}
-	if env.OccurredAt == "" {
-		t.Error("occurred_at is empty")
+	if env.TS == "" {
+		t.Error("ts is empty")
 	}
 }
 
@@ -220,7 +220,7 @@ func TestVisitCompletedPublishesNATSOnly(t *testing.T) {
 		t.Fatalf("expected 1 visit.completed publish, got %d", len(msgs))
 	}
 	msg := msgs[0]
-	if want := "helpdesk." + h.customer.GetString("code") + ".events.visit.completed"; msg.subject != want {
+	if want := "helpdesk." + h.customer.GetString("code") + ".evt.visit.completed"; msg.subject != want {
 		t.Errorf("subject = %q, want %q", msg.subject, want)
 	}
 

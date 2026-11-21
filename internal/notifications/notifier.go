@@ -265,7 +265,7 @@ func (n *Notifier) deliverEmail(eventType string, rec *core.Record, data any) er
 }
 
 // publish marshals the fixed event envelope and publishes it to the
-// customer-scoped outbound subject helpdesk.{customerId}.events.{event_type}.
+// customer-scoped outbound subject helpdesk.{customerCode}.evt.{event_type}.
 // The send log records the subject as the destination. A nil publisher (NATS
 // disabled or its setup failed) is a clean no-op with no log row — nothing was
 // attempted. rec is the already-loaded template row (publish_nats gate is in

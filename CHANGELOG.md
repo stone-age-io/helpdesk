@@ -14,7 +14,7 @@ break.
 
 The surfaces worth pinning a version against, once there is more than one:
 
-- The **inbound wire contracts** — the NATS subject `helpdesk.{orgCode}.tickets.create`
+- The **inbound wire contracts** — the NATS subject `helpdesk.{orgCode}.cmd.tickets.create`
   and the webhook and email payloads, in [`docs/protocol.md`](docs/protocol.md).
 - The **outbound event envelope**, `schema: helpdesk.event`, which carries its
   own `version` field and is bumped there rather than here.
@@ -36,6 +36,30 @@ itself, and what `seed-demo` creates.
 > off and publishes the placeholder as the release notes.
 
 ## [Unreleased]
+
+### Breaking
+
+The NATS contracts now follow ADR 0008 in platform-docs, the ecosystem's
+subject grammar `{app}.{scope}.{channel}.{rest}`. Nothing was in production, so
+there is no compatibility window: a publisher on the old subject reaches no
+stream.
+
+| | Before | After |
+|---|---|---|
+| Publish a ticket, in a tenant account | `helpdesk.tickets.create` | `helpdesk.cmd.tickets.create` |
+| The same, at the hub | `helpdesk.{orgCode}.tickets.create` | `helpdesk.{orgCode}.cmd.tickets.create` |
+| `HELPDESK_EVENTS` subjects | `helpdesk.*.tickets.>` | `helpdesk.*.cmd.tickets.>` |
+| Outbound events | `helpdesk.{customerCode}.events.{event_type}` | `helpdesk.{customerCode}.evt.{event_type}` |
+| `HELPDESK_NOTIFICATIONS` subjects | `helpdesk.*.events.>` | `helpdesk.*.evt.>` |
+| Event time in the envelope | `occurred_at` | `ts` |
+
+- **The outbound envelope is `version: 2`**, for the `ts` rename.
+- **An existing deployment needs no manual step.** At startup the helpdesk
+  updates both streams' subjects and the ingest consumer's filter in place.
+  A ticket command still stored under the old subject is not ingested after
+  the upgrade, and ages out with the stream's 7-day limit.
+- The platform's managed-org export maps the whole of `helpdesk.>`, so it does
+  not change.
 
 ### Added
 
@@ -108,7 +132,7 @@ Added/Changed. Development history is in the commit log, which runs from
 
 ### Intake
 
-- **NATS ingestion** from `helpdesk.{orgCode}.tickets.create`, with the tenant
+- **NATS ingestion** from `helpdesk.{orgCode}.cmd.tickets.create`, with the tenant
   read from the operator-signed subject and never from the payload.
 - **An authenticated webhook**, and **inbound email** through a parsing provider
   (Postmark), which means the helpdesk holds no mailbox credentials. A reply
@@ -123,7 +147,7 @@ Added/Changed. Development history is in the commit log, which runs from
 - **Eight email event types** from database-stored templates, with a recipient
   spec per template and two independent suppression paths.
 - **A second NATS channel**: the same events publish a fixed, versioned envelope
-  to `helpdesk.{customerCode}.events.{event_type}` when a template opts in.
+  to `helpdesk.{customerCode}.evt.{event_type}` when a template opts in.
 - **Service discovery**: the binary registers as NATS micro service `helpdesk`,
   identity only, with no endpoints.
 

@@ -3,7 +3,7 @@ package notifications
 import "github.com/stone-age-io/helpdesk/internal/subjects"
 
 // This file defines the outbound NATS event contract — the JSON envelope
-// published to helpdesk.{customerId}.events.{event_type} when a template has
+// published to helpdesk.{customerCode}.evt.{event_type} when a template has
 // publish_nats enabled. It is deliberately a SEPARATE set of wire structs from
 // TicketContext (the render payload): the wire contract is versioned and
 // consumed by machines, so it must not drift silently when the internal render
@@ -14,22 +14,22 @@ const (
 	// EnvelopeSchema names the contract so consumers can route/validate.
 	EnvelopeSchema = "helpdesk.event"
 	// EnvelopeVersion is bumped on any breaking change to the wire shape.
-	EnvelopeVersion = 1
+	EnvelopeVersion = 2
 )
 
 // EventEnvelope is the top-level published document. Optional blocks are
 // present only for the events that carry them (Change for status_changed,
 // Comment for commented, Visit for the visit.* events).
 type EventEnvelope struct {
-	Schema     string       `json:"schema"`
-	Version    int          `json:"version"`
-	EventType  string       `json:"event_type"`
-	OccurredAt string       `json:"occurred_at"` // RFC3339 UTC, stamped at publish
-	Customer   CustomerWire `json:"customer"`
-	Ticket     TicketWire   `json:"ticket"`
-	Change     *ChangeWire  `json:"change,omitempty"`
-	Comment    *CommentWire `json:"comment,omitempty"`
-	Visit      *VisitWire   `json:"visit,omitempty"`
+	Schema    string       `json:"schema"`
+	Version   int          `json:"version"`
+	EventType string       `json:"event_type"`
+	TS        string       `json:"ts"` // RFC3339 UTC, stamped at publish (ADR 0008)
+	Customer  CustomerWire `json:"customer"`
+	Ticket    TicketWire   `json:"ticket"`
+	Change    *ChangeWire  `json:"change,omitempty"`
+	Comment   *CommentWire `json:"comment,omitempty"`
+	Visit     *VisitWire   `json:"visit,omitempty"`
 }
 
 // CustomerWire identifies the tenant. ID is always set; PlatformOrgID is
@@ -87,13 +87,13 @@ type VisitWire struct {
 }
 
 // toEnvelope projects a render context into the wire contract for eventType.
-// occurredAt is stamped by the caller (publish) so this stays testable.
-func (c TicketContext) toEnvelope(eventType, occurredAt string) EventEnvelope {
+// ts is stamped by the caller (publish) so this stays testable.
+func (c TicketContext) toEnvelope(eventType, ts string) EventEnvelope {
 	env := EventEnvelope{
-		Schema:     EnvelopeSchema,
-		Version:    EnvelopeVersion,
-		EventType:  eventType,
-		OccurredAt: occurredAt,
+		Schema:    EnvelopeSchema,
+		Version:   EnvelopeVersion,
+		EventType: eventType,
+		TS:        ts,
 		Customer: CustomerWire{
 			ID:            c.CustomerID,
 			Name:          c.Customer,
@@ -136,9 +136,9 @@ func (c TicketContext) toEnvelope(eventType, occurredAt string) EventEnvelope {
 	return env
 }
 
-// sampleOccurredAt is a fixed, representative timestamp for the reference
+// sampleTS is a fixed, representative timestamp for the reference
 // sample so the rendered envelope is stable (no time.Now noise).
-const sampleOccurredAt = "2026-07-15T14:02:11Z"
+const sampleTS = "2026-07-15T14:02:11Z"
 
 // SampleEnvelope builds a representative (subject, envelope) pair for the staff
 // NATS reference drawer. It starts from the shared kitchen-sink SampleContext
@@ -173,5 +173,5 @@ func SampleEnvelope(eventType string) (subject string, env EventEnvelope, ok boo
 	// A placeholder tenant token, matching the subject hint on the editor
 	// toggle — the real second token is the customer's code.
 	subject = subjects.Default().EventSubject("<customer-code>", eventType)
-	return subject, ctx.toEnvelope(eventType, sampleOccurredAt), true
+	return subject, ctx.toEnvelope(eventType, sampleTS), true
 }

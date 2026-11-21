@@ -110,7 +110,7 @@ type NATSConfig struct {
 	// Durable is the consumer name; stable so restarts resume where they left off.
 	Durable string
 	// NotifyStream is the JetStream stream the helpdesk creates and owns for
-	// OUTBOUND notification events (helpdesk.*.events.>). Separate from Stream
+	// OUTBOUND notification events (helpdesk.*.evt.>). Separate from Stream
 	// because its subjects must not overlap the ingest stream's and it carries
 	// a dedupe window for Nats-Msg-Id.
 	NotifyStream string

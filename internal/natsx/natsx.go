@@ -102,7 +102,7 @@ const notifyDedupeWindow = 2 * time.Minute
 
 // EnsureNotifyStream returns the outbound notification stream, creating it if
 // absent. Separate from EnsureStream because its subjects must stay disjoint
-// from the ingest stream (helpdesk.*.events.> vs helpdesk.*.tickets.>) and it
+// from the ingest stream (helpdesk.*.evt.> vs helpdesk.*.cmd.tickets.>) and it
 // carries a Duplicates window so the Nats-Msg-Id header (see Publisher) dedupes
 // republished events. The helpdesk owns this stream, symmetric with the inbox.
 func (c *Conn) EnsureNotifyStream(ctx context.Context, name string, subjs []string) (jetstream.Stream, error) {

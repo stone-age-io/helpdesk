@@ -26,7 +26,7 @@ import (
 )
 
 // CreatePayload is the wire shape customer-side apps publish to
-// helpdesk.tickets.create (documented in docs/protocol.md). Unknown fields
+// helpdesk.cmd.tickets.create (documented in docs/protocol.md). Unknown fields
 // are ignored; only title is required.
 type CreatePayload struct {
 	Title    string `json:"title"`

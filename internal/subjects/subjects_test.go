@@ -13,13 +13,14 @@ func TestParseTicketEvent(t *testing.T) {
 		verb    string
 		ok      bool
 	}{
-		{"helpdesk.org123.tickets.create", "org123", "create", true},
-		{"helpdesk.org123.tickets.comment", "org123", "comment", true},
-		{"helpdesk.tickets.create", "", "", false},              // customer-side shape, no org
-		{"helpdesk.org123.tickets", "", "", false},              // missing verb
-		{"kiosk.org123.tickets.create", "", "", false},          // wrong app
-		{"helpdesk.org123.events.create", "", "", false},        // wrong subtree
-		{"helpdesk.org123.tickets.create.extra", "", "", false}, // too many tokens
+		{"helpdesk.org123.cmd.tickets.create", "org123", "create", true},
+		{"helpdesk.org123.cmd.tickets.comment", "org123", "comment", true},
+		{"helpdesk.cmd.tickets.create", "", "", false},              // customer-side shape, no org
+		{"helpdesk.org123.cmd.tickets", "", "", false},              // missing verb
+		{"helpdesk.org123.tickets.create", "", "", false},           // the shape before ADR 0008
+		{"kiosk.org123.cmd.tickets.create", "", "", false},          // wrong app
+		{"helpdesk.org123.evt.tickets.create", "", "", false},       // wrong channel
+		{"helpdesk.org123.cmd.tickets.create.extra", "", "", false}, // too many tokens
 	}
 	for _, c := range cases {
 		org, verb, ok := s.ParseTicketEvent(c.subject)
@@ -31,14 +32,14 @@ func TestParseTicketEvent(t *testing.T) {
 }
 
 func TestCustomerSidePublishSubject(t *testing.T) {
-	if got := Default().TicketCreate(); got != "helpdesk.tickets.create" {
+	if got := Default().TicketCreate(); got != "helpdesk.cmd.tickets.create" {
 		t.Errorf("TicketCreate() = %q", got)
 	}
 }
 
 func TestStreamWildcardsCoverHubSubjects(t *testing.T) {
 	got := Default().StreamWildcards()
-	if len(got) != 1 || got[0] != "helpdesk.*.tickets.>" {
+	if len(got) != 1 || got[0] != "helpdesk.*.cmd.tickets.>" {
 		t.Errorf("StreamWildcards() = %v", got)
 	}
 }
@@ -50,9 +51,9 @@ func TestEventSubject(t *testing.T) {
 		eventType  string
 		want       string
 	}{
-		{"rec8f3x", "ticket.created", "helpdesk.rec8f3x.events.ticket.created"},
-		{"rec8f3x", "ticket.status_changed", "helpdesk.rec8f3x.events.ticket.status_changed"},
-		{"custABC", "visit.scheduled", "helpdesk.custABC.events.visit.scheduled"},
+		{"rec8f3x", "ticket.created", "helpdesk.rec8f3x.evt.ticket.created"},
+		{"rec8f3x", "ticket.status_changed", "helpdesk.rec8f3x.evt.ticket.status_changed"},
+		{"custABC", "visit.scheduled", "helpdesk.custABC.evt.visit.scheduled"},
 	}
 	for _, c := range cases {
 		if got := s.EventSubject(c.customerID, c.eventType); got != c.want {
@@ -63,7 +64,7 @@ func TestEventSubject(t *testing.T) {
 
 func TestEventStreamWildcards(t *testing.T) {
 	got := Default().EventStreamWildcards()
-	if len(got) != 1 || got[0] != "helpdesk.*.events.>" {
+	if len(got) != 1 || got[0] != "helpdesk.*.evt.>" {
 		t.Errorf("EventStreamWildcards() = %v", got)
 	}
 }
@@ -72,14 +73,14 @@ func TestEventStreamWildcards(t *testing.T) {
 // overlap between the ingest and notification streams. Overlap is a property of
 // the filters, not of the concrete subjects we intend to publish: NATS rejects
 // a second stream whose subject set shares ANY concrete subject with an
-// existing one. The ingest filter is helpdesk.*.tickets.> (token 2 is a
+// existing one. The ingest filter is helpdesk.*.cmd.tickets.> (token 2 is a
 // wildcard that swallows anything), so the streams can only be proven disjoint
 // at token 3. This asserts that discriminator differs, and that a real
 // outbound subject is not matched by the ingest parser (so it can never loop).
 func TestStreamsDisjoint(t *testing.T) {
 	s := Default()
-	ingest := s.StreamWildcards()[0]      // helpdesk.*.tickets.>
-	events := s.EventStreamWildcards()[0] // helpdesk.*.events.>
+	ingest := s.StreamWildcards()[0]      // helpdesk.*.cmd.tickets.>
+	events := s.EventStreamWildcards()[0] // helpdesk.*.evt.>
 
 	ingestTok := strings.Split(ingest, ".")
 	eventsTok := strings.Split(events, ".")

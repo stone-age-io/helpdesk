@@ -1,25 +1,26 @@
 // Package subjects is the single source of truth for the helpdesk's NATS
-// subject grammar, for both sides of the platform boundary:
+// subject grammar, for both sides of the platform boundary. It follows ADR 0008
+// in platform-docs: {app}.{scope}.{channel}.{rest}, where the helpdesk's scope
+// is the organization at the hub and absent inside a tenant account.
 //
-// Customer side (inside a customer org's NATS account), apps publish:
+// Customer side (inside a customer org's NATS account), apps publish a command:
 //
-//	helpdesk.tickets.create
+//	helpdesk.cmd.tickets.create
 //
-// The platform's managed-org export/import (platform commit 45ca1e3)
-// delivers those into the operator hub account with the org id injected as
-// token 2:
+// The platform's managed-org export/import delivers those into the operator
+// hub account with the org code injected as token 2:
 //
-//	helpdesk.{orgCode}.tickets.create
+//	helpdesk.{orgCode}.cmd.tickets.create
 //
 // That injection is the provenance mechanism: the subject is rewritten by
-// the operator-signed import, so a customer cannot spoof another org's id —
+// the operator-signed import, so a customer cannot spoof another org's code,
 // which is why ingestion parses the org from the subject and NEVER from the
 // payload.
 //
-// Rooting at the literal app token ("helpdesk") keeps the HELPDESK_EVENTS
-// stream's subjects disjoint from every sibling app's stream on the shared
-// hub account (JetStream forbids overlapping stream subjects) and matches
-// the platform export's subject token for this app.
+// Rooting at the literal app token ("helpdesk") keeps the helpdesk's streams
+// disjoint from every sibling app's stream on the shared hub account
+// (JetStream forbids overlapping stream subjects) and matches the platform
+// export's subject token for this app.
 //
 // The {verb} position ends the grammar deliberately open: v1 consumes only
 // "create", but "comment"/"resolve" can ride the same stream later without
@@ -36,22 +37,19 @@ import (
 // export changes.
 const DefaultApp = "helpdesk"
 
+// The channels (ADR 0008). Token 3 at the hub is the whole disjointness
+// guarantee between the two streams: the ingest filter helpdesk.*.cmd.tickets.>
+// and the outbound filter helpdesk.*.evt.> match any org at token 2, so only
+// token 3 can tell them apart. Commands come in, events go out, and an outbound
+// event can never be re-ingested as a ticket. See the TestStreamsDisjoint
+// tripwire.
+const (
+	ChannelCmd = "cmd"
+	ChannelEvt = "evt"
+)
+
 // VerbCreate is the only ticket verb v1 consumes.
 const VerbCreate = "create"
-
-// EventsToken is the third subject token for the outbound notification stream:
-//
-//	helpdesk.{customerCode}.events.{event_type}
-//
-// It MUST differ from the ingest stream's third token ("tickets") — that
-// difference is the whole disjointness guarantee. Two JetStream streams may
-// not share a subject, and the ingest filter helpdesk.*.tickets.> matches any
-// customer/org at token 2, so the only place an outbound subject can be proven
-// distinct is token 3. "events" (things that happened, going out) vs "tickets"
-// (create-a-ticket commands, coming in) is the split, and it doubles as a
-// loop guard: an outbound event can never be re-ingested as a ticket. See the
-// TestStreamsDisjoint tripwire.
-const EventsToken = "events"
 
 // Subjects builds and parses subjects for one app namespace. The zero value
 // is usable and behaves as the default app.
@@ -77,60 +75,56 @@ func (s Subjects) App() string {
 // TicketCreate is the customer-side publish subject (inside the customer
 // org's own account, before the export injects the org token).
 func (s Subjects) TicketCreate() string {
-	return fmt.Sprintf("%s.tickets.%s", s.App(), VerbCreate)
+	return fmt.Sprintf("%s.%s.tickets.%s", s.App(), ChannelCmd, VerbCreate)
 }
 
 // StreamWildcards is the HELPDESK_EVENTS stream's subject set and the
 // durable consumer's filter: every ticket verb from every org, hub-side.
 func (s Subjects) StreamWildcards() []string {
-	return []string{fmt.Sprintf("%s.*.tickets.>", s.App())}
+	return []string{fmt.Sprintf("%s.*.%s.tickets.>", s.App(), ChannelCmd)}
 }
 
 // EventSubject builds the hub-side outbound subject for one notification
 // event:
 //
-//	helpdesk.{customerCode}.events.{event_type}
+//	helpdesk.{customerCode}.evt.{event_type}
 //
-// customerCode is customers.code — the ecosystem's tenant token, the same
+// customerCode is customers.code, the ecosystem's tenant token: the same
 // handle token 2 carries on the way IN and the same one the platform stamps on
 // its operator-signed rewrite (ADR 0002 in platform-docs). Both directions of
-// the boundary now name a tenant the same way.
-//
-// It used to be the tickets.customer relation id, which was always present and
-// token-safe but was this app's own primary key sitting in a subject that
-// crosses to other applications — the exact thing ADR 0002 exists to remove. A
-// consumer joining helpdesk events to anything else had to be handed a mapping
-// table that only this database could produce.
+// the boundary name a tenant the same way.
 //
 // The code is optional, so a customer without one cannot be published for; the
-// notifier skips and logs rather than falling back to the id, because a token
-// that is sometimes a shared code and sometimes a local key is not a token.
+// notifier skips and logs rather than falling back to the record id, because a
+// token that is sometimes a shared code and sometimes a local key is not a
+// token.
 //
 // eventType is the notification event type ("ticket.created",
 // "visit.scheduled"); its embedded dot supplies the trailing domain.verb
 // tokens, so no separate mapping is needed. platform_org_id is deliberately NOT
-// in the subject — it rides the payload.
+// in the subject; it rides the payload.
 func (s Subjects) EventSubject(customerCode, eventType string) string {
-	return fmt.Sprintf("%s.%s.%s.%s", s.App(), customerCode, EventsToken, eventType)
+	return fmt.Sprintf("%s.%s.%s.%s", s.App(), customerCode, ChannelEvt, eventType)
 }
 
 // EventStreamWildcards is the HELPDESK_NOTIFICATIONS stream's subject set: every
 // outbound event for every customer, hub-side. Disjoint from StreamWildcards()
-// at token 3 (events vs tickets).
+// at token 3 (evt vs cmd).
 func (s Subjects) EventStreamWildcards() []string {
-	return []string{fmt.Sprintf("%s.*.%s.>", s.App(), EventsToken)}
+	return []string{fmt.Sprintf("%s.*.%s.>", s.App(), ChannelEvt)}
 }
 
-// ParseTicketEvent splits a hub-side subject into its org id and verb:
+// ParseTicketEvent splits a hub-side subject into its org code and verb:
 //
-//	{app}.{orgCode}.tickets.{verb} -> orgCode, verb, true
+//	{app}.{orgCode}.cmd.tickets.{verb} -> orgCode, verb, true
 //
-// ok is false for anything else (wrong app, wrong shape). The org id comes
-// exclusively from here — it is the signed, unforgeable part of the event.
+// ok is false for anything else (wrong app, wrong shape). The org code comes
+// exclusively from here: it is the signed, unforgeable part of the command.
 func (s Subjects) ParseTicketEvent(subject string) (orgID, verb string, ok bool) {
 	parts := strings.Split(subject, ".")
-	if len(parts) != 4 || parts[0] != s.App() || parts[2] != "tickets" || parts[1] == "" || parts[3] == "" {
+	if len(parts) != 5 || parts[0] != s.App() || parts[1] == "" ||
+		parts[2] != ChannelCmd || parts[3] != "tickets" || parts[4] == "" {
 		return "", "", false
 	}
-	return parts[1], parts[3], true
+	return parts[1], parts[4], true
 }

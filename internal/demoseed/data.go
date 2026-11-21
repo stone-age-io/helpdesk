@@ -464,7 +464,7 @@ var heroTickets = []ticketFixture{
 		Body:     "Vibration sensor reporting overcurrent on the feed pump. Auto-filed by the plant controller.",
 		Priority: "urgent", Source: "nats", Category: "iot-device", Type: "reactive",
 		Location: "IB-PLANT1-L3", Thing: "PUMP-7", Assignee: "maya", EstimatedMinutes: 180,
-		OriginSubject: "helpdesk.org_ironbridge.tickets.create",
+		OriginSubject: "helpdesk.org_ironbridge.cmd.tickets.create",
 		CreatedDays:   -5, Transitions: []string{"in_progress", "waiting"},
 		Comments: []commentFixture{
 			{Author: "maya", Body: "Pulled the trend — current spikes correlate with the 06:00 startup ramp.", Internal: true, DayOffset: -4},
@@ -537,7 +537,7 @@ var heroTickets = []ticketFixture{
 		Title:    "Unknown device reporting faults",
 		Body:     "Machine intake referenced a device code we do not have in the catalog yet.",
 		Priority: "normal", Source: "nats", Category: "iot-device", Type: "reactive",
-		OriginSubject: "helpdesk.org_northwind.tickets.create",
+		OriginSubject: "helpdesk.org_northwind.cmd.tickets.create",
 		// No Thing: the unmatched-code fallback the intakes actually produce. A
 		// demo should show what that looks like in the UI.
 		ThingNote: "NW-SENSOR-88", LocationNote: "somewhere on the mezzanine",

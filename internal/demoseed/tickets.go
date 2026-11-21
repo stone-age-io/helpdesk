@@ -175,7 +175,7 @@ func (s *seeder) generateTicket(i int) ticketFixture {
 	if source == "nats" {
 		for _, c := range customers {
 			if c.Key == tgt.customer && c.PlatformOrg != "" {
-				f.OriginSubject = "helpdesk." + c.PlatformOrg + ".tickets.create"
+				f.OriginSubject = "helpdesk." + c.PlatformOrg + ".cmd.tickets.create"
 			}
 		}
 	}
