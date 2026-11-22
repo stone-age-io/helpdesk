@@ -37,6 +37,12 @@ itself, and what `seed-demo` creates.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-22
+
+The platform keeps the helpdesk's NATS creds file current (ADR 0009 in
+platform-docs): set `platform.url` and the helpdesk signs in as its own Thing.
+Nothing changes without it.
+
 ### Added
 
 - **The platform keeps the NATS creds file current** (ADR 0009 in
