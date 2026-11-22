@@ -37,6 +37,8 @@ itself, and what `seed-demo` creates.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-22
+
 ### Breaking
 
 The NATS contracts now follow ADR 0008 in platform-docs, the ecosystem's
@@ -72,7 +74,7 @@ stream.
 
 - **`contract/`**: the helpdesk's Thing Type and NATS role, as a `stone`
   template for the operator organization:
-  `stone apply --template contract/` (stone-cli, unreleased).
+  `stone apply --template contract/` (stone v0.12.0).
 - **`nats.code`**, the helpdesk's Thing code (ADR 0008). NATS service discovery
   now carries it as `code` metadata, which is how the console joins the running
   process to its Thing. While it is empty, discovery registration is skipped
