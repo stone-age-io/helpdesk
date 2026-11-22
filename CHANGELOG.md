@@ -70,6 +70,9 @@ stream.
 
 ### Added
 
+- **`contract/`**: the helpdesk's Thing Type and NATS role, as a `stone`
+  template for the operator organization:
+  `stone apply --template contract/` (stone-cli, unreleased).
 - **`nats.code`**, the helpdesk's Thing code (ADR 0008). NATS service discovery
   now carries it as `code` metadata, which is how the console joins the running
   process to its Thing. While it is empty, discovery registration is skipped

@@ -1,0 +1,4 @@
+code: helpdesk
+name: Helpdesk
+description: "The helpdesk server, in the operator organization. Tickets reach it through each managed organization's helpdesk export, so it declares no operations; its role says what it may do."
+subject_prefix: app.helpdesk.{thing}

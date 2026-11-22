@@ -9,3 +9,5 @@ ui/dist/
 
 # goreleaser build output
 /dist/
+# The contract names its Thing Type and role helpdesk too; those are not config.
+!contract/**/helpdesk.yaml
