@@ -58,8 +58,12 @@ COPY --from=build /out/helpdesk /usr/local/bin/helpdesk
 
 # The SQLite database and uploaded attachments. One volume covers both:
 # PocketBase keeps storage/ inside its data directory.
-RUN mkdir -p /data && chown helpdesk /data
+# /creds holds what the platform keeps current (platform.url): the creds
+# file, the session and a device-held seed. It is a volume of its own because
+# /data is PocketBase's data_dir, and PocketBase backups archive all of it.
+RUN mkdir -p /data /creds && chown helpdesk /data /creds && chmod 700 /creds
 VOLUME /data
+VOLUME /creds
 USER helpdesk
 
 ENV HELPDESK_DATA_DIR=/data

@@ -49,6 +49,31 @@ nats:
   # skips discovery registration; nothing else needs it.
   code: ""
 
+# Keep nats.creds_file current from the platform (ADR 0009 in platform-docs).
+# The helpdesk signs in as its Thing, writes the creds file, and rewrites it
+# after a Regenerate or a Revoke, so a rotated credential arrives without
+# anyone copying a file and without a restart. Leave url empty to provide the
+# creds file yourself.
+#
+# With url set, keep nats.creds_file OUTSIDE data_dir, e.g.
+# pb_creds/helpdesk.creds: PocketBase backups archive all of data_dir, and the
+# creds file, the session and a device-held seed must not ride along. The
+# helpdesk refuses a path inside it, and creates the directory (0700).
+platform:
+  url: ""
+  # url: https://platform.example.com
+  # The helpdesk Thing's login email, shown once when the Thing is provisioned.
+  identity: ""
+  # The Thing's password is needed ONLY for the first start, until a session is
+  # saved. Pass it as HELPDESK_PLATFORM_PASSWORD, not here, and remove it after.
+  # password: ""
+  # Defaults to platform-session.json beside nats.creds_file.
+  # session_file: ""
+  sync_interval: 5m
+  # Development only: lets url be http://. The first sync sends the password
+  # and receives a private key.
+  allow_insecure: false
+
 # Inbound email via an email-parsing provider (Postmark first). The provider
 # receives forwarded mail, parses the MIME, and POSTs clean JSON to
 # /api/helpdesk/inbound/email/{provider} — the helpdesk holds no mailbox

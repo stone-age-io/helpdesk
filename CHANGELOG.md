@@ -37,6 +37,24 @@ itself, and what `seed-demo` creates.
 
 ## [Unreleased]
 
+### Added
+
+- **The platform keeps the NATS creds file current** (ADR 0009 in
+  platform-docs). Set `platform.url` and `platform.identity`, and the
+  helpdesk signs in as its Thing with the kit's `credskeeper`, writes
+  `nats.creds_file`, and rewrites it after a Regenerate or a Revoke. The open
+  connection moves to the new credential without a restart. The password is
+  needed for the first start only (`HELPDESK_PLATFORM_PASSWORD`). Readiness
+  gains `credentials` and `platform`, and `/metrics` the `creds_keeper_*`
+  series. Without `platform.url` nothing changes.
+- **The container has a `/creds` volume** for those files. `/data` is
+  PocketBase's `data_dir`, and its backups archive all of it, so the helpdesk
+  refuses a creds file or session file inside `data_dir`.
+
+### Changed
+
+- **Built on kit v0.2.0.**
+
 ## [0.2.0] — 2026-11-22
 
 ### Breaking

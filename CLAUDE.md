@@ -495,7 +495,12 @@ request hook pins them on every record-API create/update; bad payloads ack
 (terminal). NATS is **best-effort**: connect failure logs and the app
 serves anyway. Auth is a platform-minted hub `nats_user` scoped to
 `sub helpdesk.>` (widened to `pub helpdesk.>` for outbound notifications),
-via creds file. The helpdesk also **owns a second, outbound** stream
+via creds file. With `platform.url` set, the kit's `credskeeper` keeps that
+file current in process as the helpdesk's Thing (ADR 0009): `serve` waits up
+to 30s for the first file before the connect, because nats.go reads it before
+it dials. The creds file and the session must stay **outside `data_dir`**,
+which PocketBase backups archive, and `config.Load` refuses a path inside it.
+The helpdesk also **owns a second, outbound** stream
 `HELPDESK_NOTIFICATIONS` (subjects `helpdesk.*.evt.>`, config
 `nats.notify_stream`) for the notification publish channel — deliberately
 disjoint from the ingest stream at token 3 (`evt` vs `cmd`), so

@@ -14,6 +14,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase"
@@ -23,6 +24,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/nats-io/nats.go/micro"
 	"github.com/spf13/cobra"
+	"github.com/stone-age-io/kit/credskeeper"
 	"github.com/stone-age-io/kit/health"
 	"github.com/stone-age-io/kit/natsx"
 	"github.com/stone-age-io/kit/pbx"
@@ -55,6 +57,11 @@ import (
 // 90 days matches the kiosk convention: long enough to debug "did the
 // customer get that email", short enough to keep SQLite lean.
 const sendLogRetentionDays = 90
+
+// firstCredsWait bounds how long serve waits for the platform to write the
+// first creds file. It only matters on a first start: a restart finds the file
+// it already has and connects at once, even while the platform is down.
+const firstCredsWait = 30 * time.Second
 
 func main() {
 	cfg, err := config.Load()
@@ -182,8 +189,9 @@ func main() {
 		consumer *ingest.Consumer
 	)
 
-	// The readiness prober's loop lives for as long as the server does.
-	proberCtx, stopProber := context.WithCancel(context.Background())
+	// The readiness prober's loop and the credential keeper live for as long
+	// as the server does.
+	serveCtx, stopServe := context.WithCancel(context.Background())
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		// Readiness. The NATS state is read through closures rather than
@@ -210,6 +218,46 @@ func main() {
 			pbx.ServeMetrics(e, mset.Registry, cfg.Metrics.Token)
 		}
 
+		// The platform keeps nats.creds_file current (ADR 0009). The keeper
+		// adds the credentials and platform readiness checks and the
+		// creds_keeper_* metrics, and runs until shutdown.
+		credsReady := true
+		if cfg.Platform.Enabled() {
+			// The keeper writes into a directory that exists. The helpdesk
+			// makes it, as PocketBase makes data_dir: same process, same owner,
+			// and 0700 because it holds a private key and the session.
+			for _, f := range []string{cfg.NATS.CredsFile, cfg.Platform.SessionFile} {
+				if f == "" {
+					continue
+				}
+				if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+					return fmt.Errorf("platform: %w", err)
+				}
+			}
+			keeper, err := credskeeper.New(credskeeper.Config{
+				URL:           cfg.Platform.URL,
+				Identity:      cfg.Platform.Identity,
+				Password:      cfg.Platform.Password,
+				CredsFile:     cfg.NATS.CredsFile,
+				SessionFile:   cfg.Platform.SessionFile,
+				SyncInterval:  cfg.Platform.SyncInterval,
+				AllowInsecure: cfg.Platform.AllowInsecure,
+			}, slog.Default().With("component", "credskeeper"), credskeeper.NewMetrics(mset.Registry))
+			if err != nil {
+				return fmt.Errorf("platform: %w", err)
+			}
+			keeper.RegisterChecks(&reg)
+			go keeper.Run(serveCtx)
+			// nats.go reads the creds file before it dials, so connecting before
+			// the first sync fails at once rather than retrying.
+			waitCtx, cancel := context.WithTimeout(serveCtx, firstCredsWait)
+			if err := keeper.WaitForCreds(waitCtx); err != nil {
+				credsReady = false
+				log.Printf("no creds file from the platform yet, so NATS stays off until a restart (the keeper keeps trying; see the credentials and platform checks): %v", err)
+			}
+			cancel()
+		}
+
 		notifications.RegisterRoutes(e)
 		inbound.Register(e)
 		inbound.RegisterEmail(e, cfg.Inbound.Secret, cfg.Inbound.AllowedIPs)
@@ -220,7 +268,7 @@ func main() {
 		// portal/agent/webhook traffic without a broker; machine tickets
 		// resume when connectivity returns and the durable consumer picks
 		// up where it left off.
-		if cfg.NATS.Enabled() {
+		if cfg.NATS.Enabled() && credsReady {
 			var (
 				js  jetstream.JetStream
 				err error
@@ -284,7 +332,7 @@ func main() {
 		// rather than reporting it down for one interval on every boot. It
 		// probes once synchronously, so /api/ready has a real answer as soon
 		// as the server is listening.
-		prober.Start(proberCtx)
+		prober.Start(serveCtx)
 
 		pbx.Branding(e, cfg.BrandingDir, slog.Default())
 		uiFS, err := fs.Sub(webui.FS, "public")
@@ -292,12 +340,12 @@ func main() {
 			return err
 		}
 		pbx.ServeSPA(e, uiFS)
-		log.Printf("helpdesk serving (dataDir=%s, nats=%v)", cfg.DataDir, cfg.NATS.Enabled())
+		log.Printf("helpdesk serving (dataDir=%s, nats=%v)", cfg.DataDir, nc != nil)
 		return e.Next()
 	})
 
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
-		stopProber()
+		stopServe()
 		consumer.Stop()
 		if svc != nil {
 			_ = svc.Stop()
