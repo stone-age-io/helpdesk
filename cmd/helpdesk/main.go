@@ -12,33 +12,38 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/plugins/migratecmd"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/nats-io/nats.go/micro"
 	"github.com/spf13/cobra"
+	"github.com/stone-age-io/kit/health"
+	"github.com/stone-age-io/kit/natsx"
+	"github.com/stone-age-io/kit/pbx"
+	"github.com/stone-age-io/kit/version"
 
 	"github.com/stone-age-io/helpdesk/config"
 	"github.com/stone-age-io/helpdesk/internal/activity"
-	"github.com/stone-age-io/helpdesk/internal/authfix"
 	"github.com/stone-age-io/helpdesk/internal/customers"
 	"github.com/stone-age-io/helpdesk/internal/demoseed"
-	"github.com/stone-age-io/helpdesk/internal/health"
 	"github.com/stone-age-io/helpdesk/internal/inbound"
 	"github.com/stone-age-io/helpdesk/internal/ingest"
 	"github.com/stone-age-io/helpdesk/internal/maintenance"
 	"github.com/stone-age-io/helpdesk/internal/metrics"
-	"github.com/stone-age-io/helpdesk/internal/natsx"
 	"github.com/stone-age-io/helpdesk/internal/notifications"
 	"github.com/stone-age-io/helpdesk/internal/projects"
+	"github.com/stone-age-io/helpdesk/internal/readiness"
+	"github.com/stone-age-io/helpdesk/internal/streams"
 	"github.com/stone-age-io/helpdesk/internal/subjects"
 	"github.com/stone-age-io/helpdesk/internal/tickets"
 	"github.com/stone-age-io/helpdesk/internal/timeentries"
 	"github.com/stone-age-io/helpdesk/internal/timers"
-	"github.com/stone-age-io/helpdesk/internal/version"
 	"github.com/stone-age-io/helpdesk/internal/visits"
 	"github.com/stone-age-io/helpdesk/internal/webui"
 
@@ -81,9 +86,8 @@ func main() {
 
 	// `helpdesk version` reports the same build string NATS service discovery
 	// publishes, so `nats micro ls` and the box you are standing at can be
-	// compared without guessing. It is inline rather than a RegisterCommand in
-	// internal/version because that package stays stdlib-only; this is the one
-	// caller that needs cobra, and it is eight lines.
+	// compared without guessing. The version comes from the kit's version
+	// package, the same one natsx.RegisterService reads.
 	//
 	// RootCmd.Version is set from the same source on purpose. PocketBase seeds
 	// it with its own string ("(untracked)" for a build with no ldflags), so
@@ -106,7 +110,7 @@ func main() {
 	timers.Register(app)
 	activity.Register(app)
 	customers.Register(app)
-	authfix.EnforceEmailVisibility(app)
+	pbx.EnforceEmailVisibility(app, "users", "staff")
 
 	// Outbound email: ticket lifecycle hooks → templated sends. The notifier
 	// no-ops cleanly when SMTP isn't configured (PocketBase mail settings).
@@ -173,7 +177,8 @@ func main() {
 	// NATS resources brought up only when actually serving (not for
 	// migrate/superuser subcommands) and torn down on terminate.
 	var (
-		nc       *natsx.Conn
+		nc       *nats.Conn
+		svc      micro.Service
 		consumer *ingest.Consumer
 	)
 
@@ -183,29 +188,27 @@ func main() {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		// Readiness. The NATS state is read through closures rather than
 		// captured, because the connection below is built later in this same
-		// hook and can come and go afterwards; a captured nil would report
-		// "never connected" forever.
-		prober := health.NewProber(version.Build(), cfg.Readiness.Interval(), cfg.Readiness.Timeout())
-		prober.Add("database", health.Database(app))
-		prober.Add("schema", health.Schema(app))
-		prober.Add("schema_version", health.SchemaVersion(app))
-		prober.Add("staff_admin", health.StaffAdmin(app))
-		prober.Add("smtp", health.SMTP(app))
-		prober.Add("application_url", health.ApplicationURL(app))
-		prober.Add("nats_ingest", health.NATSIngest(
-			func() bool { return cfg.NATS.Enabled() },
-			func() bool { return nc != nil && nc.NC != nil && nc.NC.IsConnected() },
-		))
-		prober.Add("inbound_email", health.InboundEmail(cfg.Inbound.Secret))
-		health.RegisterRoutes(e, prober)
+		// hook and can come and go afterwards.
+		var reg health.Registry
+		readiness.Register(&reg, app, readiness.Options{
+			NATSConfigured: func() bool { return cfg.NATS.Enabled() },
+			NATSConnected:  func() bool { return nc != nil && nc.IsConnected() },
+			InboundSecret:  cfg.Inbound.Secret,
+		})
+		prober := health.NewProber(&reg, version.Build(), cfg.Readiness.Interval(), cfg.Readiness.Timeout())
+		pbx.ServeReady(e, prober)
 
 		// Metrics share the prober's work rather than running their own checks:
 		// a scrape and a probe would otherwise disagree about the same process,
-		// and the disagreement would be a function of who asked last.
+		// and the disagreement would be a function of who asked last. Readiness
+		// is always on; /metrics follows metrics.enabled, since an install may
+		// legitimately not want it exposed.
 		mset := metrics.New(version.Build())
 		mset.RegisterDB(app)
-		prober.OnProbe(mset.Observe)
-		metrics.RegisterRoutes(e, mset, cfg.Metrics.Enabled, cfg.Metrics.Token)
+		prober.OnRefresh(mset.Observe)
+		if cfg.Metrics.Enabled {
+			pbx.ServeMetrics(e, mset.Registry, cfg.Metrics.Token)
+		}
 
 		notifications.RegisterRoutes(e)
 		inbound.Register(e)
@@ -218,21 +221,46 @@ func main() {
 		// resume when connectivity returns and the durable consumer picks
 		// up where it left off.
 		if cfg.NATS.Enabled() {
-			var err error
-			nc, err = natsx.Connect(cfg.NATS.URLs, cfg.NATS.CredsFile)
+			var (
+				js  jetstream.JetStream
+				err error
+			)
+			nc, err = natsx.Connect(natsx.Options{
+				URLs:  cfg.NATS.URLs,
+				Creds: cfg.NATS.CredsFile,
+				Name:  "helpdesk",
+				Log:   slog.Default(),
+				Extra: []nats.Option{
+					nats.ReconnectJitter(100*time.Millisecond, time.Second),
+					nats.DrainTimeout(10 * time.Second),
+				},
+			})
+			if err == nil {
+				js, err = jetstream.New(nc)
+			}
 			if err != nil {
 				log.Printf("nats connect failed (tickets arrive via portal/webhook only): %v", err)
 			} else {
-				// Identity only, never fatal: `nats micro ls` lists the helpdesk.
-				nc.RegisterService()
+				// Identity only, never fatal: `nats micro ls` lists the helpdesk
+				// with its Thing code, which is how the console finds it.
+				if cfg.NATS.Code == "" {
+					log.Printf("nats.code is not set: skipping NATS service discovery registration")
+				} else if svc, err = natsx.RegisterService(nc, natsx.Service{
+					Name:        "helpdesk",
+					Description: "Stone Age helpdesk",
+					Code:        cfg.NATS.Code,
+					Metadata:    hostMetadata(),
+				}); err != nil {
+					log.Printf("nats service discovery registration failed; continuing without it: %v", err)
+				}
 
 				subj := subjects.Default()
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()
-				if _, err := nc.EnsureStream(ctx, cfg.NATS.Stream, subj.StreamWildcards()); err != nil {
+				if _, err := streams.EnsureIngest(ctx, js, cfg.NATS.Stream, subj.StreamWildcards()); err != nil {
 					log.Printf("nats stream setup failed: %v", err)
 				} else {
-					consumer = ingest.New(app, nc.JS, cfg.NATS.Stream, cfg.NATS.Durable, subj)
+					consumer = ingest.New(app, js, cfg.NATS.Stream, cfg.NATS.Durable, subj)
 					if err := consumer.Start(ctx); err != nil {
 						log.Printf("nats consumer start failed: %v", err)
 						consumer = nil
@@ -244,10 +272,10 @@ func main() {
 				// if the creds lack publish/stream-management or the stream can't
 				// be ensured, we log once and leave the publisher unset, so email
 				// keeps working and NATS publishes are silent no-ops.
-				if _, err := nc.EnsureNotifyStream(ctx, cfg.NATS.NotifyStream, subj.EventStreamWildcards()); err != nil {
+				if _, err := streams.EnsureNotify(ctx, js, cfg.NATS.NotifyStream, subj.EventStreamWildcards()); err != nil {
 					log.Printf("nats notify stream setup failed (email still sends): %v", err)
 				} else {
-					notifier.SetPublisher(natsx.NewPublisher(nc.JS))
+					notifier.SetPublisher(streams.NewPublisher(js))
 				}
 			}
 		}
@@ -258,10 +286,12 @@ func main() {
 		// as the server is listening.
 		prober.Start(proberCtx)
 
-		serveBranding(e, cfg.BrandingDir)
-		if err := serveSPA(e); err != nil {
+		pbx.Branding(e, cfg.BrandingDir, slog.Default())
+		uiFS, err := fs.Sub(webui.FS, "public")
+		if err != nil {
 			return err
 		}
+		pbx.ServeSPA(e, uiFS)
 		log.Printf("helpdesk serving (dataDir=%s, nats=%v)", cfg.DataDir, cfg.NATS.Enabled())
 		return e.Next()
 	})
@@ -269,8 +299,11 @@ func main() {
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		stopProber()
 		consumer.Stop()
+		if svc != nil {
+			_ = svc.Stop()
+		}
 		if nc != nil {
-			_ = nc.Close()
+			_ = nc.Drain()
 		}
 		return e.Next()
 	})
@@ -280,68 +313,11 @@ func main() {
 	}
 }
 
-// serveBranding registers the operator branding overlay under /branding/*,
-// before the SPA catch-all. When brandingDir is set it serves that host
-// directory's files (theme.css, logo.svg, branding.json); index.html
-// unconditionally <link>s theme.css and the SPA fetches branding.json, so we
-// serve silent empty fallbacks for those two when no overlay is configured —
-// otherwise a stock deployment fills the browser console with 404s. Path
-// traversal ("..") is rejected.
-func serveBranding(e *core.ServeEvent, brandingDir string) {
-	var brandingFS fs.FS
-	if brandingDir != "" {
-		if info, err := os.Stat(brandingDir); err != nil || !info.IsDir() {
-			log.Printf("branding.dir is set but not a usable directory: %s", brandingDir)
-		} else {
-			brandingFS = os.DirFS(brandingDir)
-			log.Printf("branding overlay serving from: %s", brandingDir)
-		}
+// hostMetadata adds the host name to the discovery metadata, so `nats micro
+// info helpdesk` says which box an instance runs on.
+func hostMetadata() map[string]string {
+	if host, err := os.Hostname(); err == nil {
+		return map[string]string{"host": host}
 	}
-	e.Router.GET("/branding/{path...}", func(re *core.RequestEvent) error {
-		p := re.Request.PathValue("path")
-		if p == "" || strings.Contains(p, "..") {
-			return re.NotFoundError("Not found", nil)
-		}
-		if brandingFS != nil {
-			if f, openErr := brandingFS.Open(p); openErr == nil {
-				_ = f.Close()
-				return re.FileFS(brandingFS, p)
-			}
-		}
-		switch p {
-		case "theme.css":
-			return re.Blob(200, "text/css; charset=utf-8", nil)
-		case "branding.json":
-			return re.Blob(200, "application/json", []byte("{}"))
-		}
-		return re.NotFoundError("Not found", nil)
-	})
-}
-
-// serveSPA registers the embedded SPA at "/" with history-mode fallback.
-// PocketBase does not serve static assets in framework mode, so we register
-// the catch-all ourselves; the more specific /api and /_ routes PocketBase
-// registers take precedence over /{path...}.
-func serveSPA(e *core.ServeEvent) error {
-	uiFS, err := fs.Sub(webui.FS, "public")
-	if err != nil {
-		return err
-	}
-	e.Router.GET("/{path...}", func(re *core.RequestEvent) error {
-		p := re.Request.PathValue("path")
-		if p == "" || p == "/" {
-			return re.FileFS(uiFS, "index.html")
-		}
-		if f, openErr := uiFS.Open(p); openErr == nil {
-			_ = f.Close()
-			return re.FileFS(uiFS, p)
-		}
-		// A missing asset (has an extension) is a real 404; anything else is
-		// a client-side route → hand back index.html so vue-router resolves it.
-		if strings.Contains(p, ".") {
-			return re.NotFoundError("File not found", nil)
-		}
-		return re.FileFS(uiFS, "index.html")
-	})
 	return nil
 }

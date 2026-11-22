@@ -37,7 +37,7 @@ builds:
       # It is {{.Version}} rather than {{.Tag}} so a snapshot stays honest:
       # .Tag on an untagged build is the PREVIOUS tag, so a snapshot would
       # claim to be the last release. .Version gives v0.1.0-SNAPSHOT-<sha>.
-      - -s -w -X github.com/stone-age-io/helpdesk/internal/version.stamped=v{{.Version}}
+      - -s -w -X github.com/stone-age-io/kit/version.stamped=v{{.Version}}
     goos: [linux, darwin, windows, freebsd]
     goarch: [amd64, arm64]
     ignore:

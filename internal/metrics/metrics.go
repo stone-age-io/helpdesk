@@ -1,4 +1,5 @@
-// Package metrics serves the Prometheus exposition at GET /metrics, matching
+// Package metrics builds the Prometheus registry served at GET /metrics (the
+// route is the kit's pbx.ServeMetrics), matching
 // the shape the platform and the agent use (see Health & Metrics in
 // platform-docs): the readiness report as a state set, build info, and a small
 // number of gauges about what is in the database.
@@ -22,7 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
-	"github.com/stone-age-io/helpdesk/internal/health"
+	"github.com/stone-age-io/kit/health"
 )
 
 // allStates is every value the state set publishes a series for, so a check

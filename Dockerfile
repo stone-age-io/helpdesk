@@ -32,13 +32,13 @@ COPY . .
 
 # VERSION is passed rather than read from git, because .dockerignore excludes
 # .git on purpose: without it `debug.ReadBuildInfo` has nothing to read and an
-# image tagged v0.1.0 would report "(devel)" when asked. See internal/version.
+# image tagged v0.1.0 would report "(devel)" when asked. See the kit's version package.
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
       -trimpath \
-      -ldflags "-s -w -X github.com/stone-age-io/helpdesk/internal/version.stamped=${VERSION}" \
+      -ldflags "-s -w -X github.com/stone-age-io/kit/version.stamped=${VERSION}" \
       -o /out/helpdesk ./cmd/helpdesk
 
 # --------------------------------------------------------------- 2. runtime

@@ -114,6 +114,11 @@ type NATSConfig struct {
 	// because its subjects must not overlap the ingest stream's and it carries
 	// a dedupe window for Nats-Msg-Id.
 	NotifyStream string
+	// Code is the code of this helpdesk's Thing on the platform (ADR 0008 rule
+	// 4). It goes into the NATS service discovery metadata, which is how the
+	// console joins the running process to its Thing. Empty skips discovery
+	// registration; everything else works.
+	Code string
 }
 
 // Enabled reports whether a NATS connection should be attempted.
@@ -129,6 +134,7 @@ func Load() (*Config, error) {
 	v.SetDefault("nats.stream", "HELPDESK_EVENTS")
 	v.SetDefault("nats.durable", "helpdesk-ingest")
 	v.SetDefault("nats.notify_stream", "HELPDESK_NOTIFICATIONS")
+	v.SetDefault("nats.code", "")
 	v.SetDefault("inbound.secret", "")
 	v.SetDefault("inbound.allowed_ips", []string{})
 	v.SetDefault("inbound.reply_to", "")
@@ -169,6 +175,7 @@ func Load() (*Config, error) {
 			Stream:       v.GetString("nats.stream"),
 			Durable:      v.GetString("nats.durable"),
 			NotifyStream: v.GetString("nats.notify_stream"),
+			Code:         v.GetString("nats.code"),
 		},
 		Inbound: InboundConfig{
 			Secret:     v.GetString("inbound.secret"),

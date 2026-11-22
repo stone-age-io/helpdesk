@@ -3,6 +3,8 @@ package subjects
 import (
 	"strings"
 	"testing"
+
+	kitsubjects "github.com/stone-age-io/kit/subjects"
 )
 
 func TestParseTicketEvent(t *testing.T) {
@@ -96,5 +98,16 @@ func TestStreamsDisjoint(t *testing.T) {
 	// be ignored rather than projected as a ticket).
 	if _, _, ok := s.ParseTicketEvent(s.EventSubject("rec123", "ticket.created")); ok {
 		t.Error("an outbound event subject was parsed as a ticket event — loop risk")
+	}
+}
+
+// The same guarantee through the kit's overlap check, which reasons about the
+// wildcards themselves rather than one token: it is the check every app runs
+// over its stream filters (ADR 0008).
+func TestStreamFiltersDisjoint(t *testing.T) {
+	s := Default()
+	filters := append(s.StreamWildcards(), s.EventStreamWildcards()...)
+	if err := kitsubjects.Disjoint(filters...); err != nil {
+		t.Fatal(err)
 	}
 }

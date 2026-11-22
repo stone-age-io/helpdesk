@@ -41,9 +41,13 @@ nats:
   stream: HELPDESK_EVENTS
   durable: helpdesk-ingest
   # Outbound notification-event stream the helpdesk creates + owns (subjects
-  # helpdesk.*.events.>). Used only when a notification template has
+  # helpdesk.*.evt.>). Used only when a notification template has
   # publish_nats enabled; setup fails softly if publish isn't granted.
   notify_stream: HELPDESK_NOTIFICATIONS
+  # This helpdesk's Thing code on the platform. It goes into the NATS service
+  # discovery metadata so the console can find the running process. Empty
+  # skips discovery registration; nothing else needs it.
+  code: ""
 
 # Inbound email via an email-parsing provider (Postmark first). The provider
 # receives forwarded mail, parses the MIME, and POSTs clean JSON to

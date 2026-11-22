@@ -47,7 +47,7 @@ application URL live in PocketBase settings (dashboard), not the YAML.
 
 An optional operator **branding overlay** (`branding.dir`, env
 `HELPDESK_BRANDING_DIR`, empty by default) lets an install override the UI's app
-name, logo, and DaisyUI theme **without rebuilding**: `serveBranding` serves that
+name, logo, and DaisyUI theme **without rebuilding**: `pbx.Branding` (stone-age-io/kit) serves that
 host directory's `theme.css`/`logo.svg`/`branding.json` under `/branding/*` (the
 route is always registered and returns a silent empty `theme.css`/`{}`
 `branding.json` when unconfigured, so a stock install never 404s). `index.html`
@@ -74,7 +74,7 @@ exists only to satisfy the browser's install criteria, so there is no offline
 cache to go stale (an app whose whole job is live ticket state should not serve
 yesterday's queue). `main.ts` registers it in PROD only; `index.html` carries the
 manifest / theme-color / apple-touch-icon tags. Vite copies `ui/public/` into
-`internal/webui/public`, and `serveSPA`'s file lookup serves them at the root.
+`internal/webui/public`, and `pbx.ServeSPA` (stone-age-io/kit) serves them at the root.
 Unlike the theme and app name, the manifest is **not** brandable — it's a static
 file, so an operator overlay can't rename the installed app.
 
@@ -98,7 +98,7 @@ file, so an operator overlay can't rename the installed app.
   `1813000000` opens locations update to any staff);
   `docs/data-model.md`
   summarizes every collection and rule. Both auth collections stamp
-  `emailVisibility = true` on create (`internal/authfix`) — PB masks emails
+  `emailVisibility = true` on create (`pbx.EnforceEmailVisibility`) — PB masks emails
   by default, which would otherwise break the staff roster, the assignee
   pickers, and requester lists.
 
@@ -469,7 +469,7 @@ only. `channel` (`email`|`nats`) on the send log distinguishes rows. `docs/notif
 has the full event / recipient / suppression matrix; `docs/protocol.md` has
 the outbound envelope + subject contract.
 
-**NATS ingestion** (`internal/subjects`, `internal/natsx`,
+**NATS ingestion** (`internal/subjects`, `internal/streams`,
 `internal/ingest`): customer apps publish `helpdesk.cmd.tickets.create` in
 their own org account; the platform's managed-org export (platform commit
 `45ca1e3`) delivers it hub-side as `helpdesk.{orgCode}.cmd.tickets.create`.
@@ -503,16 +503,18 @@ JetStream accepts both and an emitted event can't loop back through ingest.
 The MSP's automation owns that stream's consumer; the helpdesk only
 publishes.
 
-**Service discovery** (`internal/natsx/service.go`): on connect the helpdesk
-registers as NATS micro service `helpdesk` with `host` metadata and **no
-endpoints**, matching the agent's, rule-router's and access-control's
+**Service discovery** (the kit's `natsx.RegisterService`): on connect the
+helpdesk registers as NATS micro service `helpdesk` with `code` (its Thing code,
+`nats.code`), `version` and `host` metadata and **no endpoints**, matching the agent's, rule-router's and access-control's
 registrations, so `nats micro ls` in the hub account shows what is running
 and at which version. Identity only — it is not the request/reply NATS service
 listed under Out of scope, and adding an endpoint would be that. Never fatal: a
 failure logs and the app carries on, and a credential without `$SRV.>`
-subscribe loses discovery only. The version is `debug.ReadBuildInfo`'s module
-version (no ldflags), normalised to semver because `micro.AddService` refuses
-anything else. `Conn.Close` stops it before draining.
+subscribe loses discovery only. With `nats.code` unset it is skipped with a
+log line, since a registration the console cannot join to a Thing is noise
+(ADR 0008 rule 4). The version is the kit's `version.Build()`, normalised to
+semver because `micro.AddService` refuses anything else. Shutdown stops the
+service before draining the connection.
 
 **Webhook inbound** (`internal/inbound`):
 `POST /api/helpdesk/inbound/{token}` resolves the customer by

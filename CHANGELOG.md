@@ -60,8 +60,22 @@ stream.
   the upgrade, and ages out with the stream's 7-day limit.
 - The platform's managed-org export maps the whole of `helpdesk.>`, so it does
   not change.
+- **`GET /api/ready` rolls up as the platform does.** A report of `ok` and
+  `skipped` checks is now `ok`, where it used to be `skipped`; only a report
+  where every check skipped says `skipped`. The answer before the first probe
+  carries an empty `checks` list. `ready` and the status code are unchanged.
+- **The release ldflag moved** to
+  `-X github.com/stone-age-io/kit/version.stamped=...`. The Dockerfile and
+  goreleaser config pass it; a custom build script must change too.
 
 ### Added
+
+- **`nats.code`**, the helpdesk's Thing code (ADR 0008). NATS service discovery
+  now carries it as `code` metadata, which is how the console joins the running
+  process to its Thing. While it is empty, discovery registration is skipped
+  with a log line.
+- **The NATS connection keeps retrying through auth errors**, so a creds file
+  that creds-keeper rewrites after a Revoke is picked up at the next reconnect.
 
 - **Releases are built rather than hand-cut.** A `v*` tag now runs goreleaser for
   cross-compiled binaries (linux, darwin, windows, freebsd; amd64 and arm64
@@ -76,9 +90,17 @@ stream.
 
 ### Changed
 
-- `internal/version` accepts a link-time stamp. Ordinary `go build` still reads
+- The version accepts a link-time stamp. Ordinary `go build` still reads
   the module version from VCS; the stamp exists because the container build
   excludes `.git` and would otherwise report `(devel)` on a tagged image.
+- **Built on [stone-age-io/kit](https://github.com/stone-age-io/kit) v0.1.0.**
+  The readiness engine, `/metrics` and its token, the NATS connection, service
+  discovery, the version, the SPA and branding routes, and the email-visibility
+  hook come from the kit. `internal/health`, `internal/natsx`,
+  `internal/version` and `internal/authfix` are gone. What only the helpdesk
+  knows stays here: its readiness checks (`internal/readiness`) and its two
+  streams and publisher (`internal/streams`). Readiness checks now run
+  concurrently, with `readiness.timeout_seconds` bounding the whole probe.
 
 
 ## [0.1.0] — 2026-11-14
