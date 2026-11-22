@@ -69,7 +69,13 @@ func resumePlan(app core.App, planID string, ticket *core.Record) {
 		return
 	}
 
-	done := ticket.GetDateTime("resolved_at").Time()
+	// .UTC() is load-bearing. A DateTime read back from the database is UTC,
+	// but this ticket is the in-memory record the resolve just saved, and
+	// types.NowDateTime() stamped resolved_at in the server's LOCAL zone.
+	// Formatting that as a calendar date gave the local date, a day early
+	// whenever local and UTC disagree (evenings in the Americas). Every date
+	// in this package is a UTC calendar date.
+	done := ticket.GetDateTime("resolved_at").Time().UTC()
 	if done.IsZero() {
 		done = time.Now().UTC()
 	}

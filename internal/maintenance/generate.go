@@ -56,7 +56,9 @@ func Generate(app core.App, now time.Time) (int, int, error) {
 
 	created, skipped := 0, 0
 	for _, plan := range plans {
-		due := plan.GetDateTime("next_due").Time()
+		// Already UTC when it comes from the database; .UTC() keeps it so if a
+		// caller ever hands in a record built in memory (see resumePlan).
+		due := plan.GetDateTime("next_due").Time().UTC()
 		interval := plan.GetInt("interval_days")
 		if interval < 1 {
 			slog.Warn("maintenance: plan has no interval, skipping", "plan", plan.Id)

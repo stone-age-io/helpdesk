@@ -463,3 +463,41 @@ func TestPlanCreateDefaults(t *testing.T) {
 		t.Error("create hook overwrote explicit anchor/priority")
 	}
 }
+
+// TestResumePlanUsesUTCDate pins the clock: resolved_at carries the zone it was
+// stamped in (types.NowDateTime is server-local), and the instants below fall
+// where the local date and the UTC date disagree, one zone behind UTC and one
+// ahead. next_due must be the UTC date plus the interval in both. Before the
+// fix, a CST server resolving after 18:00 scheduled the next visit a day early.
+func TestResumePlanUsesUTCDate(t *testing.T) {
+	cases := []struct {
+		name     string
+		resolved time.Time
+		want     string
+	}{
+		// 2026-11-21 18:30 CST is 2026-11-22 00:30 UTC.
+		{"behind UTC", time.Date(2026, 11, 21, 18, 30, 0, 0, time.FixedZone("CST", -6*3600)), "2027-02-20"},
+		// 2026-11-22 08:00 JST is 2026-11-21 23:00 UTC.
+		{"ahead of UTC", time.Date(2026, 11, 22, 8, 0, 0, 0, time.FixedZone("JST", 9*3600)), "2027-02-19"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, cust := setup(t)
+			// Parked: a completion-anchored plan waiting on its ticket.
+			plan := seedPlan(t, app, cust.Id, map[string]any{"interval_days": 90, "anchor": "completion"})
+
+			col, err := app.FindCollectionByNameOrId("tickets")
+			if err != nil {
+				t.Fatalf("find tickets: %v", err)
+			}
+			tk := core.NewRecord(col)
+			tk.Set("resolved_at", tc.resolved)
+
+			resumePlan(app, plan.Id, tk)
+
+			if got := reload(t, app, plan).GetDateTime("next_due").Time().UTC().Format(dateLayout); got != tc.want {
+				t.Errorf("next_due = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
